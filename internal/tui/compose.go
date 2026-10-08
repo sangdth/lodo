@@ -293,7 +293,7 @@ func (m Model) openPreview() (tea.Model, tea.Cmd) {
 	return m, m.readPreview(owner)
 }
 
-// previewKey scrolls the preview; c writes the .env line, p or esc goes back.
+// previewKey scrolls the preview; l links, p or esc goes back.
 func (m Model) previewKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "p", "esc":
@@ -301,7 +301,7 @@ func (m Model) previewKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "q":
 		return m, tea.Quit
-	case "c":
+	case "l":
 		owner, ok := m.find(m.previewOwner)
 		if m.busy || !ok || !linked(owner) {
 			return m, nil
@@ -339,7 +339,7 @@ func (m Model) shortPath(path string) string {
 func (m Model) previewView() string {
 	env := "no port binds " + compose.EnvVar + ", so the project's .env needs nothing from oo"
 	if m.previewEnv != "" {
-		env = "the ports need " + m.previewEnv + " in the project's .env: c writes it"
+		env = "the ports need " + m.previewEnv + " in the project's .env: l writes it"
 	}
 	title := " " + m.styles.title.Render(m.previewTitle)
 	return title + "\n " + ansi.Truncate(m.styles.dim.Render(env), m.innerWidth()-1, "…") + "\n" + m.preview.View()

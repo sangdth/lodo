@@ -88,11 +88,11 @@ const servicesHelp = " ←/→ or h/l pick  space on/off  tab back to the names\
 
 // The keys each mode takes, shown on the last lines.
 var help = map[mode]string{
-	modeList:    " a sub  e edit  d del  space on/off  c link  p compose\n g log  r apply  tab top  q quit",
+	modeList:    " a sub  e edit  d del  space on/off  l link  p preview\n g log  r apply  tab top  q quit",
 	modeForm:    " enter save  tab next field  esc cancel\n",
 	modeConfirm: " y delete  any other key keeps it\n",
 	modeLog:     " g or esc back to the list  ↑/↓ scroll\n q quit",
-	modePreview: " p or esc back to the list  ↑/↓ ←/→ scroll  c write the .env line\n q quit",
+	modePreview: " p or esc back to the list  ↑/↓ ←/→ scroll  l write the .env line\n q quit",
 }
 
 // The keys of the compose question, for a listed name and for one oo adds.

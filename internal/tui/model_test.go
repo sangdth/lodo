@@ -247,7 +247,7 @@ func TestModel_AddRow(t *testing.T) {
 	if got := m.keys(); got != addRowHelp {
 		t.Errorf("keys = %q, want the add row's", got)
 	}
-	for _, k := range []string{"e", "d", "c"} {
+	for _, k := range []string{"e", "d", "l"} {
 		if got := send(m, k); got.mode != modeList || got.note != "" {
 			t.Errorf("%s on the add row: mode %v, note %q; want nothing", k, got.mode, got.note)
 		}

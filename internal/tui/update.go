@@ -186,7 +186,7 @@ func (m Model) listKey(k string) (Model, tea.Cmd, bool) {
 	case "d":
 		m.mode, m.err, m.target = modeConfirm, nil, d.Name
 		return m, nil, true
-	case "c":
+	case "l":
 		next, cmd := m.link(d)
 		return next, cmd, true
 	}

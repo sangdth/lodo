@@ -316,12 +316,12 @@ func TestPreview(t *testing.T) {
 	}
 	golden.RequireEqual(t, m.View().Content)
 
-	m = send(m, "c")
+	m = send(m, "l")
 	if want := []string{flowyDev + " 127.0.1.3"}; !slices.Equal(b.linked, want) {
 		t.Errorf("linked %q, want %q", b.linked, want)
 	}
 	if m.mode != modePreview {
-		t.Errorf("mode = %v after c, want the preview still open", m.mode)
+		t.Errorf("mode = %v after l, want the preview still open", m.mode)
 	}
 	if m = send(m, "esc"); m.mode != modeList {
 		t.Errorf("mode = %v after esc, want the list", m.mode)
@@ -466,7 +466,7 @@ func TestLink(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			m := readyIn(tt.backend, tt.domains, tt.origin)
-			m = send(send(send(m, "down"), "down"), "c") // flowy.oo
+			m = send(send(send(m, "down"), "down"), "l") // flowy.oo
 			if tt.wantCompose == "" {
 				if len(tt.backend.saved) != 0 || len(tt.backend.linked) != 0 {
 					t.Errorf("saved %v, linked %v; want neither", tt.backend.saved, tt.backend.linked)

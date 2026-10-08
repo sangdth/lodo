@@ -245,7 +245,8 @@ A failure at any step shows in the status line. The saved file stays as written;
   ○ old.oo                127.0.0.1                 –
     Add new domain
  ─────────────────────────────────────────────────────────────────────────────
- a sub  e edit  d del  space on/off  c env  g log  r apply  tab top  q quit
+ a sub  e edit  d del  space on/off  l link  p preview
+ g log  r apply  tab top  q quit
 ```
 
 ```text
@@ -273,10 +274,10 @@ A failure at any step shows in the status line. The saved file stays as written;
   if the save fails.
 - **Delete:** `d` asks `delete flowy.oo? y/N` in the status line; only `y` deletes. A name's subdomains go with
   it, at any depth, and the question names them: `delete crm.oo and its 2 subdomains? y/N`.
-- **Link** (`c`): the name gets the compose file of the project oo started in, or keeps its own outside one, and
+- **Link** (`l`): the name gets the compose file of the project oo started in, or keeps its own outside one, and
   `DOCKER_HOST_IP=<address>` goes into the `.env` that file runs with: the one a `package.json` script passes
   with `--env-file`, else the project root's (`compose.EnvFile`, `compose.SetEnv`). A `.env` git tracks is
-  refused; the compose path is still saved. The question's `y`, `c` in the preview, and a form save that changes
+  refused; the compose path is still saved. The question's `y`, `l` in the preview, and a form save that changes
   a linked name's compose file or address link too. Linking saves without an apply.
 - **Log:** a `viewport` tailing `dnsmasq.log`, polled every 500 ms; `g` or `esc` returns.
 - **Compose:** started in a project that no listed name links yet (any name whose compose file sits inside the
@@ -284,7 +285,7 @@ A failure at any step shows in the status line. The saved file stays as written;
   folder suggests, defaulting to yes: `y` or `enter` links it, `e` edits it first, `n` or `esc` saves `none`, and
   any other key waits; an unlisted name gets the add form. A compose path is saved without an apply: it changes
   no generated file. `p` previews the file rewritten by `compose.Rewrite` in a `viewport`, the changed lines
-  marked, with the `.env` line; `c` links. oo writes one project file: the linked `.env`, and only its
+  marked, with the `.env` line; `l` links. The preview scrolls sideways with the arrows only. oo writes one project file: the linked `.env`, and only its
   `DOCKER_HOST_IP` lines.
 - **Status bar:** checks 8, 1, 3 and 4, in that order. A green `●` is on and works, a dim `○` is off: turned off,
   or Caddy not running while no row has a port. A red `○` fails. Any red one says "run `oo doctor`".

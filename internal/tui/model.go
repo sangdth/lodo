@@ -105,7 +105,7 @@ func New(ctx context.Context, b Backend, domains []store.Domain, start Start) Mo
 		domains:  store.Sort(domains),
 		spinner:  spinner.New(spinner.WithSpinner(spinner.MiniDot)),
 		log:      viewport.New(),
-		preview:  viewport.New(),
+		preview:  previewPort(),
 		logEvery: logEvery,
 		busy:     true,
 		width:    defaultWidth,
@@ -115,6 +115,14 @@ func New(ctx context.Context, b Backend, domains []store.Domain, start Start) Mo
 	m.table = table.New(table.WithFocused(true), table.WithStyles(m.styles.table), table.WithKeyMap(tableKeys()))
 	m.layout()
 	return m
+}
+
+// previewPort scrolls sideways with the arrows only, so l stays the link key.
+func previewPort() viewport.Model {
+	v := viewport.New()
+	v.KeyMap.Left = key.NewBinding(key.WithKeys("left"))
+	v.KeyMap.Right = key.NewBinding(key.WithKeys("right"))
+	return v
 }
 
 // tableKeys moves the cursor with arrows, j/k, page and home/end keys only,

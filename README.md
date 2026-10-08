@@ -85,7 +85,7 @@ name. The status line at the bottom, above the key help, says what failed, or wh
 | `e`         | edit the selected name                           |
 | `d`         | delete it and its subdomains; `y` confirms       |
 | `space`     | turn it on or off                                |
-| `c`         | link it to the project's compose file and `.env` |
+| `l`         | link it to the project's compose file and `.env` |
 | `p`         | preview the compose file, as oo would change it  |
 | `g`         | show dnsmasq's query log; `g` or `esc` goes back |
 | `r`         | read `domains.json` again and apply it           |
@@ -103,8 +103,8 @@ until then the form says what to run.
 When `oo` starts inside a project, a git repository with a lock file, it looks up to 3 folders deep for
 `compose.yml`, `docker-compose.yaml` and their variants, `.dev` first. Unless a listed name, whatever it is
 called, already links a compose file in the project, it asks once: `use ./compose.dev.yaml for flowy.oo? Y/n`.
-The project's folder suggests the name; to link a name called something else, answer `n` and press `c` on it. `y`
-or `enter` links it (see `c` below), `e` lets you fix the path first, and `n` or `esc` saves `none`, so oo stops
+The project's folder suggests the name; to link a name called something else, answer `n` and press `l` on it. `y`
+or `enter` links it (see `l` below), `e` lets you fix the path first, and `n` or `esc` saves `none`, so oo stops
 asking; any other key leaves the question open. A name that isn't listed gets the add form, filled in. The form's
 `compose` field sets or changes the path at any time: `~/…`, a path from where oo started, or `none`.
 
@@ -116,10 +116,10 @@ asking; any other key leaves the question open. A name that isn't listed gets th
   `http://localhost:3000` becomes `http://dashboard.crm.oo`.
 - Healthchecks, commands and comments keep `localhost`: inside a container it is the container itself.
 
-`c` links the selected name: the compose file of the project oo started in, or outside one the name's own,
+`l` links the selected name: the compose file of the project oo started in, or outside one the name's own,
 becomes the name's, and `DOCKER_HOST_IP=<address>` goes into the `.env` that file runs with. That is the file a
 `package.json` script passes with `--env-file`, else the project root's `.env`. oo leaves a `.env` that git
-tracks alone: this Mac's address doesn't belong in a shared file. The question's `y`, `c` in the preview, and a
+tracks alone: this Mac's address doesn't belong in a shared file. The question's `y`, `l` in the preview, and a
 form save that changes a linked name's compose file or address do the same.
 
 ### Rules
@@ -135,7 +135,7 @@ form save that changes a linked name's compose file or address do the same.
   is refused, because Caddy listens there.
 - **Apps listen on their project's address**, for example `next dev -H 127.0.1.3` or `vite --host 127.0.1.3`.
 - **Docker:** publish ports as `"${DOCKER_HOST_IP:-127.0.0.1}:5432:5432"`, which `p` shows on the project's
-  compose file, and `c` writes `DOCKER_HOST_IP=127.0.1.3` into the project's `.env`, so each project's Postgres
+  compose file, and `l` writes `DOCKER_HOST_IP=127.0.1.3` into the project's `.env`, so each project's Postgres
   gets port 5432 on its own address.
 
 ## Commands
