@@ -195,15 +195,22 @@ func (m Model) find(name string) (store.Domain, bool) {
 	return m.domains[i], true
 }
 
-// askKey answers the compose question. For a listed name, y saves the file, e
-// opens the edit form with it, and any other key saves no, so oo stops asking.
-// For a name that isn't listed, y opens the add form with both filled in.
+// askKey answers the compose question, which defaults to yes. For a listed
+// name, y or enter links the file, e opens the edit form with it, and n or esc
+// saves no, so oo stops asking. For a name that isn't listed, y, enter or e
+// opens the add form with both filled in. Any other key waits: a stray key
+// must not write the project's .env.
 func (m Model) askKey(k string) (tea.Model, tea.Cmd) {
+	yes := k == "y" || k == "Y" || k == "enter"
+	no := k == "n" || k == "N" || k == "esc"
+	if !yes && !no && k != "e" {
+		return m, nil
+	}
 	q := m.question
 	m.mode, m.question = modeList, question{}
 	d, listed := m.find(q.name)
 	switch {
-	case !listed && k == "y":
+	case !listed && !no:
 		m = m.openAdd("")
 		m.form.inputs[fieldName].SetValue(strings.TrimSuffix(q.name, tldSuffix))
 		m.form.prefill(m.domains)
@@ -217,7 +224,7 @@ func (m Model) askKey(k string) (tea.Model, tea.Cmd) {
 		m.form.focusField(fieldCompose)
 		return m, nil
 	}
-	if k == "y" {
+	if yes {
 		return m.linkTo(d, q.path)
 	}
 	d.Compose = store.NoCompose

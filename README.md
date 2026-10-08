@@ -102,10 +102,10 @@ until then the form says what to run.
 
 When `oo` starts inside a project, a git repository with a lock file, it looks up to 3 folders deep for
 `compose.yml`, `docker-compose.yaml` and their variants, `.dev` first, and asks once:
-`use ./compose.dev.yaml for flowy.oo? y/N`. The project's folder names the domain. `y` saves the path, `e`
-lets you fix it first, and any other key saves `none`, so oo stops asking. A name that isn't listed gets the
-add form, filled in. The form's `compose` field sets or changes the path at any time: `~/…`, a path from where
-oo started, or `none`.
+`use ./compose.dev.yaml for flowy.oo? Y/n`. The project's folder names the domain. `y` or `enter` links it (see
+`c` below), `e` lets you fix the path first, and `n` or `esc` saves `none`, so oo stops asking; any other key
+leaves the question open. A name that isn't listed gets the add form, filled in. The form's `compose` field sets
+or changes the path at any time: `~/…`, a path from where oo started, or `none`.
 
 `p` shows the file as oo would change it, and changes nothing:
 

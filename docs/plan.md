@@ -279,10 +279,11 @@ A failure at any step shows in the status line. The saved file stays as written;
   a linked name's compose file or address link too. Linking saves without an apply.
 - **Log:** a `viewport` tailing `dnsmasq.log`, polled every 500 ms; `g` or `esc` returns.
 - **Compose:** started in a project, oo asks once, after the first check, about the best compose file for the
-  name the project's folder suggests: `y` links it, `e` edits it first, anything else saves `none`; an unlisted
-  name gets the add form. A compose path is saved without an apply: it changes no generated file. `p` previews
-  the file rewritten by `compose.Rewrite` in a `viewport`, the changed lines marked, with the `.env` line; `c`
-  links. oo writes one project file: the linked `.env`, and only its `DOCKER_HOST_IP` lines.
+  name the project's folder suggests, defaulting to yes: `y` or `enter` links it, `e` edits it first, `n` or
+  `esc` saves `none`, and any other key waits; an unlisted name gets the add form. A compose path is saved
+  without an apply: it changes no generated file. `p` previews the file rewritten by `compose.Rewrite` in a
+  `viewport`, the changed lines marked, with the `.env` line; `c` links. oo writes one project file: the linked
+  `.env`, and only its `DOCKER_HOST_IP` lines.
 - **Status bar:** checks 8, 1, 3 and 4, in that order. A green `●` is on and works, a dim `○` is off: turned off,
   or Caddy not running while no row has a port. A red `○` fails. Any red one says "run `oo doctor`".
 - **Services:** `tab` moves the keys to the status bar; `←` `→` (or `h` `l`) pick Caddy or dnsmasq, `space` turns
@@ -589,7 +590,7 @@ Commit: `feat: dnsmasq log view`.
 | 7.5  | columns: name fits its longest row, then address, port, compose, own, check; the compose path is cut       |
 |      | from the left so the file name stays                                                                       |
 | 7.6  | form: a `compose` field; `~/` and relative paths resolve from where oo started; the file must exist        |
-| 7.7  | startup in a project: the git root's folder names the domain; `use <file> for <name>? y/N`, `e` edits;     |
+| 7.7  | startup in a project: the git root's folder names the domain; `use <file> for <name>? Y/n`, `e` edits;     |
 |      | no saves `none`; a name that isn't listed gets the add form, filled in                                     |
 | 7.8  | `p` previews the rewritten file: changed lines marked, the `.env` line for `DOCKER_HOST_IP`                |
 | 7.9  | keys on two lines; README, CLAUDE.md layout                                                                |

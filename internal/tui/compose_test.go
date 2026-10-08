@@ -63,28 +63,36 @@ func TestQuestion(t *testing.T) {
 		wantSaved  string // flowy.oo's compose value once saved; empty when nothing is saved
 	}{
 		{
-			name: "yes saves the file", domains: sample, key: "y", wantMode: modeList,
-			wantStatus: "use ./compose.dev.yaml for flowy.oo? y/N", wantSaved: flowyDev,
+			name: "y links the file", domains: sample, key: "y", wantMode: modeList,
+			wantStatus: "use ./compose.dev.yaml for flowy.oo? Y/n", wantSaved: flowyDev,
 		},
 		{
-			name: "any other key saves no", domains: sample, key: "n", wantMode: modeList,
-			wantStatus: "use ./compose.dev.yaml for flowy.oo? y/N", wantSaved: store.NoCompose,
+			name: "enter is yes", domains: sample, key: "enter", wantMode: modeList,
+			wantStatus: "use ./compose.dev.yaml for flowy.oo? Y/n", wantSaved: flowyDev,
 		},
 		{
-			name: "enter is no too", domains: sample, key: "enter", wantMode: modeList,
-			wantStatus: "use ./compose.dev.yaml for flowy.oo? y/N", wantSaved: store.NoCompose,
+			name: "n saves no", domains: sample, key: "n", wantMode: modeList,
+			wantStatus: "use ./compose.dev.yaml for flowy.oo? Y/n", wantSaved: store.NoCompose,
+		},
+		{
+			name: "esc is no", domains: sample, key: "esc", wantMode: modeList,
+			wantStatus: "use ./compose.dev.yaml for flowy.oo? Y/n", wantSaved: store.NoCompose,
 		},
 		{
 			name: "e edits the path first", domains: sample, key: "e", wantMode: modeForm,
-			wantStatus: "use ./compose.dev.yaml for flowy.oo? y/N",
+			wantStatus: "use ./compose.dev.yaml for flowy.oo? Y/n",
 		},
 		{
-			name: "an unlisted name: yes opens the add form", domains: sample[:2], key: "y", wantMode: modeForm,
-			wantStatus: "add flowy.oo with ./compose.dev.yaml? y/N",
+			name: "another key waits for an answer", domains: sample, key: "x", wantMode: modeAsk,
+			wantStatus: "use ./compose.dev.yaml for flowy.oo? Y/n",
 		},
 		{
-			name: "an unlisted name: no saves nothing", domains: sample[:2], key: "n", wantMode: modeList,
-			wantStatus: "add flowy.oo with ./compose.dev.yaml? y/N",
+			name: "an unlisted name: enter opens the add form", domains: sample[:2], key: "enter", wantMode: modeForm,
+			wantStatus: "add flowy.oo with ./compose.dev.yaml? Y/n",
+		},
+		{
+			name: "an unlisted name: n saves nothing", domains: sample[:2], key: "n", wantMode: modeList,
+			wantStatus: "add flowy.oo with ./compose.dev.yaml? Y/n",
 		},
 	}
 	for _, tt := range tests {

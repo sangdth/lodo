@@ -97,8 +97,8 @@ var help = map[mode]string{
 
 // The keys of the compose question, for a listed name and for one oo adds.
 const (
-	askHelp    = " y use it  e edit the path first  any other key: no\n"
-	askAddHelp = " y add it  any other key: no\n"
+	askHelp    = " y or enter use it  e edit the path first  n or esc no\n"
+	askAddHelp = " y or enter add it  n or esc no\n"
 )
 
 // View draws the status bar, a rule, the table or the form, the status line
@@ -332,9 +332,9 @@ func (m Model) statusLine() string {
 	case m.mode == modeConfirm:
 		line = m.styles.title.Render("delete " + m.target + "? y/N")
 	case m.mode == modeAsk && m.question.listed:
-		line = m.styles.title.Render("use " + m.question.rel + " for " + m.question.name + "? y/N")
+		line = m.styles.title.Render("use " + m.question.rel + " for " + m.question.name + "? Y/n")
 	case m.mode == modeAsk:
-		line = m.styles.title.Render("add " + m.question.name + " with " + m.question.rel + "? y/N")
+		line = m.styles.title.Render("add " + m.question.name + " with " + m.question.rel + "? Y/n")
 	case m.err != nil:
 		line = m.styles.bad.Render("✗ " + oneLine(m.err.Error()))
 	case m.note != "":
