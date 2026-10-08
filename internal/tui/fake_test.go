@@ -3,6 +3,8 @@ package tui
 import (
 	"context"
 	"errors"
+	"io/fs"
+	"path/filepath"
 	"slices"
 	"sync"
 	"time"
@@ -10,8 +12,9 @@ import (
 	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/sangdth/oo/internal/check"
-	"github.com/sangdth/oo/internal/store"
+	"github.com/sangdth/lodo/internal/check"
+	"github.com/sangdth/lodo/internal/compose"
+	"github.com/sangdth/lodo/internal/store"
 )
 
 // fakeBackend records what the TUI asks of it. Every check passes and every
@@ -24,16 +27,51 @@ type fakeBackend struct {
 	failing       map[string]string // a name's probe detail when it fails
 	failingChecks map[int]string    // a check's detail when it fails
 	portsErr      error
-	copyErr       error
-	log           string // dnsmasq's log
+	serviceErr    error
+	projectRoot   string            // what Project returns for any folder
+	projectFiles  []string          // the compose files Project finds, best first
+	composeFiles  map[string]string // ReadCompose's files, by path
+	off           map[string]bool   // services turned off
+	setServices   []string          // each SetService call, such as "caddy off"
+	linkErr       error
+	nextDev       []compose.Fix // what NextDev returns for any compose file
+	log           string        // dnsmasq's log
 	tailErr       error
 	saved         [][]store.Domain
 	applied       [][]store.Domain
-	copied        []string
+	linked        []string // each LinkEnv, as "<compose file> <address>"
 	reports       int
 }
 
 func (f *fakeBackend) PortsReady() error { return f.portsErr }
+
+func (f *fakeBackend) Project(string) (string, []string) { return f.projectRoot, f.projectFiles }
+
+func (f *fakeBackend) ReadCompose(path string) ([]byte, error) {
+	content, ok := f.composeFiles[path]
+	if !ok {
+		return nil, &fs.PathError{Op: "open", Path: path, Err: fs.ErrNotExist}
+	}
+	return []byte(content), nil
+}
+
+func (f *fakeBackend) SetService(_ context.Context, service string, on bool) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	state := " off"
+	if on {
+		state = " on"
+	}
+	f.setServices = append(f.setServices, service+state)
+	if f.serviceErr != nil {
+		return f.serviceErr
+	}
+	if f.off == nil {
+		f.off = map[string]bool{}
+	}
+	f.off[service] = !on
+	return nil
+}
 
 func (f *fakeBackend) Tail(offset int64) (string, int64, error) {
 	f.mu.Lock()
@@ -54,14 +92,14 @@ func (f *fakeBackend) appendLog(s string) {
 	f.log += s
 }
 
-func (f *fakeBackend) Copy(_ context.Context, text string) error {
+func (f *fakeBackend) NextDev(string, string) []compose.Fix { return f.nextDev }
+
+// LinkEnv records the link and names the .env next to the compose file.
+func (f *fakeBackend) LinkEnv(_ context.Context, composePath, address string) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if f.copyErr != nil {
-		return f.copyErr
-	}
-	f.copied = append(f.copied, text)
-	return nil
+	f.linked = append(f.linked, composePath+" "+address)
+	return filepath.Join(filepath.Dir(composePath), ".env"), f.linkErr
 }
 
 func (f *fakeBackend) Load() ([]store.Domain, error) {
@@ -100,8 +138,13 @@ func (f *fakeBackend) Report(_ context.Context, domains []store.Domain) ([]check
 		}
 		ports = ports || d.Port > 0
 		r := check.Result{Name: d.Name, Address: d.Address, Port: d.Port, Direct: true, System: true, HTTP: d.Port > 0}
-		if detail, ok := f.failing[d.Name]; ok {
+		switch detail, ok := f.failing[d.Name]; {
+		case f.off["dnsmasq"]:
+			r.Direct, r.System, r.HTTP, r.Detail = false, false, false, "dnsmasq: no answer"
+		case ok:
 			r.System, r.HTTP, r.Detail = false, false, detail
+		case f.off["caddy"] && d.Port > 0:
+			r.HTTP, r.Detail = false, "http: connection refused"
 		}
 		results = append(results, r)
 	}
@@ -110,11 +153,17 @@ func (f *fakeBackend) Report(_ context.Context, domains []store.Domain) ([]check
 		id := i + 1
 		checks[i] = check.Check{ID: id, OK: true}
 		if detail, ok := f.failingChecks[id]; ok {
-			checks[i] = check.Check{ID: id, Detail: detail, Fix: "oo setup"}
+			checks[i] = check.Check{ID: id, Detail: detail, Fix: "lodo setup"}
 		}
 	}
 	if !ports {
 		checks[7] = check.Check{ID: 8, Skipped: true}
+	}
+	if f.off["dnsmasq"] {
+		checks[0] = check.Check{ID: 1, Skipped: true, Off: true}
+	}
+	if f.off["caddy"] {
+		checks[7] = check.Check{ID: 8, Skipped: true, Off: true}
 	}
 	return checks, results
 }
@@ -130,10 +179,10 @@ var errBoom = errors.New("restart dnsmasq: brew services restart dnsmasq: Error:
 // sample is a project with a subdomain on a port, another project and a
 // disabled name.
 var sample = []store.Domain{
-	{Name: "crm.oo", Address: "127.0.1.1", Enabled: true},
-	{Name: "dashboard.crm.oo", Address: "127.0.1.1", Port: 3000, Enabled: true},
-	{Name: "flowy.oo", Address: "127.0.1.3", Enabled: true},
-	{Name: "old.oo", Address: "127.0.0.1"},
+	{Name: "crm.test", Address: "127.0.1.1", Enabled: true},
+	{Name: "dashboard.crm.test", Address: "127.0.1.1", Port: 3000, Enabled: true},
+	{Name: "flowy.test", Address: "127.0.1.3", Enabled: true},
+	{Name: "old.test", Address: "127.0.0.1"},
 }
 
 // settle runs cmd and every command its messages lead to, then returns the
@@ -161,7 +210,12 @@ func settle(m Model, cmd tea.Cmd) Model {
 // ready returns a model for domains after its first report. Its log timer
 // fires at once, and settle drops the tick, so tests drive reads themselves.
 func ready(b *fakeBackend, domains []store.Domain) Model {
-	m := New(context.Background(), b, domains)
+	return readyIn(b, domains, Start{})
+}
+
+// readyIn is ready for an lodo started in start's folder.
+func readyIn(b *fakeBackend, domains []store.Domain, start Start) Model {
+	m := New(context.Background(), b, domains, start)
 	m.logEvery = time.Millisecond
 	return settle(m, m.Init())
 }
@@ -201,7 +255,7 @@ func typeText(m Model, s string) Model {
 
 // clearField empties the focused field.
 func clearField(m Model) Model {
-	for range 64 {
+	for m.form.inputs[m.form.focus].Position() > 0 {
 		m = send(m, "backspace")
 	}
 	return m

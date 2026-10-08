@@ -1,4 +1,4 @@
-// Package check runs oo doctor's checks and probes each enabled domain.
+// Package check runs lodo doctor's checks and probes each enabled domain.
 package check
 
 import (
@@ -14,16 +14,16 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/sangdth/oo/internal/brew"
-	"github.com/sangdth/oo/internal/caddy"
-	"github.com/sangdth/oo/internal/dnsmasq"
-	"github.com/sangdth/oo/internal/paths"
-	"github.com/sangdth/oo/internal/run"
-	"github.com/sangdth/oo/internal/store"
-	"github.com/sangdth/oo/internal/system"
+	"github.com/sangdth/lodo/internal/brew"
+	"github.com/sangdth/lodo/internal/caddy"
+	"github.com/sangdth/lodo/internal/dnsmasq"
+	"github.com/sangdth/lodo/internal/paths"
+	"github.com/sangdth/lodo/internal/run"
+	"github.com/sangdth/lodo/internal/store"
+	"github.com/sangdth/lodo/internal/system"
 )
 
-// Env holds what the checks and probes need: oo's paths, the runner for
+// Env holds what the checks and probes need: lodo's paths, the runner for
 // commands, and where dnsmasq and Caddy listen. NewEnv returns the values for
 // this Mac; tests point DNS and HTTPPort at local servers and RootUID at their
 // own uid.
@@ -53,14 +53,16 @@ type Check struct {
 	Name    string
 	OK      bool
 	Skipped bool   // the check does not apply; nothing to fix
+	Off     bool   // the service was turned off on purpose; Off checks are also Skipped
 	Detail  string // one line: what was found
 	Fix     string // one line: what to run; empty when OK or Skipped
 }
 
 // The fixes most checks print.
 const (
-	fixSetup = "oo setup"
-	fixApply = "oo apply"
+	fixSetup     = "lodo setup"
+	fixApply     = "lodo apply"
+	fixDnsmasqOn = "turn dnsmasq on: brew services start dnsmasq, or tab and space in lodo"
 )
 
 // doctorChecks are the eight checks, in ID order. Each gets the whole domain
@@ -79,8 +81,8 @@ var doctorChecks = []struct {
 	{"caddy", Env.checkCaddy},
 }
 
-// prerequisites is how many checks, from the first, need oo setup or a
-// manual fix rather than oo apply.
+// prerequisites is how many checks, from the first, need lodo setup or a
+// manual fix rather than lodo apply.
 const prerequisites = 5
 
 // Run runs the eight checks one after another and returns them in ID order.
@@ -97,7 +99,7 @@ func (e Env) Report(ctx context.Context, domains []store.Domain) ([]Check, []Res
 	return e.run(ctx, domains, results, len(doctorChecks)), results
 }
 
-// Prerequisites runs checks 1 to 5, which need oo setup or a manual fix.
+// Prerequisites runs checks 1 to 5, which need lodo setup or a manual fix.
 // It probes nothing, so it is quick enough to run before the TUI starts.
 func (e Env) Prerequisites(ctx context.Context, domains []store.Domain) []Check {
 	return e.run(ctx, domains, nil, prerequisites)
@@ -108,6 +110,10 @@ func (e Env) run(ctx context.Context, domains []store.Domain, results []Result, 
 	for i, c := range doctorChecks[:n] {
 		checks[i] = c.run(e, ctx, domains, results)
 		checks[i].ID, checks[i].Name = i+1, c.name
+	}
+	// With dnsmasq turned off no name resolves, and lodo apply leaves it off.
+	if n >= 7 && checks[0].Off && !checks[6].OK {
+		checks[6].Fix = fixDnsmasqOn
 	}
 	return checks
 }
@@ -123,7 +129,7 @@ func Failed(checks []Check) []Check {
 	return failed
 }
 
-// checkDnsmasq: dnsmasq is installed, no root job shadows oo's, and
+// checkDnsmasq: dnsmasq is installed, no root job shadows lodo's, and
 // Homebrew's job runs it as the user.
 func (e Env) checkDnsmasq(ctx context.Context, _ []store.Domain, _ []Result) Check {
 	p := e.Paths
@@ -132,13 +138,15 @@ func (e Env) checkDnsmasq(ctx context.Context, _ []store.Domain, _ []Result) Che
 	}
 	for _, label := range system.DnsmasqSystemLabels {
 		if _, err := e.Runner.Run(ctx, p.Launchctl, "print", "system/"+label); err == nil {
-			return fail("a root job, system/"+label+", runs dnsmasq and shadows oo's", fixSetup)
+			return fail("a root job, system/"+label+", runs dnsmasq and shadows lodo's", fixSetup)
 		}
 	}
 	st, err := brew.Info(ctx, e.Runner, p.Brew, "dnsmasq")
 	switch {
 	case err != nil:
 		return fail(oneLine(err.Error()), fixSetup)
+	case st.Off():
+		return off("turned off: no .test name resolves until it is on")
 	case !st.Running:
 		return fail("not running", fixSetup)
 	case st.User != "" && st.User != p.User:
@@ -147,7 +155,7 @@ func (e Env) checkDnsmasq(ctx context.Context, _ []store.Domain, _ []Result) Che
 	return pass(fmt.Sprintf("running as %s, pid %d", p.User, st.PID))
 }
 
-// checkConfig: Homebrew's dnsmasq.conf includes oo's file and makes dnsmasq
+// checkConfig: Homebrew's dnsmasq.conf includes lodo's file and makes dnsmasq
 // listen where the resolver files point.
 func (e Env) checkConfig(_ context.Context, _ []store.Domain, _ []Result) Check {
 	p := e.Paths
@@ -201,15 +209,15 @@ func (e Env) checkResolvers(ctx context.Context, domains []store.Domain, _ []Res
 		case errors.Is(err, fs.ErrNotExist), err == nil && strings.HasPrefix(got, system.Marker+"\n"):
 			missing = append(missing, d.Name)
 		default:
-			// The script leaves files without oo's marker alone, so apply
+			// The script leaves files without lodo's marker alone, so apply
 			// can never fix this one.
 			foreign = append(foreign, path)
 			foreignNames = append(foreignNames, d.Name)
 		}
 	}
 	if len(foreign) > 0 {
-		return fail("not written by oo, so oo apply won't replace: "+firstFew(foreignNames, ", "),
-			"sudo rm "+strings.Join(foreign, " ")+", then oo apply")
+		return fail("not written by lodo, so lodo apply won't replace: "+firstFew(foreignNames, ", "),
+			"sudo rm "+strings.Join(foreign, " ")+", then lodo apply")
 	}
 	if len(missing) > 0 {
 		return fail("missing for "+firstFew(missing, ", "), fixApply)
@@ -257,7 +265,7 @@ func (e Env) checkResolverLocal(_ context.Context, _ []store.Domain, _ []Result)
 	return fail(local+" sends every .local name to one server, away from Bonjour", "sudo rm "+local)
 }
 
-// checkGenerated: oo's three generated files hold what domains generates.
+// checkGenerated: lodo's three generated files hold what domains generates.
 func (e Env) checkGenerated(_ context.Context, domains []store.Domain, _ []Result) Check {
 	p := e.Paths
 	var stale []string
@@ -294,7 +302,8 @@ func (e Env) checkNames(_ context.Context, _ []store.Domain, results []Result) C
 }
 
 // checkCaddy: when an enabled domain has a port, Caddy is installed, set up,
-// running and valid, and it owns the HTTP port.
+// running and valid, and it owns the HTTP port. Without one, it passes when
+// Caddy runs anyway and is skipped when it doesn't.
 func (e Env) checkCaddy(ctx context.Context, domains []store.Domain, _ []Result) Check {
 	sites := 0
 	for _, d := range enabled(domains) {
@@ -302,20 +311,31 @@ func (e Env) checkCaddy(ctx context.Context, domains []store.Domain, _ []Result)
 			sites++
 		}
 	}
+	p := e.Paths
 	if sites == 0 {
+		if installed(p.Caddy) && system.CaddySetUp(p) {
+			st, err := brew.Info(ctx, e.Runner, p.Brew, "caddy")
+			switch {
+			case err == nil && st.Off():
+				return off(caddyOff)
+			case err == nil && st.Running:
+				return pass("running, no enabled domain has a port")
+			}
+		}
 		return skip("no enabled domain has a port")
 	}
-	p := e.Paths
 	if !installed(p.Caddy) {
-		return fail("not installed", "brew install caddy, then oo setup")
+		return fail("not installed", "brew install caddy, then lodo setup")
 	}
 	if !system.CaddySetUp(p) {
-		return fail("Homebrew's Caddyfile does not import oo's", fixSetup)
+		return fail("Homebrew's Caddyfile does not import lodo's", fixSetup)
 	}
 	st, err := brew.Info(ctx, e.Runner, p.Brew, "caddy")
 	switch {
 	case err != nil:
 		return fail(oneLine(err.Error()), fixSetup)
+	case st.Off():
+		return off(caddyOff)
 	case !st.Running:
 		return fail("not running", fixSetup)
 	}
@@ -334,7 +354,7 @@ func (e Env) portOwner(ctx context.Context, sites int) Check {
 	case slices.ContainsFunc(commands, func(c string) bool { return strings.HasPrefix(c, "caddy") }):
 		return pass("running, serves " + plural(sites, "site"))
 	case len(commands) > 0:
-		return fail(fmt.Sprintf("port %d is taken by %s", e.HTTPPort, commands[0]), "stop "+commands[0]+", then oo apply")
+		return fail(fmt.Sprintf("port %d is taken by %s", e.HTTPPort, commands[0]), "stop "+commands[0]+", then lodo apply")
 	}
 	return fail(fmt.Sprintf("nothing listens on port %d", e.HTTPPort), fixSetup)
 }
@@ -342,6 +362,9 @@ func (e Env) portOwner(ctx context.Context, sites int) Check {
 func pass(detail string) Check      { return Check{OK: true, Detail: detail} }
 func fail(detail, fix string) Check { return Check{Detail: detail, Fix: fix} }
 func skip(detail string) Check      { return Check{Skipped: true, Detail: detail} }
+func off(detail string) Check       { return Check{Skipped: true, Off: true, Detail: detail} }
+
+const caddyOff = "turned off: no http://name.test reaches its port until it is on"
 
 // enabled returns the enabled domains in store.Sort order.
 func enabled(domains []store.Domain) []store.Domain {
@@ -390,13 +413,13 @@ func confValues(content string) map[string][]string {
 	return values
 }
 
-// confProblem returns the first way values differ from oo's block in
+// confProblem returns the first way values differ from lodo's block in
 // Homebrew's dnsmasq.conf, or "" when they match it.
-func confProblem(values map[string][]string, ooConf string) string {
+func confProblem(values map[string][]string, lodoConf string) string {
 	if problem := lineCount(values, "conf-file"); problem != "" {
 		return problem
 	}
-	if got := values["conf-file"][0]; got != ooConf {
+	if got := values["conf-file"][0]; got != lodoConf {
 		return "conf-file points at " + got
 	}
 	for _, want := range []struct{ key, value string }{

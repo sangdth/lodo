@@ -1,14 +1,16 @@
 package tui
 
 import (
+	"cmp"
 	"errors"
+	"path/filepath"
 	"strconv"
 	"strings"
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/sangdth/oo/internal/store"
+	"github.com/sangdth/lodo/internal/store"
 )
 
 // The form's fields, in tab order.
@@ -16,19 +18,29 @@ const (
 	fieldName = iota
 	fieldAddress
 	fieldPort
+	fieldCompose
 	fieldCount
 )
+
+// tldSuffix ends every name. A form shows its suffix after the name field,
+// dimmed, so only the labels before it are typed.
+const tldSuffix = "." + store.TLD
 
 // fieldIndex maps store's field names to the form's fields.
 var fieldIndex = map[string]int{
 	store.FieldName:    fieldName,
 	store.FieldAddress: fieldAddress,
 	store.FieldPort:    fieldPort,
+	store.FieldCompose: fieldCompose,
 }
 
-// form adds a domain, or edits one when editing names it.
+// form adds a domain, or edits one when editing names it; with parent set,
+// the name is a subdomain of parent and stays one.
 type form struct {
+	origin         Start // where lodo started, for compose paths typed with ~/ or relative
 	editing        string
+	parent         string       // the name a new subdomain goes under
+	suffix         string       // what the typed labels end in: .test, or .<parent>
 	original       store.Domain // the domain being edited
 	inputs         [fieldCount]textinput.Model
 	focus          int
@@ -37,22 +49,33 @@ type form struct {
 	errs           [fieldCount]string
 }
 
-// newAddForm opens an empty form whose address follows the name.
-func newAddForm(domains []store.Domain) form {
-	f := form{inputs: newInputs()}
+// newAddForm opens an empty form whose address follows the name. With a
+// parent, the name ends in .<parent> and only the labels before it are typed.
+func newAddForm(domains []store.Domain, parent string, start Start) form {
+	f := form{origin: start, parent: parent, suffix: tldSuffix}
+	if parent != "" {
+		f.suffix = "." + parent
+	}
+	f.inputs = newInputs(f.suffix)
 	f.prefill(domains)
 	f.focusField(fieldName)
 	return f
 }
 
-// newEditForm opens a form holding d. Its address stays as typed.
-func newEditForm(domains []store.Domain, d store.Domain) form {
-	f := form{editing: d.Name, original: d, inputs: newInputs(), addressTouched: true}
-	f.inputs[fieldName].SetValue(d.Name)
+// newEditForm opens a form holding d. Its address stays as typed. A
+// subdomain keeps its parent: only the labels before .<parent> are typed.
+func newEditForm(domains []store.Domain, d store.Domain, start Start) form {
+	f := form{origin: start, editing: d.Name, original: d, suffix: tldSuffix, addressTouched: true}
+	if parent, ok := store.Parent(domains, d.Name); ok {
+		f.parent, f.suffix = parent.Name, "."+parent.Name
+	}
+	f.inputs = newInputs(f.suffix)
+	f.inputs[fieldName].SetValue(strings.TrimSuffix(d.Name, f.suffix))
 	f.inputs[fieldAddress].SetValue(d.Address)
 	if d.Port > 0 {
 		f.inputs[fieldPort].SetValue(strconv.Itoa(d.Port))
 	}
+	f.inputs[fieldCompose].SetValue(shortPath(d.Compose, start.Home))
 	if free, err := store.NextFree(domains); err == nil {
 		f.hint = "next free: " + free
 	}
@@ -60,23 +83,31 @@ func newEditForm(domains []store.Domain, d store.Domain) form {
 	return f
 }
 
-func newInputs() [fieldCount]textinput.Model {
+func newInputs(suffix string) [fieldCount]textinput.Model {
 	styles := textinput.DefaultDarkStyles()
 	styles.Cursor.Blink = false
 	var inputs [fieldCount]textinput.Model
-	for i, limit := range [fieldCount]int{store.MaxNameLen, len("127.255.255.255"), len("65535")} {
+	for i, limit := range [fieldCount]int{store.MaxNameLen - len(suffix), len("127.255.255.255"), len("65535"), maxPathLen} {
 		inputs[i] = textinput.New()
 		inputs[i].Prompt = ""
 		inputs[i].CharLimit = limit
 		inputs[i].SetStyles(styles)
 	}
-	inputs[fieldName].SetWidth(40)
-	inputs[fieldName].Placeholder = "app.flowy.oo"
+	inputs[fieldName].SetWidth(store.MaxNameLen) // never scrolls; formView draws it at the text's width
+	inputs[fieldName].Placeholder = "app.flowy"
+	if suffix != tldSuffix {
+		inputs[fieldName].Placeholder = "api"
+	}
 	inputs[fieldAddress].SetWidth(16)
 	inputs[fieldPort].SetWidth(6)
 	inputs[fieldPort].Placeholder = "none"
+	inputs[fieldCompose].SetWidth(40)
+	inputs[fieldCompose].Placeholder = "optional: ~/path/to/compose.dev.yml"
 	return inputs
 }
+
+// maxPathLen is the longest path macOS takes.
+const maxPathLen = 1024
 
 // prefill fills the address while the name is typed: the parent's address
 // for a subdomain of a listed name, otherwise the lowest free own address.
@@ -84,7 +115,7 @@ func (f *form) prefill(domains []store.Domain) {
 	if f.addressTouched {
 		return
 	}
-	name := strings.TrimSpace(f.inputs[fieldName].Value())
+	name := cmp.Or(f.name(), f.suffix) // before typing, a subdomain form already sits under its parent
 	free, freeErr := store.NextFree(domains)
 	parent, isSub := store.Parent(domains, name)
 	switch {
@@ -125,11 +156,37 @@ func (f form) domain() (store.Domain, error) {
 		enabled = f.original.Enabled
 	}
 	return store.Domain{
-		Name:    strings.TrimSpace(f.inputs[fieldName].Value()),
+		Name:    f.name(),
 		Address: strings.TrimSpace(f.inputs[fieldAddress].Value()),
 		Port:    port,
 		Enabled: enabled,
+		Compose: f.compose(),
 	}, nil
+}
+
+// compose reads the compose field: empty, none, or a path, which ~/ starts at
+// the home folder and a relative one at the folder lodo started in.
+func (f form) compose() string {
+	v := strings.TrimSpace(f.inputs[fieldCompose].Value())
+	switch {
+	case v == "" || v == store.NoCompose:
+		return v
+	case strings.HasPrefix(v, "~/") && f.origin.Home != "":
+		v = filepath.Join(f.origin.Home, v[2:])
+	case !filepath.IsAbs(v) && f.origin.Dir != "":
+		v = filepath.Join(f.origin.Dir, v)
+	}
+	return filepath.Clean(v)
+}
+
+// name is the typed labels with the suffix, or empty when none are typed. A
+// suffix typed out of habit is not doubled.
+func (f form) name() string {
+	labels := strings.TrimSuffix(strings.TrimSpace(f.inputs[fieldName].Value()), f.suffix)
+	if labels == "" {
+		return ""
+	}
+	return labels + f.suffix
 }
 
 // setError shows err under the field it concerns and moves the cursor there.

@@ -7,18 +7,18 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/sangdth/oo/internal/dnsmasq"
-	"github.com/sangdth/oo/internal/paths"
-	"github.com/sangdth/oo/internal/store"
+	"github.com/sangdth/lodo/internal/dnsmasq"
+	"github.com/sangdth/lodo/internal/paths"
+	"github.com/sangdth/lodo/internal/store"
 )
 
-// Marker is the first line of every file and block oo writes outside its own
+// Marker is the first line of every file and block lodo writes outside its own
 // directory. The resolver script only deletes /etc/resolver files that start
 // with it.
-const Marker = "# oo"
+const Marker = "# lodo"
 
 // LoopbackLabel is the launchd label of the job that adds the own block to lo0.
-const LoopbackLabel = "io.oo.loopback"
+const LoopbackLabel = "io.lodo.loopback"
 
 //go:embed templates/*.tmpl
 var templateFS embed.FS
@@ -27,7 +27,7 @@ var templates = template.Must(template.New("").
 	Funcs(template.FuncMap{"sh": shellQuote}).
 	ParseFS(templateFS, "templates/*.tmpl"))
 
-// userRE matches the macOS short names oo writes into the sudoers rule.
+// userRE matches the macOS short names lodo writes into the sudoers rule.
 var userRE = regexp.MustCompile(`^[a-z0-9_][a-z0-9_.-]*$`)
 
 // ResolverLines are the lines of /etc/resolver/<name> after the marker.
@@ -38,7 +38,7 @@ func ResolverLines() []string {
 	}
 }
 
-// ResolverFile is the content of every /etc/resolver file oo writes.
+// ResolverFile is the content of every /etc/resolver file lodo writes.
 func ResolverFile() string {
 	return Marker + "\n" + strings.Join(ResolverLines(), "\n") + "\n"
 }
@@ -61,7 +61,7 @@ func Script(p paths.Paths) string {
 
 // LoopbackPlist returns the launchd job that adds the own block to lo0 at boot.
 func LoopbackPlist() string {
-	return mustRender("io.oo.loopback.plist.tmpl", struct {
+	return mustRender("io.lodo.loopback.plist.tmpl", struct {
 		Label, Prefix string
 		First, Last   int
 	}{LoopbackLabel, store.OwnPrefix, store.OwnFirst, store.OwnLast})
@@ -71,24 +71,24 @@ func LoopbackPlist() string {
 // without a password, and nothing else.
 func Sudoers(p paths.Paths) (string, error) {
 	if !userRE.MatchString(p.User) {
-		return "", fmt.Errorf("user name %q has characters oo won't write into a sudoers rule", p.User)
+		return "", fmt.Errorf("user name %q has characters lodo won't write into a sudoers rule", p.User)
 	}
 	return mustRender("sudoers.tmpl", struct{ User, Script string }{p.User, sudoersEscape(p.Script)}), nil
 }
 
-// ConfBlock is oo's block in Homebrew's dnsmasq.conf.
+// ConfBlock is lodo's block in Homebrew's dnsmasq.conf.
 func ConfBlock(p paths.Paths) string {
 	return fmt.Sprintf("%s\nconf-file=%s\nlisten-address=%s\nport=%d\nbind-interfaces\n",
 		Marker, p.DnsmasqConf, dnsmasq.ListenAddress, dnsmasq.Port)
 }
 
-// CaddyBlock is oo's block in Homebrew's Caddyfile.
+// CaddyBlock is lodo's block in Homebrew's Caddyfile.
 func CaddyBlock(p paths.Paths) string {
 	return Marker + "\nimport " + p.Caddyfile + "\n"
 }
 
 // mustRender executes a template. The templates are fixed and every one runs
-// in the tests, so a failure here is a bug in oo, not a runtime condition.
+// in the tests, so a failure here is a bug in lodo, not a runtime condition.
 func mustRender(name string, data any) string {
 	var b strings.Builder
 	if err := templates.ExecuteTemplate(&b, name, data); err != nil {

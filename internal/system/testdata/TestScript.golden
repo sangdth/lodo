@@ -1,7 +1,7 @@
 #!/bin/sh
-# oo: writes one /etc/resolver file per name in the user's resolver list.
-# Installed by `oo setup`, run as root through /etc/sudoers.d/oo, removed by
-# `oo uninstall`. It only creates files named by lines that match the name
+# lodo: writes one /etc/resolver file per name in the user's resolver list.
+# Installed by `lodo setup`, run as root through /etc/sudoers.d/lodo, removed by
+# `lodo uninstall`. It only creates files named by lines that match the name
 # pattern, always with the same content, and only deletes files whose first
 # line is the marker. It never prints a line it read from the list.
 set -eu
@@ -10,18 +10,18 @@ LC_ALL=C
 export PATH LC_ALL
 umask 022
 
-list='/fake/Users/tester/.config/oo/resolvers'
+list='/fake/Users/tester/.config/lodo/resolvers'
 dir='/fake/etc/resolver'
-pattern='[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*\.oo'
-marker='# oo'
+pattern='[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*\.test'
+marker='# lodo'
 
 if [ -L "$list" ] || [ ! -f "$list" ]; then
-	echo "oo: $list is missing or not a regular file" >&2
+	echo "lodo: $list is missing or not a regular file" >&2
 	exit 1
 fi
 
 /bin/mkdir -p "$dir"
-work=$(/usr/bin/mktemp -d /tmp/oo.XXXXXX)
+work=$(/usr/bin/mktemp -d /tmp/lodo.XXXXXX)
 trap '/bin/rm -rf "$work"' EXIT
 
 # Valid names only. grep exits 1 when no line matches, which is fine.
@@ -39,7 +39,7 @@ while IFS= read -r name; do
 		first=
 		IFS= read -r first < "$target" || :
 		if [ "$first" != "$marker" ]; then
-			echo "oo: left $target alone: oo did not write it" >&2
+			echo "lodo: left $target alone: lodo did not write it" >&2
 			continue
 		fi
 	fi
@@ -65,4 +65,4 @@ if [ "$(/usr/bin/id -u)" -eq 0 ]; then
 	/usr/bin/dscacheutil -flushcache
 	/usr/bin/killall -HUP mDNSResponder 2>/dev/null || :
 fi
-echo "oo: $written resolver files written, $removed removed, $skipped lines skipped"
+echo "lodo: $written resolver files written, $removed removed, $skipped lines skipped"

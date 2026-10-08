@@ -9,14 +9,33 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sangdth/oo/internal/brew"
-	"github.com/sangdth/oo/internal/paths"
-	"github.com/sangdth/oo/internal/run"
+	"github.com/sangdth/lodo/internal/brew"
+	"github.com/sangdth/lodo/internal/paths"
+	"github.com/sangdth/lodo/internal/run"
 )
 
 // failure is what brew prints when launchctl refuses a job.
 const failure = "Error: Failure while executing; `/bin/launchctl bootstrap gui/501 " +
 	"/Users/tester/Library/LaunchAgents/homebrew.mxcl.dnsmasq.plist` exited with 5."
+
+func TestStatus_Off(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		st   brew.Status
+		want bool
+	}{
+		{name: "running", st: brew.Status{Running: true, Registered: true}, want: false},
+		{name: "crashed or unloaded by hand: still registered", st: brew.Status{Registered: true}, want: false},
+		{name: "stopped by brew services stop", st: brew.Status{}, want: true},
+	}
+	for _, tt := range tests {
+		if got := tt.st.Off(); got != tt.want {
+			t.Errorf("%s: Off() = %v, want %v", tt.name, got, tt.want)
+		}
+	}
+}
 
 func TestInfo(t *testing.T) {
 	t.Parallel()
@@ -34,7 +53,7 @@ func TestInfo(t *testing.T) {
 			name: "dnsmasq not loaded, captured", service: "dnsmasq", file: "dnsmasq-none.json",
 			want: brew.Status{
 				Name: "dnsmasq", User: "sang", Status: "none",
-				File: "/Users/sang/Library/LaunchAgents/homebrew.mxcl.dnsmasq.plist",
+				File: "/Users/sang/Library/LaunchAgents/homebrew.mxcl.dnsmasq.plist", Registered: true,
 			},
 		},
 		{
@@ -45,7 +64,7 @@ func TestInfo(t *testing.T) {
 			name: "dnsmasq running, hand-made", service: "dnsmasq", file: "dnsmasq-started.json",
 			want: brew.Status{
 				Name: "dnsmasq", Running: true, Loaded: true, User: "sang", PID: 4242, Status: "started",
-				File: "/Users/sang/Library/LaunchAgents/homebrew.mxcl.dnsmasq.plist",
+				File: "/Users/sang/Library/LaunchAgents/homebrew.mxcl.dnsmasq.plist", Registered: true,
 			},
 		},
 		{name: "empty list", service: "dnsmasq", out: "[]", wantErr: "parse dnsmasq status: "},

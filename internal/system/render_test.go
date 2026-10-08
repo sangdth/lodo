@@ -10,9 +10,9 @@ import (
 
 	"github.com/charmbracelet/x/exp/golden"
 
-	"github.com/sangdth/oo/internal/paths"
-	"github.com/sangdth/oo/internal/store"
-	"github.com/sangdth/oo/internal/system"
+	"github.com/sangdth/lodo/internal/paths"
+	"github.com/sangdth/lodo/internal/store"
+	"github.com/sangdth/lodo/internal/system"
 )
 
 // fake is a fixed set of paths for golden files.
@@ -21,7 +21,7 @@ var fake = paths.ForTest("/fake")
 func TestResolverFile(t *testing.T) {
 	t.Parallel()
 
-	if got, want := system.ResolverFile(), "# oo\nnameserver 127.0.0.1\nport 53535\n"; got != want {
+	if got, want := system.ResolverFile(), "# lodo\nnameserver 127.0.0.1\nport 53535\n"; got != want {
 		t.Errorf("ResolverFile = %q, want %q", got, want)
 	}
 }
@@ -36,7 +36,7 @@ func TestScript_Run(t *testing.T) {
 	t.Parallel()
 
 	resolver := system.ResolverFile()
-	long := strings.Repeat("abc.", 63) + "oo" // matches the pattern, 254 characters
+	long := strings.Repeat("abc.", 61) + "abcde.test" // matches the pattern, 254 characters
 	tests := []struct {
 		name       string
 		list       *string           // nil: no list file
@@ -48,57 +48,57 @@ func TestScript_Run(t *testing.T) {
 	}{
 		{
 			name:       "writes valid names",
-			list:       ptr("crm.oo\ntest.crm.oo\n"),
-			after:      map[string]string{"crm.oo": resolver, "test.crm.oo": resolver},
-			wantStdout: "oo: 2 resolver files written, 0 removed, 0 lines skipped\n",
+			list:       ptr("crm.test\ntest.crm.test\n"),
+			after:      map[string]string{"crm.test": resolver, "test.crm.test": resolver},
+			wantStdout: "lodo: 2 resolver files written, 0 removed, 0 lines skipped\n",
 		},
 		{
 			name:       "skips invalid lines",
-			list:       ptr("oo\n../x.oo\nX.OO\nx.com\n\nx.oo \n-x.oo\nflowy.oo\na/b.oo\n" + long + "\n"),
-			after:      map[string]string{"flowy.oo": resolver},
-			wantStdout: "oo: 1 resolver files written, 0 removed, 9 lines skipped\n",
+			list:       ptr("test\n../x.test\nX.TEST\nx.com\n\nx.test \n-x.test\nflowy.test\na/b.test\n" + long + "\n"),
+			after:      map[string]string{"flowy.test": resolver},
+			wantStdout: "lodo: 1 resolver files written, 0 removed, 9 lines skipped\n",
 		},
 		{
 			name:       "last line without newline",
-			list:       ptr("crm.oo\nflowy.oo"),
-			after:      map[string]string{"crm.oo": resolver, "flowy.oo": resolver},
-			wantStdout: "oo: 2 resolver files written, 0 removed, 0 lines skipped\n",
+			list:       ptr("crm.test\nflowy.test"),
+			after:      map[string]string{"crm.test": resolver, "flowy.test": resolver},
+			wantStdout: "lodo: 2 resolver files written, 0 removed, 0 lines skipped\n",
 		},
 		{
 			name:       "removes its files no longer listed",
-			list:       ptr("crm.oo\n"),
-			before:     map[string]string{"old.oo": resolver, "crm.oo": resolver},
-			after:      map[string]string{"crm.oo": resolver},
-			wantStdout: "oo: 1 resolver files written, 1 removed, 0 lines skipped\n",
+			list:       ptr("crm.test\n"),
+			before:     map[string]string{"old.test": resolver, "crm.test": resolver},
+			after:      map[string]string{"crm.test": resolver},
+			wantStdout: "lodo: 1 resolver files written, 1 removed, 0 lines skipped\n",
 		},
 		{
 			name:       "empty list removes all its files",
 			list:       ptr(""),
-			before:     map[string]string{"old.oo": resolver, "older.oo": resolver},
+			before:     map[string]string{"old.test": resolver, "older.test": resolver},
 			after:      map[string]string{},
-			wantStdout: "oo: 0 resolver files written, 2 removed, 0 lines skipped\n",
+			wantStdout: "lodo: 0 resolver files written, 2 removed, 0 lines skipped\n",
 		},
 		{
 			name: "leaves files it did not write",
-			list: ptr("crm.oo\n"),
+			list: ptr("crm.test\n"),
 			before: map[string]string{
-				"crm.oo":   "nameserver 10.0.0.1\n",
-				"other.oo": "nameserver 10.0.0.2\n",
-				"local":    "nameserver 127.0.0.1\n",
+				"crm.test":   "nameserver 10.0.0.1\n",
+				"other.test": "nameserver 10.0.0.2\n",
+				"local":      "nameserver 127.0.0.1\n",
 			},
 			after: map[string]string{
-				"crm.oo":   "nameserver 10.0.0.1\n",
-				"other.oo": "nameserver 10.0.0.2\n",
-				"local":    "nameserver 127.0.0.1\n",
+				"crm.test":   "nameserver 10.0.0.1\n",
+				"other.test": "nameserver 10.0.0.2\n",
+				"local":      "nameserver 127.0.0.1\n",
 			},
-			wantStdout: "oo: 0 resolver files written, 0 removed, 0 lines skipped\n",
-			wantStderr: "crm.oo alone: oo did not write it",
+			wantStdout: "lodo: 0 resolver files written, 0 removed, 0 lines skipped\n",
+			wantStderr: "crm.test alone: lodo did not write it",
 		},
 		{
 			name:       "missing list",
 			list:       nil,
-			before:     map[string]string{"old.oo": resolver},
-			after:      map[string]string{"old.oo": resolver},
+			before:     map[string]string{"old.test": resolver},
+			after:      map[string]string{"old.test": resolver},
 			wantFail:   true,
 			wantStderr: "is missing or not a regular file",
 		},
@@ -125,8 +125,8 @@ func TestScript_Run(t *testing.T) {
 			if got := readDir(t, p.ResolverDir); !maps.Equal(got, tt.after) {
 				t.Errorf("resolver dir = %v, want %v", got, tt.after)
 			}
-			if _, err := os.Stat(filepath.Join(filepath.Dir(p.ResolverDir), "x.oo")); !os.IsNotExist(err) {
-				t.Error("../x.oo escaped the resolver dir")
+			if _, err := os.Stat(filepath.Join(filepath.Dir(p.ResolverDir), "x.test")); !os.IsNotExist(err) {
+				t.Error("../x.test escaped the resolver dir")
 			}
 		})
 	}
@@ -136,11 +136,11 @@ func TestScript_RunFileModes(t *testing.T) {
 	t.Parallel()
 
 	p := paths.ForTest(t.TempDir())
-	writeFile(t, p.Resolvers, "crm.oo\n")
+	writeFile(t, p.Resolvers, "crm.test\n")
 	if _, stderr, err := runScript(t, p); err != nil {
 		t.Fatalf("%v: %s", err, stderr)
 	}
-	info, err := os.Stat(filepath.Join(p.ResolverDir, "crm.oo"))
+	info, err := os.Stat(filepath.Join(p.ResolverDir, "crm.test"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +154,7 @@ func TestScript_RunSymlinkedList(t *testing.T) {
 
 	p := paths.ForTest(t.TempDir())
 	target := filepath.Join(t.TempDir(), "secret")
-	writeFile(t, target, "crm.oo\n")
+	writeFile(t, target, "crm.test\n")
 	if err := os.MkdirAll(filepath.Dir(p.Resolvers), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -177,12 +177,12 @@ func TestScript_RunQuotedPath(t *testing.T) {
 	t.Parallel()
 
 	p := paths.ForTest(filepath.Join(t.TempDir(), "it's here"))
-	writeFile(t, p.Resolvers, "crm.oo\n")
+	writeFile(t, p.Resolvers, "crm.test\n")
 	if _, stderr, err := runScript(t, p); err != nil {
 		t.Fatalf("%v: %s", err, stderr)
 	}
 	if got := readDir(t, p.ResolverDir); len(got) != 1 {
-		t.Errorf("resolver dir = %v, want crm.oo", got)
+		t.Errorf("resolver dir = %v, want crm.test", got)
 	}
 }
 
@@ -190,13 +190,13 @@ func TestScript_RunTwice(t *testing.T) {
 	t.Parallel()
 
 	p := paths.ForTest(t.TempDir())
-	writeFile(t, p.Resolvers, "crm.oo\nflowy.oo\n")
+	writeFile(t, p.Resolvers, "crm.test\nflowy.test\n")
 	for range 2 {
 		if _, stderr, err := runScript(t, p); err != nil {
 			t.Fatalf("%v: %s", err, stderr)
 		}
 	}
-	want := map[string]string{"crm.oo": system.ResolverFile(), "flowy.oo": system.ResolverFile()}
+	want := map[string]string{"crm.test": system.ResolverFile(), "flowy.test": system.ResolverFile()}
 	if got := readDir(t, p.ResolverDir); !maps.Equal(got, want) {
 		t.Errorf("resolver dir = %v, want %v", got, want)
 	}
@@ -208,13 +208,13 @@ func TestScript_AgreesWithStore(t *testing.T) {
 	t.Parallel()
 
 	names := []string{
-		"a.oo", "1.oo", "a--b.oo", "xn--bcher-kva.oo", "a.b.c.d.oo", "a.local.oo",
-		strings.Repeat("a", 63) + ".oo",
-		strings.Repeat("a", 64) + ".oo",
-		strings.Repeat("abc.", 62) + "oo", // 250 characters
-		strings.Repeat("abc.", 63) + "oo", // 254 characters
-		"oo", "a-.oo", "-a.oo", "OO", "a.OO", "a.oo.", "a..oo", ".a.oo", "flowy.local",
-		"a.oos", "localhost", "a.oo\r", "a\tb.oo", "a b.oo", "é.oo", "a/b.oo", "..oo",
+		"a.test", "1.test", "a--b.test", "xn--bcher-kva.test", "a.b.c.d.test", "a.local.test",
+		strings.Repeat("a", 63) + ".test",
+		strings.Repeat("a", 64) + ".test",
+		strings.Repeat("abc.", 61) + "a.test",     // 250 characters
+		strings.Repeat("abc.", 61) + "abcde.test", // 254 characters
+		"test", "a-.test", "-a.test", "TEST", "a.TEST", "a.test.", "a..test", ".a.test", "flowy.local",
+		"a.tests", "localhost", "a.test\r", "a\tb.test", "a b.test", "é.test", "a/b.test", "..test",
 	}
 	p := paths.ForTest(t.TempDir())
 	writeFile(t, p.Resolvers, strings.Join(names, "\n")+"\n")
@@ -240,7 +240,7 @@ func TestLoopbackPlist(t *testing.T) {
 	if _, err := os.Stat("/usr/bin/plutil"); err != nil {
 		t.Skip("plutil not available")
 	}
-	path := filepath.Join(t.TempDir(), "io.oo.loopback.plist")
+	path := filepath.Join(t.TempDir(), "io.lodo.loopback.plist")
 	writeFile(t, path, plist)
 	if out, err := exec.Command("/usr/bin/plutil", "-lint", path).CombinedOutput(); err != nil {
 		t.Errorf("plutil -lint: %v: %s", err, out)
@@ -259,7 +259,7 @@ func TestSudoers(t *testing.T) {
 	if _, err := os.Stat("/usr/sbin/visudo"); err != nil {
 		t.Skip("visudo not available")
 	}
-	path := filepath.Join(t.TempDir(), "oo")
+	path := filepath.Join(t.TempDir(), "lodo")
 	writeFile(t, path, rule)
 	if out, err := exec.Command("/usr/sbin/visudo", "-c", "-f", path).CombinedOutput(); err != nil {
 		t.Errorf("visudo -c: %v: %s", err, out)
@@ -281,7 +281,7 @@ func TestSudoers_RefusesOddUser(t *testing.T) {
 func TestConfBlock(t *testing.T) {
 	t.Parallel()
 
-	want := "# oo\nconf-file=/fake/Users/tester/.config/oo/dnsmasq.conf\nlisten-address=127.0.0.1\nport=53535\nbind-interfaces\n"
+	want := "# lodo\nconf-file=/fake/Users/tester/.config/lodo/dnsmasq.conf\nlisten-address=127.0.0.1\nport=53535\nbind-interfaces\n"
 	if got := system.ConfBlock(fake); got != want {
 		t.Errorf("ConfBlock = %q, want %q", got, want)
 	}
@@ -290,7 +290,7 @@ func TestConfBlock(t *testing.T) {
 func TestCaddyBlock(t *testing.T) {
 	t.Parallel()
 
-	want := "# oo\nimport /fake/Users/tester/.config/oo/Caddyfile\n"
+	want := "# lodo\nimport /fake/Users/tester/.config/lodo/Caddyfile\n"
 	if got := system.CaddyBlock(fake); got != want {
 		t.Errorf("CaddyBlock = %q, want %q", got, want)
 	}

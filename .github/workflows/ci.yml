@@ -12,7 +12,7 @@ permissions:
 jobs:
   test:
     name: Vet, test and lint
-    # oo only runs on macOS. Tests that need dnsmasq or caddy skip when
+    # lodo only runs on macOS. Tests that need dnsmasq or caddy skip when
     # Homebrew doesn't have them, so the job installs nothing.
     runs-on: macos-latest
 

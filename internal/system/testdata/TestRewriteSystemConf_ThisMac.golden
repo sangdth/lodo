@@ -41,8 +41,8 @@
 
 # LocalDNS configuration
 
-# oo
-conf-file=/fake/Users/tester/.config/oo/dnsmasq.conf
+# lodo
+conf-file=/fake/Users/tester/.config/lodo/dnsmasq.conf
 listen-address=127.0.0.1
 port=53535
 bind-interfaces

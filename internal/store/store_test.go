@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sangdth/oo/internal/store"
+	"github.com/sangdth/lodo/internal/store"
 )
 
 func TestValidateName(t *testing.T) {
@@ -20,27 +20,27 @@ func TestValidateName(t *testing.T) {
 		in      string
 		wantMsg string // empty means valid
 	}{
-		{name: "project", in: "flowy.oo"},
-		{name: "hyphen and subdomain", in: "a-b.dev.oo"},
-		{name: "deep subdomain", in: "a.test.crm.oo"},
-		{name: "digits", in: "web2.oo"},
-		{name: "63-char label", in: strings.Repeat("a", 63) + ".oo"},
+		{name: "project", in: "flowy.test"},
+		{name: "hyphen and subdomain", in: "a-b.dev.test"},
+		{name: "deep subdomain", in: "a.test.crm.test"},
+		{name: "digits", in: "web2.test"},
+		{name: "63-char label", in: strings.Repeat("a", 63) + ".test"},
 		{name: "empty", in: "", wantMsg: "name is empty"},
-		{name: "bare tld", in: "oo", wantMsg: "name must end in .oo"},
-		{name: "dot oo", in: ".oo", wantMsg: "name needs a label before .oo"},
-		{name: "uppercase", in: "X.OO", wantMsg: "name must be lowercase"},
-		{name: "other tld", in: "x.com", wantMsg: "name must end in .oo"},
-		{name: "bonjour's tld", in: "flowy.local", wantMsg: "name must end in .oo"},
-		{name: "path traversal", in: "../x.oo", wantMsg: "name may use only a-z, 0-9 and '-' inside labels of 1-63 characters"},
-		{name: "embedded newline", in: "x.oo\nfoo", wantMsg: "name must end in .oo"},
-		{name: "newline before suffix", in: "x\n.oo", wantMsg: "name may use only a-z, 0-9 and '-' inside labels of 1-63 characters"},
-		{name: "leading hyphen", in: "-x.oo", wantMsg: "name may use only a-z, 0-9 and '-' inside labels of 1-63 characters"},
-		{name: "trailing hyphen", in: "x-.oo", wantMsg: "name may use only a-z, 0-9 and '-' inside labels of 1-63 characters"},
-		{name: "empty label", in: "a..oo", wantMsg: "name may use only a-z, 0-9 and '-' inside labels of 1-63 characters"},
-		{name: "64-char label", in: strings.Repeat("a", 64) + ".oo", wantMsg: "name may use only a-z, 0-9 and '-' inside labels of 1-63 characters"},
-		{name: "space", in: "a b.oo", wantMsg: "name may use only a-z, 0-9 and '-' inside labels of 1-63 characters"},
-		{name: "underscore", in: "a_b.oo", wantMsg: "name may use only a-z, 0-9 and '-' inside labels of 1-63 characters"},
-		{name: "too long", in: strings.Repeat("abcdefgh.", 28) + "oo", wantMsg: "name is longer than 253 characters"},
+		{name: "bare tld", in: "test", wantMsg: "name must end in .test"},
+		{name: "dot lodo", in: ".test", wantMsg: "name needs a label before .test"},
+		{name: "uppercase", in: "X.TEST", wantMsg: "name must be lowercase"},
+		{name: "other tld", in: "x.com", wantMsg: "name must end in .test"},
+		{name: "bonjour's tld", in: "flowy.local", wantMsg: "name must end in .test"},
+		{name: "path traversal", in: "../x.test", wantMsg: "name may use only a-z, 0-9 and '-' inside labels of 1-63 characters"},
+		{name: "embedded newline", in: "x.test\nfoo", wantMsg: "name must end in .test"},
+		{name: "newline before suffix", in: "x\n.test", wantMsg: "name may use only a-z, 0-9 and '-' inside labels of 1-63 characters"},
+		{name: "leading hyphen", in: "-x.test", wantMsg: "name may use only a-z, 0-9 and '-' inside labels of 1-63 characters"},
+		{name: "trailing hyphen", in: "x-.test", wantMsg: "name may use only a-z, 0-9 and '-' inside labels of 1-63 characters"},
+		{name: "empty label", in: "a..test", wantMsg: "name may use only a-z, 0-9 and '-' inside labels of 1-63 characters"},
+		{name: "64-char label", in: strings.Repeat("a", 64) + ".test", wantMsg: "name may use only a-z, 0-9 and '-' inside labels of 1-63 characters"},
+		{name: "space", in: "a b.test", wantMsg: "name may use only a-z, 0-9 and '-' inside labels of 1-63 characters"},
+		{name: "underscore", in: "a_b.test", wantMsg: "name may use only a-z, 0-9 and '-' inside labels of 1-63 characters"},
+		{name: "too long", in: strings.Repeat("abcdefgh.", 28) + "test", wantMsg: "name is longer than 253 characters"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -98,6 +98,30 @@ func TestValidatePort(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			assertFieldErr(t, store.ValidatePort(tt.in), store.FieldPort, tt.wantMsg)
+		})
+	}
+}
+
+func TestValidateCompose(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		in      string
+		wantMsg string
+	}{
+		{name: "not asked yet", in: ""},
+		{name: "said no", in: store.NoCompose},
+		{name: "yml", in: "/Users/me/Projects/flowy/compose.dev.yml"},
+		{name: "yaml, any case", in: "/Users/me/Projects/flowy/docker-compose.YAML"},
+		{name: "relative", in: "compose.yml", wantMsg: "compose file must be an absolute path"},
+		{name: "home not expanded", in: "~/Projects/flowy/compose.yml", wantMsg: "compose file must be an absolute path"},
+		{name: "not yaml", in: "/Users/me/Projects/flowy/compose.json", wantMsg: "compose file must end in .yml or .yaml"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			assertFieldErr(t, store.ValidateCompose(tt.in), store.FieldCompose, tt.wantMsg)
 		})
 	}
 }
@@ -167,9 +191,9 @@ func TestProject(t *testing.T) {
 		in   string
 		want string
 	}{
-		{name: "project itself", in: "crm.oo", want: "crm.oo"},
-		{name: "subdomain", in: "test.crm.oo", want: "crm.oo"},
-		{name: "deep subdomain", in: "a.b.crm.oo", want: "crm.oo"},
+		{name: "project itself", in: "crm.test", want: "crm.test"},
+		{name: "subdomain", in: "test.crm.test", want: "crm.test"},
+		{name: "deep subdomain", in: "a.b.crm.test", want: "crm.test"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -191,11 +215,11 @@ func TestParent(t *testing.T) {
 		want     string
 		wantOkay bool
 	}{
-		{name: "nearest listed suffix", listed: []string{"crm.oo", "test.crm.oo"}, in: "a.test.crm.oo", want: "test.crm.oo", wantOkay: true},
-		{name: "skips a gap", listed: []string{"crm.oo"}, in: "a.test.crm.oo", want: "crm.oo", wantOkay: true},
-		{name: "none listed", listed: []string{"flowy.oo"}, in: "a.test.crm.oo", wantOkay: false},
-		{name: "not a label boundary", listed: []string{"rm.oo"}, in: "crm.oo", wantOkay: false},
-		{name: "itself is not its parent", listed: []string{"crm.oo"}, in: "crm.oo", wantOkay: false},
+		{name: "nearest listed suffix", listed: []string{"crm.test", "test.crm.test"}, in: "a.test.crm.test", want: "test.crm.test", wantOkay: true},
+		{name: "skips a gap", listed: []string{"crm.test"}, in: "a.test.crm.test", want: "crm.test", wantOkay: true},
+		{name: "none listed", listed: []string{"flowy.test"}, in: "a.test.crm.test", wantOkay: false},
+		{name: "not a label boundary", listed: []string{"rm.test"}, in: "crm.test", wantOkay: false},
+		{name: "itself is not its parent", listed: []string{"crm.test"}, in: "crm.test", wantOkay: false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -217,7 +241,7 @@ func TestNextFree(t *testing.T) {
 
 	full := make([]store.Domain, 0, store.OwnLast)
 	for i := store.OwnFirst; i <= store.OwnLast; i++ {
-		full = append(full, store.Domain{Name: fmt.Sprintf("p%d.oo", i), Address: store.OwnAddress(i)})
+		full = append(full, store.Domain{Name: fmt.Sprintf("p%d.test", i), Address: store.OwnAddress(i)})
 	}
 	tests := []struct {
 		name    string
@@ -237,7 +261,7 @@ func TestNextFree(t *testing.T) {
 			t.Parallel()
 			domains := tt.in
 			for i, a := range tt.used {
-				domains = append(domains, store.Domain{Name: fmt.Sprintf("d%d.oo", i), Address: a})
+				domains = append(domains, store.Domain{Name: fmt.Sprintf("d%d.test", i), Address: a})
 			}
 			got, err := store.NextFree(domains)
 			if !errors.Is(err, tt.wantErr) {
@@ -253,13 +277,13 @@ func TestNextFree(t *testing.T) {
 func TestSort(t *testing.T) {
 	t.Parallel()
 
-	in := domains("flowy.oo", "test.crm.oo", "a.api.crm.oo", "crm.oo", "api.crm.oo", "b.oo")
-	want := []string{"b.oo", "crm.oo", "api.crm.oo", "a.api.crm.oo", "test.crm.oo", "flowy.oo"}
+	in := domains("flowy.test", "test.crm.test", "a.api.crm.test", "crm.test", "api.crm.test", "b.test")
+	want := []string{"b.test", "crm.test", "api.crm.test", "a.api.crm.test", "test.crm.test", "flowy.test"}
 	got := names(store.Sort(in))
 	if !slices.Equal(got, want) {
 		t.Errorf("Sort = %q, want %q", got, want)
 	}
-	if names(in)[0] != "flowy.oo" {
+	if names(in)[0] != "flowy.test" {
 		t.Error("Sort changed its input")
 	}
 }
@@ -274,18 +298,18 @@ func TestValidate(t *testing.T) {
 	}{
 		{name: "empty", in: nil},
 		{name: "project and subdomains share", in: []store.Domain{
-			{Name: "crm.oo", Address: "127.0.1.1"},
-			{Name: "dashboard.crm.oo", Address: "127.0.1.1", Port: 3000},
+			{Name: "crm.test", Address: "127.0.1.1"},
+			{Name: "dashboard.crm.test", Address: "127.0.1.1", Port: 3000},
 		}},
-		{name: "bad entry named", in: []store.Domain{{Name: "X.oo", Address: "127.0.0.1"}}, wantErr: `"X.oo": name must be lowercase`},
+		{name: "bad entry named", in: []store.Domain{{Name: "X.test", Address: "127.0.0.1"}}, wantErr: `"X.test": name must be lowercase`},
 		{name: "duplicate", in: []store.Domain{
-			{Name: "crm.oo", Address: "127.0.1.1"},
-			{Name: "crm.oo", Address: "127.0.1.2"},
-		}, wantErr: `"crm.oo": crm.oo is already listed`},
+			{Name: "crm.test", Address: "127.0.1.1"},
+			{Name: "crm.test", Address: "127.0.1.2"},
+		}, wantErr: `"crm.test": crm.test is already listed`},
 		{name: "own address across projects", in: []store.Domain{
-			{Name: "crm.oo", Address: "127.0.1.1"},
-			{Name: "flowy.oo", Address: "127.0.1.1"},
-		}, wantErr: `"flowy.oo": 127.0.1.1 belongs to crm.oo`},
+			{Name: "crm.test", Address: "127.0.1.1"},
+			{Name: "flowy.test", Address: "127.0.1.1"},
+		}, wantErr: `"flowy.test": 127.0.1.1 belongs to crm.test`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -302,9 +326,9 @@ func TestAdd(t *testing.T) {
 	t.Parallel()
 
 	base := []store.Domain{
-		{Name: "crm.oo", Address: "127.0.1.1", Enabled: true},
-		{Name: "flowy.oo", Address: "127.0.1.3", Enabled: true},
-		{Name: "old.oo", Address: "127.0.0.1"},
+		{Name: "crm.test", Address: "127.0.1.1", Enabled: true},
+		{Name: "flowy.test", Address: "127.0.1.3", Enabled: true},
+		{Name: "old.test", Address: "127.0.0.1"},
 	}
 	tests := []struct {
 		name      string
@@ -312,14 +336,14 @@ func TestAdd(t *testing.T) {
 		wantField string
 		wantMsg   string
 	}{
-		{name: "subdomain shares its project's address", add: store.Domain{Name: "test.crm.oo", Address: "127.0.1.1"}},
-		{name: "subdomain takes its own address", add: store.Domain{Name: "test.crm.oo", Address: "127.0.1.4"}},
-		{name: "two share localhost", add: store.Domain{Name: "new.oo", Address: "127.0.0.1"}},
-		{name: "subdomain with a port", add: store.Domain{Name: "dashboard.crm.oo", Address: "127.0.1.1", Port: 3000}},
-		{name: "duplicate name", add: store.Domain{Name: "crm.oo", Address: "127.0.1.9"}, wantField: store.FieldName, wantMsg: "crm.oo is already listed"},
-		{name: "another project's address", add: store.Domain{Name: "web.oo", Address: "127.0.1.3"}, wantField: store.FieldAddress, wantMsg: "127.0.1.3 belongs to flowy.oo"},
-		{name: "subdomain of another project", add: store.Domain{Name: "api.web.oo", Address: "127.0.1.1"}, wantField: store.FieldAddress, wantMsg: "127.0.1.1 belongs to crm.oo"},
-		{name: "bad port", add: store.Domain{Name: "api.crm.oo", Address: "127.0.1.1", Port: 80}, wantField: store.FieldPort, wantMsg: "port 80 is where Caddy listens; use the app's own port"},
+		{name: "subdomain shares its project's address", add: store.Domain{Name: "test.crm.test", Address: "127.0.1.1"}},
+		{name: "subdomain takes its own address", add: store.Domain{Name: "test.crm.test", Address: "127.0.1.4"}},
+		{name: "two share localhost", add: store.Domain{Name: "new.test", Address: "127.0.0.1"}},
+		{name: "subdomain with a port", add: store.Domain{Name: "dashboard.crm.test", Address: "127.0.1.1", Port: 3000}},
+		{name: "duplicate name", add: store.Domain{Name: "crm.test", Address: "127.0.1.9"}, wantField: store.FieldName, wantMsg: "crm.test is already listed"},
+		{name: "another project's address", add: store.Domain{Name: "web.test", Address: "127.0.1.3"}, wantField: store.FieldAddress, wantMsg: "127.0.1.3 belongs to flowy.test"},
+		{name: "subdomain of another project", add: store.Domain{Name: "api.web.test", Address: "127.0.1.1"}, wantField: store.FieldAddress, wantMsg: "127.0.1.1 belongs to crm.test"},
+		{name: "bad port", add: store.Domain{Name: "api.crm.test", Address: "127.0.1.1", Port: 80}, wantField: store.FieldPort, wantMsg: "port 80 is where Caddy listens; use the app's own port"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -346,48 +370,48 @@ func TestUpdate(t *testing.T) {
 	t.Parallel()
 
 	base := []store.Domain{
-		{Name: "crm.oo", Address: "127.0.1.1", Enabled: true},
-		{Name: "test.crm.oo", Address: "127.0.1.1", Enabled: true},
-		{Name: "flowy.oo", Address: "127.0.1.3", Enabled: true},
+		{Name: "crm.test", Address: "127.0.1.1", Enabled: true},
+		{Name: "test.crm.test", Address: "127.0.1.1", Enabled: true},
+		{Name: "flowy.test", Address: "127.0.1.3", Enabled: true},
 	}
 
 	t.Run("moving a parent leaves subdomains", func(t *testing.T) {
 		t.Parallel()
-		got, err := store.Update(base, "crm.oo", store.Domain{Name: "crm.oo", Address: "127.0.1.5", Enabled: true})
+		got, err := store.Update(base, "crm.test", store.Domain{Name: "crm.test", Address: "127.0.1.5", Enabled: true})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if a := find(got, "test.crm.oo").Address; a != "127.0.1.1" {
-			t.Errorf("test.crm.oo moved to %s, want it left at 127.0.1.1", a)
+		if a := find(got, "test.crm.test").Address; a != "127.0.1.1" {
+			t.Errorf("test.crm.test moved to %s, want it left at 127.0.1.1", a)
 		}
-		if a := find(got, "crm.oo").Address; a != "127.0.1.5" {
-			t.Errorf("crm.oo at %s, want 127.0.1.5", a)
+		if a := find(got, "crm.test").Address; a != "127.0.1.5" {
+			t.Errorf("crm.test at %s, want 127.0.1.5", a)
 		}
 	})
 	t.Run("rename keeps the row count", func(t *testing.T) {
 		t.Parallel()
-		got, err := store.Update(base, "flowy.oo", store.Domain{Name: "flow.oo", Address: "127.0.1.3"})
+		got, err := store.Update(base, "flowy.test", store.Domain{Name: "flow.test", Address: "127.0.1.3"})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(got) != 3 || find(got, "flow.oo").Name == "" || find(got, "flowy.oo").Name != "" {
+		if len(got) != 3 || find(got, "flow.test").Name == "" || find(got, "flowy.test").Name != "" {
 			t.Errorf("Update = %q", names(got))
 		}
 	})
 	t.Run("keeping its own name is allowed", func(t *testing.T) {
 		t.Parallel()
-		if _, err := store.Update(base, "flowy.oo", store.Domain{Name: "flowy.oo", Address: "127.0.1.3", Port: 3000}); err != nil {
+		if _, err := store.Update(base, "flowy.test", store.Domain{Name: "flowy.test", Address: "127.0.1.3", Port: 3000}); err != nil {
 			t.Fatal(err)
 		}
 	})
 	t.Run("renaming onto another row", func(t *testing.T) {
 		t.Parallel()
-		_, err := store.Update(base, "flowy.oo", store.Domain{Name: "crm.oo", Address: "127.0.1.3"})
-		assertFieldErr(t, err, store.FieldName, "crm.oo is already listed")
+		_, err := store.Update(base, "flowy.test", store.Domain{Name: "crm.test", Address: "127.0.1.3"})
+		assertFieldErr(t, err, store.FieldName, "crm.test is already listed")
 	})
 	t.Run("missing row", func(t *testing.T) {
 		t.Parallel()
-		if _, err := store.Update(base, "nope.oo", store.Domain{Name: "nope.oo", Address: "127.0.0.1"}); errString(err) != "nope.oo is not listed" {
+		if _, err := store.Update(base, "nope.test", store.Domain{Name: "nope.test", Address: "127.0.0.1"}); errString(err) != "nope.test is not listed" {
 			t.Errorf("err = %v", err)
 		}
 	})
@@ -397,39 +421,79 @@ func TestRemove(t *testing.T) {
 	t.Parallel()
 
 	base := []store.Domain{
-		{Name: "crm.oo", Address: "127.0.1.1"},
-		{Name: "flowy.oo", Address: "127.0.1.2"},
+		{Name: "crm.test", Address: "127.0.1.1"},
+		{Name: "flowy.test", Address: "127.0.1.2"},
 	}
-	got, err := store.Remove(base, "crm.oo")
+	got, err := store.Remove(base, "crm.test")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(names(got), []string{"flowy.oo"}) {
+	if !slices.Equal(names(got), []string{"flowy.test"}) {
 		t.Errorf("Remove = %q", names(got))
 	}
 	if free, _ := store.NextFree(got); free != "127.0.1.1" {
 		t.Errorf("NextFree after Remove = %s, want the freed 127.0.1.1", free)
 	}
-	if len(base) != 2 || base[0].Name != "crm.oo" {
+	if len(base) != 2 || base[0].Name != "crm.test" {
 		t.Error("Remove changed its input")
 	}
-	if _, err := store.Remove(base, "nope.oo"); err == nil {
+	if _, err := store.Remove(base, "nope.test"); err == nil {
 		t.Error("Remove of a missing row: err = nil")
+	}
+}
+
+func TestRemove_Subdomains(t *testing.T) {
+	t.Parallel()
+
+	base := []store.Domain{
+		{Name: "crm.test", Address: "127.0.1.1"},
+		{Name: "dashboard.crm.test", Address: "127.0.1.1", Port: 3000},
+		{Name: "v1.dashboard.crm.test", Address: "127.0.1.1"},
+		{Name: "xcrm.test", Address: "127.0.1.2"},
+		{Name: "flowy.test", Address: "127.0.1.3"},
+	}
+	tests := []struct {
+		name      string
+		remove    string
+		want      []string
+		wantUnder []string
+	}{
+		{name: "a project and every name under it", remove: "crm.test", want: []string{"xcrm.test", "flowy.test"}, wantUnder: []string{"dashboard.crm.test", "v1.dashboard.crm.test"}},
+		{name: "a subdomain and its own", remove: "dashboard.crm.test", want: []string{"crm.test", "xcrm.test", "flowy.test"}, wantUnder: []string{"v1.dashboard.crm.test"}},
+		{name: "a name with none", remove: "flowy.test", want: []string{"crm.test", "dashboard.crm.test", "v1.dashboard.crm.test", "xcrm.test"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := names(store.Under(base, tt.remove)); !slices.Equal(got, tt.wantUnder) {
+				t.Errorf("Under = %q, want %q", got, tt.wantUnder)
+			}
+			got, err := store.Remove(base, tt.remove)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !slices.Equal(names(got), tt.want) {
+				t.Errorf("Remove = %q, want %q", names(got), tt.want)
+			}
+		})
+	}
+	if len(base) != 5 {
+		t.Error("Remove changed its input")
 	}
 }
 
 func TestToggle(t *testing.T) {
 	t.Parallel()
 
-	base := []store.Domain{{Name: "crm.oo", Address: "127.0.1.1", Enabled: true}}
-	got, err := store.Toggle(base, "crm.oo")
+	base := []store.Domain{{Name: "crm.test", Address: "127.0.1.1", Enabled: true}}
+	got, err := store.Toggle(base, "crm.test")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got[0].Enabled || !base[0].Enabled {
 		t.Errorf("Toggle: got enabled=%v, input enabled=%v; want false, true", got[0].Enabled, base[0].Enabled)
 	}
-	if _, err := store.Toggle(base, "nope.oo"); err == nil {
+	if _, err := store.Toggle(base, "nope.test"); err == nil {
 		t.Error("Toggle of a missing row: err = nil")
 	}
 }
@@ -444,11 +508,12 @@ func TestLoad(t *testing.T) {
 		wantErrs string // substring
 	}{
 		{name: "missing file is empty", content: nil, want: nil},
-		{name: "sorted on load", content: ptr(`{"version":1,"domains":[{"name":"flowy.oo","address":"127.0.1.3","enabled":true},{"name":"crm.oo","address":"127.0.1.1","enabled":false}]}`), want: []string{"crm.oo", "flowy.oo"}},
+		{name: "sorted on load", content: ptr(`{"version":1,"domains":[{"name":"flowy.test","address":"127.0.1.3","enabled":true},{"name":"crm.test","address":"127.0.1.1","enabled":false}]}`), want: []string{"crm.test", "flowy.test"}},
 		{name: "bad json", content: ptr(`{`), wantErrs: "parse "},
-		{name: "unknown field", content: ptr(`{"version":1,"domains":[{"name":"crm.oo","addr":"127.0.1.1"}]}`), wantErrs: `unknown field "addr"`},
-		{name: "wrong version", content: ptr(`{"version":2,"domains":[]}`), wantErrs: "format version 2, this oo reads version 1"},
-		{name: "invalid domain", content: ptr(`{"version":1,"domains":[{"name":"crm.com","address":"127.0.1.1","enabled":true}]}`), wantErrs: `"crm.com": name must end in .oo`},
+		{name: "unknown field", content: ptr(`{"version":1,"domains":[{"name":"crm.test","addr":"127.0.1.1"}]}`), wantErrs: `unknown field "addr"`},
+		{name: "wrong version", content: ptr(`{"version":2,"domains":[]}`), wantErrs: "format version 2, this lodo reads version 1"},
+		{name: "invalid domain", content: ptr(`{"version":1,"domains":[{"name":"crm.com","address":"127.0.1.1","enabled":true}]}`), wantErrs: `"crm.com": name must end in .test`},
+		{name: "relative compose path", content: ptr(`{"version":1,"domains":[{"name":"crm.test","address":"127.0.1.1","compose":"compose.yml"}]}`), wantErrs: `"crm.test": compose file must be an absolute path`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -484,9 +549,9 @@ func TestSave(t *testing.T) {
 		dir := t.TempDir()
 		path := filepath.Join(dir, "nested", "domains.json")
 		in := []store.Domain{
-			{Name: "test.crm.oo", Address: "127.0.1.1", Port: 3000, Enabled: true},
-			{Name: "crm.oo", Address: "127.0.1.1", Enabled: true},
-			{Name: "old.oo", Address: "127.0.0.1"},
+			{Name: "test.crm.test", Address: "127.0.1.1", Port: 3000, Enabled: true},
+			{Name: "crm.test", Address: "127.0.1.1", Enabled: true, Compose: "/Users/me/Projects/crm/compose.dev.yml"},
+			{Name: "old.test", Address: "127.0.0.1", Compose: store.NoCompose},
 		}
 		if err := store.Save(path, in); err != nil {
 			t.Fatal(err)
@@ -504,6 +569,9 @@ func TestSave(t *testing.T) {
 		}
 		if strings.Count(string(raw), `"port"`) != 1 {
 			t.Errorf("port written for rows without one:\n%s", raw)
+		}
+		if strings.Count(string(raw), `"compose"`) != 2 {
+			t.Errorf("compose written for rows without one:\n%s", raw)
 		}
 		entries, err := os.ReadDir(filepath.Dir(path))
 		if err != nil {
