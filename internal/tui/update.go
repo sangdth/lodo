@@ -273,18 +273,27 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 	return m.start(cmp.Or(m.form.editing, d.Name), cmd)
 }
 
-// neighbor returns the name the cursor goes to once name is deleted: the
-// next one, or the one before when name is last. It is empty when name is
-// the only one, so the cursor lands on the add row.
-func neighbor(domains []store.Domain, name string) string {
-	i := slices.IndexFunc(domains, func(d store.Domain) bool { return d.Name == name })
-	switch {
-	case i < 0:
+// neighbor returns the name the cursor goes to once name is deleted, with the
+// names under it: the next name left in after, or the one before when none
+// follows. It is empty when nothing is left, so the cursor lands on the add
+// row.
+func neighbor(before, after []store.Domain, name string) string {
+	left := func(d store.Domain) bool {
+		return slices.ContainsFunc(after, func(a store.Domain) bool { return a.Name == d.Name })
+	}
+	i := slices.IndexFunc(before, func(d store.Domain) bool { return d.Name == name })
+	if i < 0 {
 		return ""
-	case i+1 < len(domains):
-		return domains[i+1].Name
-	case i > 0:
-		return domains[i-1].Name
+	}
+	for _, d := range before[i+1:] {
+		if left(d) {
+			return d.Name
+		}
+	}
+	for j := i - 1; j >= 0; j-- {
+		if left(before[j]) {
+			return before[j].Name
+		}
 	}
 	return ""
 }
@@ -314,6 +323,6 @@ func (m Model) confirmKey(k string) (tea.Model, tea.Cmd) {
 		m.err = err
 		return m, nil
 	}
-	m.selectName = neighbor(m.domains, m.target)
+	m.selectName = neighbor(m.domains, next, m.target)
 	return m.start(m.target, m.change(next))
 }

@@ -290,6 +290,55 @@ func TestModel_RowsIndentTheMark(t *testing.T) {
 	}
 }
 
+// lastProject ends with a project and its subdomain.
+var lastProject = []store.Domain{
+	{Name: "aaa.oo", Address: "127.0.1.2", Enabled: true},
+	{Name: "crm.oo", Address: "127.0.1.1", Enabled: true},
+	{Name: "dashboard.crm.oo", Address: "127.0.1.1", Port: 3000, Enabled: true},
+}
+
+func TestDelete_TakesItsSubdomains(t *testing.T) {
+	t.Parallel()
+
+	many := append(slices.Clone(sample), store.Domain{Name: "api.crm.oo", Address: "127.0.1.1", Enabled: true})
+	tests := []struct {
+		name     string
+		domains  []store.Domain
+		downs    int
+		wantAsk  string
+		wantLeft []string
+	}{
+		{name: "one subdomain, named", domains: sample, wantAsk: "delete crm.oo and dashboard.crm.oo? y/N", wantLeft: []string{"flowy.oo", "old.oo"}},
+		{name: "several, counted", domains: many, wantAsk: "delete crm.oo and its 2 subdomains? y/N", wantLeft: []string{"flowy.oo", "old.oo"}},
+		{name: "a subdomain alone", domains: sample, downs: 1, wantAsk: "delete dashboard.crm.oo? y/N", wantLeft: []string{"crm.oo", "flowy.oo", "old.oo"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			b := &fakeBackend{}
+			m := ready(b, tt.domains)
+			for range tt.downs {
+				m = send(m, "down")
+			}
+			m = send(m, "d")
+			if got := strings.TrimSpace(ansi.Strip(m.statusLine())); got != tt.wantAsk {
+				t.Errorf("question = %q, want %q", got, tt.wantAsk)
+			}
+			send(m, "y")
+			if len(b.saved) != 1 {
+				t.Fatalf("saved %d lists, want 1", len(b.saved))
+			}
+			var left []string
+			for _, d := range b.saved[0] {
+				left = append(left, d.Name)
+			}
+			if !slices.Equal(left, tt.wantLeft) {
+				t.Errorf("left %q, want %q", left, tt.wantLeft)
+			}
+		})
+	}
+}
+
 func TestModel_DeleteMovesToANeighbor(t *testing.T) {
 	t.Parallel()
 
@@ -302,6 +351,8 @@ func TestModel_DeleteMovesToANeighbor(t *testing.T) {
 		{name: "a middle name", domains: sample, downs: 1, want: "flowy.oo"},
 		{name: "the last name", domains: sample, downs: 3, want: "flowy.oo"},
 		{name: "the only name", domains: sample[2:3], want: ""},
+		{name: "a project with its subdomain: past them", domains: sample, downs: 0, want: "flowy.oo"},
+		{name: "the last project with its subdomain: back up", domains: lastProject, downs: 1, want: "aaa.oo"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

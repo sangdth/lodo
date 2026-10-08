@@ -330,7 +330,7 @@ func (m Model) statusLine() string {
 	line := ""
 	switch {
 	case m.mode == modeConfirm:
-		line = m.styles.title.Render("delete " + m.target + "? y/N")
+		line = m.styles.title.Render(m.deleteQuestion())
 	case m.mode == modeAsk && m.question.listed:
 		line = m.styles.title.Render("use " + m.question.rel + " for " + m.question.name + "? Y/n")
 	case m.mode == modeAsk:
@@ -343,6 +343,19 @@ func (m Model) statusLine() string {
 		line = m.problem()
 	}
 	return ansi.Truncate(" "+line, m.innerWidth(), "…")
+}
+
+// deleteQuestion asks before a delete and names what goes with the target:
+// every name under it.
+func (m Model) deleteQuestion() string {
+	switch under := store.Under(m.domains, m.target); len(under) {
+	case 0:
+		return "delete " + m.target + "? y/N"
+	case 1:
+		return "delete " + m.target + " and " + under[0].Name + "? y/N"
+	default:
+		return "delete " + m.target + " and its " + strconv.Itoa(len(under)) + " subdomains? y/N"
+	}
 }
 
 func (m Model) problem() string {

@@ -271,7 +271,8 @@ A failure at any step shows in the status line. The saved file stays as written;
 - **Spinner:** while a change runs, the changed row's mark spins, whether the name is on or off; the first
   check and `r` spin every enabled row. A name being added is listed at once with the spinner, and goes away
   if the save fails.
-- **Delete:** `d` asks `delete flowy.oo? y/N` in the status line; only `y` deletes.
+- **Delete:** `d` asks `delete flowy.oo? y/N` in the status line; only `y` deletes. A name's subdomains go with
+  it, at any depth, and the question names them: `delete crm.oo and its 2 subdomains? y/N`.
 - **Link** (`c`): the name gets the compose file of the project oo started in, or keeps its own outside one, and
   `DOCKER_HOST_IP=<address>` goes into the `.env` that file runs with: the one a `package.json` script passes
   with `--env-file`, else the project root's (`compose.EnvFile`, `compose.SetEnv`). A `.env` git tracks is

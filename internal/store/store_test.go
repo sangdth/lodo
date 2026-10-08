@@ -442,6 +442,46 @@ func TestRemove(t *testing.T) {
 	}
 }
 
+func TestRemove_Subdomains(t *testing.T) {
+	t.Parallel()
+
+	base := []store.Domain{
+		{Name: "crm.oo", Address: "127.0.1.1"},
+		{Name: "dashboard.crm.oo", Address: "127.0.1.1", Port: 3000},
+		{Name: "v1.dashboard.crm.oo", Address: "127.0.1.1"},
+		{Name: "xcrm.oo", Address: "127.0.1.2"},
+		{Name: "flowy.oo", Address: "127.0.1.3"},
+	}
+	tests := []struct {
+		name      string
+		remove    string
+		want      []string
+		wantUnder []string
+	}{
+		{name: "a project and every name under it", remove: "crm.oo", want: []string{"xcrm.oo", "flowy.oo"}, wantUnder: []string{"dashboard.crm.oo", "v1.dashboard.crm.oo"}},
+		{name: "a subdomain and its own", remove: "dashboard.crm.oo", want: []string{"crm.oo", "xcrm.oo", "flowy.oo"}, wantUnder: []string{"v1.dashboard.crm.oo"}},
+		{name: "a name with none", remove: "flowy.oo", want: []string{"crm.oo", "dashboard.crm.oo", "v1.dashboard.crm.oo", "xcrm.oo"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := names(store.Under(base, tt.remove)); !slices.Equal(got, tt.wantUnder) {
+				t.Errorf("Under = %q, want %q", got, tt.wantUnder)
+			}
+			got, err := store.Remove(base, tt.remove)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !slices.Equal(names(got), tt.want) {
+				t.Errorf("Remove = %q, want %q", names(got), tt.want)
+			}
+		})
+	}
+	if len(base) != 5 {
+		t.Error("Remove changed its input")
+	}
+}
+
 func TestToggle(t *testing.T) {
 	t.Parallel()
 

@@ -299,13 +299,27 @@ func Update(domains []Domain, name string, d Domain) ([]Domain, error) {
 	return Sort(append(others, d)), nil
 }
 
-// Remove returns the list without the domain called name.
+// Remove returns the list without the domain called name and the domains
+// under it: a name's subdomains go with it.
 func Remove(domains []Domain, name string) ([]Domain, error) {
-	i := slices.IndexFunc(domains, func(x Domain) bool { return x.Name == name })
-	if i < 0 {
+	if !slices.ContainsFunc(domains, func(x Domain) bool { return x.Name == name }) {
 		return nil, fmt.Errorf("%s is not listed", name)
 	}
-	return slices.Delete(slices.Clone(domains), i, i+1), nil
+	return slices.DeleteFunc(slices.Clone(domains), func(x Domain) bool {
+		return x.Name == name || strings.HasSuffix(x.Name, "."+name)
+	}), nil
+}
+
+// Under returns the domains listed under name, at any depth: dashboard.crm.oo
+// and v1.api.crm.oo under crm.oo.
+func Under(domains []Domain, name string) []Domain {
+	var under []Domain
+	for _, d := range domains {
+		if strings.HasSuffix(d.Name, "."+name) {
+			under = append(under, d)
+		}
+	}
+	return under
 }
 
 // Toggle returns the list with the domain called name switched on or off.

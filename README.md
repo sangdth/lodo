@@ -83,7 +83,7 @@ name. The status line at the bottom, above the key help, says what failed, or wh
 | `a`         | add a subdomain of the selected name             |
 | `A`         | add a name; also `enter` on `Add new domain`     |
 | `e`         | edit the selected name                           |
-| `d`         | delete it; `y` confirms, any other key keeps it  |
+| `d`         | delete it and its subdomains; `y` confirms       |
 | `space`     | turn it on or off                                |
 | `c`         | link it to the project's compose file and `.env` |
 | `p`         | preview the compose file, as oo would change it  |
