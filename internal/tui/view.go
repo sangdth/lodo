@@ -157,7 +157,7 @@ func (m Model) innerWidth() int {
 // bodyHeight is the lines the table gets: its header, one per name and the
 // add row, at most the log's lines.
 func (m Model) bodyHeight() int {
-	return min(len(m.domains)+2, m.logHeight())
+	return min(len(m.listed())+2, m.logHeight())
 }
 
 // logHeight is the most lines the body gets: the border takes two, and the
@@ -169,8 +169,9 @@ func (m Model) logHeight() int {
 // rows renders one table row per domain, its mark indented with its name,
 // and the add row last: dim, unless the cursor is on it.
 func (m Model) rows() []table.Row {
-	rows := make([]table.Row, len(m.domains), len(m.domains)+1)
-	for i, d := range m.domains {
+	listed := m.listed()
+	rows := make([]table.Row, len(listed), len(listed)+1)
+	for i, d := range listed {
 		mark := "○"
 		switch {
 		case m.spins(d):

@@ -31,8 +31,8 @@ var fieldIndex = map[string]int{
 	store.FieldPort:    fieldPort,
 }
 
-// form adds a domain, a subdomain of parent when it is set, or edits one when
-// editing names it.
+// form adds a domain, or edits one when editing names it; with parent set,
+// the name is a subdomain of parent and stays one.
 type form struct {
 	editing        string
 	parent         string       // the name a new subdomain goes under
@@ -58,10 +58,15 @@ func newAddForm(domains []store.Domain, parent string) form {
 	return f
 }
 
-// newEditForm opens a form holding d. Its address stays as typed.
+// newEditForm opens a form holding d. Its address stays as typed. A
+// subdomain keeps its parent: only the labels before .<parent> are typed.
 func newEditForm(domains []store.Domain, d store.Domain) form {
-	f := form{editing: d.Name, original: d, suffix: tldSuffix, inputs: newInputs(tldSuffix), addressTouched: true}
-	f.inputs[fieldName].SetValue(strings.TrimSuffix(d.Name, tldSuffix))
+	f := form{editing: d.Name, original: d, suffix: tldSuffix, addressTouched: true}
+	if parent, ok := store.Parent(domains, d.Name); ok {
+		f.parent, f.suffix = parent.Name, "."+parent.Name
+	}
+	f.inputs = newInputs(f.suffix)
+	f.inputs[fieldName].SetValue(strings.TrimSuffix(d.Name, f.suffix))
 	f.inputs[fieldAddress].SetValue(d.Address)
 	if d.Port > 0 {
 		f.inputs[fieldPort].SetValue(strconv.Itoa(d.Port))

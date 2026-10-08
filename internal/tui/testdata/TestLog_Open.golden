@@ -4,8 +4,8 @@
 [90m│[m [1moo[m   caddy [32m●[m   dnsmasq [32m●[m   loopback [32m●[m   resolvers [32m●[m                          [90m│[m
 [90m│[m[90m──────────────────────────────────────────────────────────────────────────────[m[90m│[m
 [90m│[m [1mdnsmasq query log[m                                                            [90m│[m
-[90m│[mOct  8 18:27:22 dnsmasq[52611]: query[A] crm.oo from 127.0.0.1                [90m│[m
-[90m│[mOct  8 18:27:22 dnsmasq[52611]: config crm.oo is 127.0.1.1                    [90m│[m
+[90m│[m Oct  8 18:27:22 dnsmasq[52611]: query[A] crm.oo from 127.0.0.1               [90m│[m
+[90m│[m Oct  8 18:27:22 dnsmasq[52611]: config crm.oo is 127.0.1.1                   [90m│[m
 [90m│[m                                                                              [90m│[m
 [90m│[m                                                                              [90m│[m
 [90m│[m                                                                              [90m│[m

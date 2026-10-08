@@ -251,6 +251,24 @@ func TestForm_Subdomain(t *testing.T) {
 	}
 }
 
+func TestForm_EditKeepsTheParent(t *testing.T) {
+	t.Parallel()
+
+	b := &fakeBackend{}
+	m := send(send(ready(b, sample), "down"), "e") // dashboard.crm.oo
+	if got := ansi.Strip(m.nameInput()); got != "dashboard .crm.oo" {
+		t.Errorf("name field = %q, want the label and the locked parent", got)
+	}
+	if !strings.Contains(ansi.Strip(m.formView()), "Edit dashboard.crm.oo") {
+		t.Error("the title does not name the edited domain")
+	}
+	m = send(typeText(clearField(m), "admin"), "enter")
+	want := store.Domain{Name: "admin.crm.oo", Address: "127.0.1.1", Port: 3000, Enabled: true}
+	if len(b.saved) != 1 || !slices.Contains(b.saved[0], want) || slices.ContainsFunc(b.saved[0], func(d store.Domain) bool { return d.Name == "dashboard.crm.oo" }) {
+		t.Errorf("saved %v, want dashboard.crm.oo renamed to %+v; form errors %q", b.saved, want, m.form.errs)
+	}
+}
+
 func TestForm_EscCancels(t *testing.T) {
 	t.Parallel()
 

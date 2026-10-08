@@ -60,8 +60,9 @@ type Check struct {
 
 // The fixes most checks print.
 const (
-	fixSetup = "oo setup"
-	fixApply = "oo apply"
+	fixSetup     = "oo setup"
+	fixApply     = "oo apply"
+	fixDnsmasqOn = "turn dnsmasq on: brew services start dnsmasq, or tab and space in oo"
 )
 
 // doctorChecks are the eight checks, in ID order. Each gets the whole domain
@@ -109,6 +110,10 @@ func (e Env) run(ctx context.Context, domains []store.Domain, results []Result, 
 	for i, c := range doctorChecks[:n] {
 		checks[i] = c.run(e, ctx, domains, results)
 		checks[i].ID, checks[i].Name = i+1, c.name
+	}
+	// With dnsmasq turned off no name resolves, and oo apply leaves it off.
+	if n >= 7 && checks[0].Off && !checks[6].OK {
+		checks[6].Fix = fixDnsmasqOn
 	}
 	return checks
 }

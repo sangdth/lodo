@@ -262,14 +262,15 @@ A failure at any step shows in the status line. The saved file stays as written;
   `A` opens the add form from anywhere; `a` on a name opens it for a subdomain of that name.
 - **Form:** three `textinput`s. The name field takes the labels only; a dimmed suffix that can't be edited
   follows it: `.oo`, or `.demo.oo` for a subdomain of `demo.oo`. A suffix typed anyway is not doubled. Edit
-  keeps `.oo` as the suffix, so a subdomain can move to another parent. Add prefills the address while you type the name: the parent's address when
+  locks a subdomain's parent the same way; moving it to another parent means delete and add. Add prefills the address while you type the name: the parent's address when
   the name is a subdomain of a listed name, else the lowest free own address (`127.0.0.1`, with a note, when
   all 50 are taken). The hint names the next free own address so a subdomain can get its own. Typing in the
   address field stops the prefill. Port is optional; a port when `caddy` isn't installed says
   `brew install caddy`, then `oo setup`. Edit prefills the stored values. Validation errors show under the
   field.
 - **Spinner:** while a change runs, the changed row's mark spins, whether the name is on or off; the first
-  check and `r` spin every enabled row.
+  check and `r` spin every enabled row. A name being added is listed at once with the spinner, and goes away
+  if the save fails.
 - **Delete:** `d` asks `delete flowy.oo? y/N` in the status line; only `y` deletes.
 - **Copy env** puts `DOCKER_HOST_IP=127.0.1.3` on the clipboard (`pbcopy`).
 - **Log:** a `viewport` tailing `dnsmasq.log`, polled every 500 ms; `g` or `esc` returns.
@@ -329,6 +330,8 @@ A failure at any step shows in the status line. The saved file stays as written;
 |     | --json` running; Homebrew's `Caddyfile` holds oo's import line;                   | caddy`, `oo setup`  |
 |     | `caddy validate` passes on oo's file; port 80 belongs to Caddy, else `lsof -nP    |                      |
 |     | -iTCP:80 -sTCP:LISTEN` names the listener                                          |                      |
+
+With dnsmasq turned off, check 7 prints "turn dnsmasq on" instead of `oo apply`, which leaves it off.
 
 "Content current" compares the installed script with the one this build of oo renders, so an upgraded oo
 asks for `oo setup` again. `oo` starts the TUI when checks 1–5 pass; a failing check 8 only turns the status

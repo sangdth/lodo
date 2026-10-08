@@ -345,10 +345,18 @@ func TestModel_CursorMovedDuringAChangeStays(t *testing.T) {
 		{
 			name: "add above the row moved to",
 			start: func(m Model) (tea.Model, tea.Cmd) {
-				return typeText(send(m, "a"), "api").Update(press("enter")) // api.crm.oo lands right under crm.oo
+				return typeText(send(m, "a"), "api").Update(press("enter")) // api.crm.oo is listed right under crm.oo
 			},
-			moves: []string{"down", "down"},
+			moves: []string{"down", "down", "down"},
 			want:  "flowy.oo",
+		},
+		{
+			name: "move onto the name being added",
+			start: func(m Model) (tea.Model, tea.Cmd) {
+				return typeText(send(m, "a"), "api").Update(press("enter"))
+			},
+			moves: []string{"down", "down", "up"},
+			want:  "api.crm.oo",
 		},
 		{
 			name: "add, no move",
@@ -383,6 +391,39 @@ func TestModel_CursorMovedDuringAChangeStays(t *testing.T) {
 				t.Errorf("cursor on %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestModel_AddingShowsTheRowAtOnce(t *testing.T) {
+	t.Parallel()
+
+	m := send(ready(&fakeBackend{}, sample), "a") // a subdomain of crm.oo
+	next, cmd := typeText(m, "api").Update(press("enter"))
+	m = next.(Model)
+	rows := m.table.Rows()
+	if len(rows) != len(sample)+2 || rows[1][0] != "  "+m.spinner.View()+" api.crm.oo" {
+		t.Fatalf("rows while saving = %q, want api.crm.oo under crm.oo with the spinner", rows)
+	}
+	if got := m.table.Height(); got != len(sample)+2 {
+		t.Errorf("table shows %d rows, want room for the new one", got)
+	}
+	m = settle(m, cmd)
+	if m.adding.Name != "" || len(m.table.Rows()) != len(sample)+2 || m.table.Rows()[1][0] != "  ● api.crm.oo" {
+		t.Errorf("rows after saving = %q, adding %q; want the saved row once", m.table.Rows(), m.adding.Name)
+	}
+}
+
+func TestModel_AddingRowGoesWhenTheSaveFails(t *testing.T) {
+	t.Parallel()
+
+	b := &fakeBackend{saveErr: errors.New("write domains.json: permission denied")}
+	m := typeText(send(ready(b, sample), "A"), "web")
+	m = send(m, "enter")
+	if m.err == nil || m.adding.Name != "" || len(m.table.Rows()) != len(sample)+1 {
+		t.Errorf("err %v, adding %q, %d rows; want the error and the row gone", m.err, m.adding.Name, len(m.table.Rows()))
+	}
+	if got := m.table.Height(); got != len(sample)+1 {
+		t.Errorf("table shows %d rows after the failed save, want %d", got, len(sample)+1)
 	}
 }
 

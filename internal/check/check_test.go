@@ -469,6 +469,15 @@ func TestEnv_Run_NamesResolve(t *testing.T) {
 			want: namesCheck.fail("crm.oo: macOS: 127.0.1.9, want 127.0.1.1", "oo apply"),
 		},
 		{
+			name: "dnsmasq turned off",
+			change: func(_ *testing.T, m *mac) {
+				m.fake.Set(brewInfo(m.p, "dnsmasq"), brewOffJSON("dnsmasq"))
+				m.fake.Set(dscacheutil(m.p, "crm.oo"), macOSOutput("crm.oo", "127.0.1.9"))
+			},
+			want: namesCheck.fail("crm.oo: macOS: 127.0.1.9, want 127.0.1.1",
+				"turn dnsmasq on: brew services start dnsmasq, or tab and space in oo"),
+		},
+		{
 			name: "caddy cannot reach an app",
 			change: func(t *testing.T, m *mac) {
 				t.Helper()

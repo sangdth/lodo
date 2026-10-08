@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"time"
 
@@ -44,10 +45,11 @@ type Model struct {
 
 	mode       mode
 	form       form
-	target     string // the name a delete waits on
-	note       string // a short message, such as what copy env copied
-	selectName string // the name to put the cursor on once a change lands
-	startedOn  string // the name under the cursor when the change started; empty on the add row
+	target     string       // the name a delete waits on
+	note       string       // a short message, such as what copy env copied
+	selectName string       // the name to put the cursor on once a change lands
+	startedOn  string       // the name under the cursor when the change started; empty on the add row
+	adding     store.Domain // the name being added, listed with the spinner until it is saved; Name is empty otherwise
 
 	domains []store.Domain          // in store.Sort order, as the table shows them
 	checks  []check.Check           // the last doctor run; nil until the first one finishes
@@ -232,7 +234,11 @@ func (m *Model) appendLog(text string, offset int64) {
 	if extra := len(m.logLines) - maxLogLines; extra > 0 {
 		m.logLines = m.logLines[extra:]
 	}
-	m.log.SetContentLines(m.logLines)
+	padded := make([]string, len(m.logLines))
+	for i, line := range m.logLines {
+		padded[i] = " " + line // the same margin as the log's title
+	}
+	m.log.SetContentLines(padded)
 	if follow {
 		m.log.GotoBottom()
 	}
@@ -243,6 +249,7 @@ func (m *Model) appendLog(text string, offset int64) {
 func (m Model) start(name string, cmd tea.Cmd) (Model, tea.Cmd) {
 	m.busy, m.pending, m.err = true, name, nil
 	m.startedOn = m.cursorName()
+	m.table.SetHeight(m.bodyHeight()) // a name being added takes a row
 	m.table.SetRows(m.rows())
 	return m, tea.Batch(cmd, m.spinner.Tick)
 }
@@ -271,14 +278,14 @@ func (m *Model) placeCursor(here string) {
 	}
 	m.selectName, m.startedOn = "", ""
 	if want == "" {
-		m.table.SetCursor(len(m.domains)) // the add row
+		m.table.SetCursor(len(m.listed())) // the add row
 	}
-	for i, d := range m.domains {
+	for i, d := range m.listed() {
 		if d.Name == want {
 			m.table.SetCursor(i)
 		}
 	}
-	if last := len(m.domains); m.table.Cursor() > last {
+	if last := len(m.listed()); m.table.Cursor() > last {
 		m.table.SetCursor(last) // the add row
 	}
 }
@@ -291,14 +298,24 @@ func (m Model) cursorName() string {
 
 // onAddRow reports whether the cursor is on the add row, after the names.
 func (m Model) onAddRow() bool {
-	return m.table.Cursor() >= len(m.domains)
+	return m.table.Cursor() >= len(m.listed())
+}
+
+// listed is what the rows show: the names, and the one being added while it
+// saves. The cursor counts rows in this list.
+func (m Model) listed() []store.Domain {
+	if m.adding.Name == "" {
+		return m.domains
+	}
+	return store.Sort(append(slices.Clone(m.domains), m.adding))
 }
 
 // selected returns the domain under the cursor; none on the add row.
 func (m Model) selected() (store.Domain, bool) {
+	listed := m.listed()
 	i := m.table.Cursor()
-	if i < 0 || i >= len(m.domains) {
+	if i < 0 || i >= len(listed) {
 		return store.Domain{}, false
 	}
-	return m.domains[i], true
+	return listed[i], true
 }

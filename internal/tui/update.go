@@ -25,12 +25,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case changedMsg:
 		m.busy, m.err = false, msg.err
+		here := m.cursorName() // before the rows change under the cursor
+		m.adding = store.Domain{}
 		if msg.stored {
-			here := m.cursorName() // before the rows change under the cursor
 			m.domains = store.Sort(msg.domains)
 			m.setReport(msg.checks, msg.results, here)
 		} else {
-			m.selectName, m.startedOn = "", "" // nothing changed, so the cursor stays put
+			m.placeCursor(here) // nothing was saved: a name being added goes away
+			m.table.SetHeight(m.bodyHeight())
 		}
 		m.table.SetRows(m.rows()) // the spinner leaves the rows
 		return m, nil
@@ -230,6 +232,9 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.mode, m.selectName = modeList, d.Name
+	if m.form.editing == "" {
+		m.adding = d
+	}
 	return m.start(cmp.Or(m.form.editing, d.Name), m.change(next))
 }
 
