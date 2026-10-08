@@ -204,6 +204,7 @@ func TestEnv_Probe(t *testing.T) {
 			name:      "nothing listens on the HTTP port",
 			domains:   []store.Domain{dashboard},
 			caddyDown: true,
+			timeout:   300 * time.Millisecond,
 			want: []check.Result{{
 				Name: "dashboard.crm.local", Address: "127.0.0.1", Port: 3000, Direct: true, System: true,
 				Detail: "nothing answers on 127.0.0.1:{port}: is Caddy running?",
@@ -320,6 +321,37 @@ func TestEnv_Probe_RetriesWhileDnsmasqStarts(t *testing.T) {
 	got := e.Probe(t.Context(), []store.Domain{crm})
 	if len(got) != 1 || !got[0].Direct {
 		t.Errorf("Probe = %+v, want dnsmasq's late answer accepted", got)
+	}
+}
+
+// TestEnv_Probe_RetriesWhileCaddyStarts starts the stand-in for Caddy only
+// after the probe's first connection was refused, as after a Caddy restart.
+func TestEnv_Probe_RetriesWhileCaddyStarts(t *testing.T) {
+	t.Parallel()
+
+	e, fake := newProbeEnv(t)
+	e.DNS = startDNS(t, fromMap(map[string]string{dashboard.Name: dashboard.Address}))
+	fake.Set(dscacheutil(e.Paths, dashboard.Name), macOSOutput(dashboard.Name, dashboard.Address))
+	port := closedTCP(t)
+	e.HTTPPort = port
+	started := make(chan struct{})
+	go func() {
+		defer close(started)
+		time.Sleep(300 * time.Millisecond)
+		l, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
+		if err != nil {
+			t.Errorf("listen on the reserved port: %v", err)
+			return
+		}
+		srv := &httptest.Server{Listener: l, Config: &http.Server{Handler: respond(http.StatusOK, "Via", "1.1 Caddy")}}
+		srv.Start()
+		t.Cleanup(srv.Close)
+	}()
+
+	got := e.Probe(t.Context(), []store.Domain{dashboard})
+	<-started
+	if len(got) != 1 || !got[0].HTTP {
+		t.Errorf("Probe = %+v, want Caddy's late answer accepted", got)
 	}
 }
 

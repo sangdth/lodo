@@ -16,13 +16,13 @@ import (
 	"github.com/sangdth/lcd/internal/store"
 )
 
-// Probe time limits. Probe often runs right after apply restarted dnsmasq, so
-// the direct probe retries for a while before it gives up.
+// Probe time limits. Probe often runs right after apply restarted dnsmasq or
+// Caddy, so the direct and HTTP probes retry for a while before they give up.
 const (
 	directWindow  = 2 * time.Second
-	directRetry   = 100 * time.Millisecond
+	retryEvery    = 100 * time.Millisecond
 	systemTimeout = 6 * time.Second
-	httpTimeout   = 3 * time.Second
+	httpWindow    = 3 * time.Second
 )
 
 // Result is what the probes found for one enabled domain.
@@ -86,7 +86,7 @@ func (e Env) probe(ctx context.Context, d store.Domain, inHosts []string) Result
 }
 
 // probeDirect asks dnsmasq for name's IPv4 address, skipping the system
-// resolver, and retries every directRetry for up to directWindow while the
+// resolver, and retries every retryEvery for up to directWindow while the
 // answer is missing or wrong.
 func (e Env) probeDirect(ctx context.Context, name, want string) string {
 	ctx, cancel := context.WithTimeout(ctx, directWindow)
@@ -98,7 +98,7 @@ func (e Env) probeDirect(ctx context.Context, name, want string) string {
 			return d.DialContext(ctx, "udp", e.DNS)
 		},
 	}
-	retry := time.NewTicker(directRetry)
+	retry := time.NewTicker(retryEvery)
 	defer retry.Stop()
 	var problem string
 	for {
@@ -178,8 +178,12 @@ func ipAddresses(out string) []string {
 
 // probeHTTP asks for http://<name>/ on the domain's address and HTTP port,
 // as a browser would after resolving the name, and reads from the answer
-// whether Caddy reached the app.
+// whether Caddy reached the app. While nothing accepts the connection it
+// retries every retryEvery for up to httpWindow: apply may have just
+// restarted Caddy, which needs a moment to listen again.
 func (e Env) probeHTTP(ctx context.Context, d store.Domain) string {
+	ctx, cancel := context.WithTimeout(ctx, httpWindow)
+	defer cancel()
 	caddyAddr := net.JoinHostPort(d.Address, strconv.Itoa(e.HTTPPort))
 	client := &http.Client{
 		Transport: &http.Transport{
@@ -190,18 +194,25 @@ func (e Env) probeHTTP(ctx context.Context, d store.Domain) string {
 			DisableKeepAlives: true,
 		},
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
-		Timeout:       httpTimeout,
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+d.Name+"/", nil)
-	if err != nil {
-		return oneLine(err.Error())
+	retry := time.NewTicker(retryEvery)
+	defer retry.Stop()
+	for {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+d.Name+"/", nil)
+		if err != nil {
+			return oneLine(err.Error())
+		}
+		resp, err := client.Do(req)
+		if err == nil {
+			_ = resp.Body.Close() // only the status and headers matter
+			return httpProblem(resp.StatusCode, resp.Header, d, e.HTTPPort)
+		}
+		select {
+		case <-ctx.Done():
+			return "nothing answers on " + caddyAddr + ": is Caddy running?"
+		case <-retry.C:
+		}
 	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "nothing answers on " + caddyAddr + ": is Caddy running?"
-	}
-	defer func() { _ = resp.Body.Close() }() // only the status and headers matter
-	return httpProblem(resp.StatusCode, resp.Header, d, e.HTTPPort)
 }
 
 // httpProblem reads who answered on the HTTP port. Caddy 2.11 adds a Via
