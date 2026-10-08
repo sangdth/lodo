@@ -47,6 +47,7 @@ type Model struct {
 	target     string // the name a delete waits on
 	note       string // a short message, such as what copy env copied
 	selectName string // the name to put the cursor on once a change lands
+	startedOn  string // the name under the cursor when the change started; empty on the add row
 
 	domains []store.Domain          // in store.Sort order, as the table shows them
 	checks  []check.Check           // the last doctor run; nil until the first one finishes
@@ -241,12 +242,14 @@ func (m *Model) appendLog(text string, offset int64) {
 // when name is empty, and runs cmd with the spinner going on its row.
 func (m Model) start(name string, cmd tea.Cmd) (Model, tea.Cmd) {
 	m.busy, m.pending, m.err = true, name, nil
+	m.startedOn = m.cursorName()
 	m.table.SetRows(m.rows())
 	return m, tea.Batch(cmd, m.spinner.Tick)
 }
 
-// setReport stores a doctor run and redraws the rows' checks.
-func (m *Model) setReport(checks []check.Check, results []check.Result) {
+// setReport stores a doctor run, redraws the rows' checks and places the
+// cursor; here is the name it was on before the list changed.
+func (m *Model) setReport(checks []check.Check, results []check.Result, here string) {
 	m.checks = checks
 	m.results = make(map[string]check.Result, len(results))
 	for _, r := range results {
@@ -254,21 +257,36 @@ func (m *Model) setReport(checks []check.Check, results []check.Result) {
 	}
 	m.table.SetHeight(m.bodyHeight()) // the box grows and shrinks with the names
 	m.table.SetRows(m.rows())
-	m.placeCursor()
+	m.placeCursor(here)
 }
 
-// placeCursor moves the cursor to the name a change asked for, and keeps it
-// on a row when rows went away.
-func (m *Model) placeCursor() {
+// placeCursor puts the cursor on the name the change asked for. When the
+// cursor moved while the change ran, it stays on here, the name it moved to,
+// wherever the change put that row: the change runs in the background. A
+// name that is gone leaves the cursor where it is, on a row that exists.
+func (m *Model) placeCursor(here string) {
+	want := here
+	if here == m.startedOn && m.selectName != "" {
+		want = m.selectName
+	}
+	m.selectName, m.startedOn = "", ""
+	if want == "" {
+		m.table.SetCursor(len(m.domains)) // the add row
+	}
 	for i, d := range m.domains {
-		if d.Name == m.selectName {
+		if d.Name == want {
 			m.table.SetCursor(i)
 		}
 	}
-	m.selectName = ""
 	if last := len(m.domains); m.table.Cursor() > last {
 		m.table.SetCursor(last) // the add row
 	}
+}
+
+// cursorName returns the name under the cursor, or empty on the add row.
+func (m Model) cursorName() string {
+	d, _ := m.selected()
+	return d.Name
 }
 
 // onAddRow reports whether the cursor is on the add row, after the names.

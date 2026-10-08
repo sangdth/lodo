@@ -21,13 +21,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case reportMsg:
 		m.busy, m.err = false, msg.err
-		m.setReport(msg.checks, msg.results)
+		m.setReport(msg.checks, msg.results, m.cursorName())
 		return m, nil
 	case changedMsg:
 		m.busy, m.err = false, msg.err
 		if msg.stored {
+			here := m.cursorName() // before the rows change under the cursor
 			m.domains = store.Sort(msg.domains)
-			m.setReport(msg.checks, msg.results)
+			m.setReport(msg.checks, msg.results, here)
+		} else {
+			m.selectName, m.startedOn = "", "" // nothing changed, so the cursor stays put
 		}
 		m.table.SetRows(m.rows()) // the spinner leaves the rows
 		return m, nil

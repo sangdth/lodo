@@ -285,6 +285,9 @@ A failure at any step shows in the status line. The saved file stays as written;
 - **Layout:** everything sits in one bordered box at the middle of the terminal: 70% of the width, at least
   84 columns (the whole width on a narrower terminal). Its height fits the names, up to 80% of the
   terminal; the log takes the full 80%.
+- **Cursor during a change:** a change runs in the background and the cursor moves freely. When it lands,
+  the cursor goes to what the change is about (the new name, a deleted name's neighbor) only if it did not
+  move; otherwise it stays on the name it moved to.
 - Every change runs `apply` as a `tea.Cmd`, with a spinner while dnsmasq restarts. Errors show in the status
   line and never exit the app.
 

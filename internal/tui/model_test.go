@@ -322,6 +322,70 @@ func TestModel_DeleteMovesToANeighbor(t *testing.T) {
 	}
 }
 
+func TestModel_CursorMovedDuringAChangeStays(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		start func(Model) (tea.Model, tea.Cmd) // starts the change and returns before it lands
+		moves []string
+		want  string // the name under the cursor once the change lands
+	}{
+		{
+			name:  "toggle, then move down",
+			start: func(m Model) (tea.Model, tea.Cmd) { return m.Update(press("space")) },
+			moves: []string{"down"},
+			want:  "dashboard.crm.oo",
+		},
+		{
+			name:  "toggle, no move",
+			start: func(m Model) (tea.Model, tea.Cmd) { return m.Update(press("space")) },
+			want:  "crm.oo",
+		},
+		{
+			name: "add above the row moved to",
+			start: func(m Model) (tea.Model, tea.Cmd) {
+				return typeText(send(m, "a"), "api").Update(press("enter")) // api.crm.oo lands right under crm.oo
+			},
+			moves: []string{"down", "down"},
+			want:  "flowy.oo",
+		},
+		{
+			name: "add, no move",
+			start: func(m Model) (tea.Model, tea.Cmd) {
+				return typeText(send(m, "a"), "api").Update(press("enter"))
+			},
+			want: "api.crm.oo",
+		},
+		{
+			name:  "move to the add row",
+			start: func(m Model) (tea.Model, tea.Cmd) { return m.Update(press("space")) },
+			moves: []string{"down", "down", "down", "down"},
+			want:  "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			next, cmd := tt.start(ready(&fakeBackend{}, sample))
+			m := next.(Model)
+			if !m.busy {
+				t.Fatal("the change landed before the moves")
+			}
+			for _, k := range tt.moves {
+				m = send(m, k)
+			}
+			m = settle(m, cmd)
+			if m.busy {
+				t.Fatal("the change has not landed")
+			}
+			if got := m.cursorName(); got != tt.want {
+				t.Errorf("cursor on %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestModel_ApplyFails(t *testing.T) {
 	t.Parallel()
 
