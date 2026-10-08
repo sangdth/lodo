@@ -52,7 +52,7 @@ stops the commit.
 - The TUI writes one project file: the `.env` a linked compose file runs with, only its `DOCKER_HOST_IP`
   lines, through `fsutil`, and never one that git tracks. Everything else in a project stays read-only.
 - Names end in `.test`, from `store.TLD`. macOS sends a name with one label before `.local` to Bonjour only, so
-  `.local` can't serve project names like `flowy.local`.
+  `.local` can't serve project names like `media.local`.
 - Golden files live in each package's `testdata/` and use `github.com/charmbracelet/x/exp/golden`.
 - Charm v2 modules use the `charm.land/...` import paths, such as `charm.land/bubbletea/v2`.
 - Errors are wrapped with `fmt.Errorf("context: %w", err)`, lowercase, without trailing punctuation.

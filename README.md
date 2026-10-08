@@ -1,14 +1,14 @@
 # lodo
 
 lodo lets several projects run on one Mac at the same time, each database and app on its usual port. Every
-project gets its own loopback address, like `127.0.1.3`, and a name that ends in `.test`, so flowy's Postgres
-listens on `127.0.1.3:5432` while crm's listens on `127.0.1.1:5432`. lodo is a terminal app: it keeps the list
+project gets its own loopback address, like `127.0.1.3`, and a name that ends in `.test`, so media's Postgres
+listens on `127.0.1.3:5432` while blog's listens on `127.0.1.1:5432`. lodo is a terminal app: it keeps the list
 of names and makes dnsmasq, macOS's `/etc/resolver` files and, for names with a port, Caddy follow it.
 
 ```text
-flowy.test -> 127.0.1.3 -> 127.0.1.3:5432 (Postgres), 127.0.1.3:3000 (Next)
-crm.test   -> 127.0.1.1 -> 127.0.1.1:5432 (Postgres)
-http://dashboard.crm.test -> Caddy on port 80 -> 127.0.1.1:3000
+media.test -> 127.0.1.3 -> 127.0.1.3:5432 (Postgres), 127.0.1.3:3000 (Next)
+blog.test  -> 127.0.1.1 -> 127.0.1.1:5432 (Postgres)
+http://dashboard.blog.test -> Caddy on port 80 -> 127.0.1.1:3000
 ```
 
 ## Requirements
@@ -62,9 +62,9 @@ you turned off doesn't count.
  lodo   caddy ●   dnsmasq ●   loopback ●   resolvers ●
  ────────────────────────────────────────────────────────────────────────────────────────────
  name                   address          port   compose                          own  check
- ● crm.test               127.0.1.1               ~/Projects/crm/compose.dev.yaml  own  dns ✓
-   ● dashboard.crm.test   127.0.1.1        3000                                    own  dns ✓  http ✓
- ● flowy.test             127.0.1.3               –                                own  dns ✓
+ ● blog.test              127.0.1.1               ~/Code/blog/compose.dev.yaml     own  dns ✓
+   ● dashboard.blog.test  127.0.1.1        3000                                    own  dns ✓  http ✓
+ ● media.test             127.0.1.3               –                                own  dns ✓
  ○ old.test               127.0.0.1                                                     –
    Add new domain
 ```
@@ -102,7 +102,7 @@ until then the form says what to run.
 
 When `lodo` starts inside a project, a git repository with a lock file, it looks up to 3 folders deep for
 `compose.yml`, `docker-compose.yaml` and their variants, `.dev` first. Unless a listed name, whatever it is
-called, already links a compose file in the project, it asks once: `use ./compose.dev.yaml for flowy.test? Y/n`.
+called, already links a compose file in the project, it asks once: `use ./compose.dev.yaml for media.test? Y/n`.
 The project's folder suggests the name; to link a name called something else, answer `n` and press `l` on it. `y`
 or `enter` links it (see `l` below), `e` lets you fix the path first, and `n` or `esc` saves `none`, so lodo stops
 asking; any other key leaves the question open. A name that isn't listed gets the add form, filled in. The form's
@@ -113,7 +113,7 @@ asking; any other key leaves the question open. A name that isn't listed gets th
 - A port with no address, or with `127.0.0.1`, binds `${DOCKER_HOST_IP:-127.0.0.1}`. Compose takes only an IP
   there, not a name, and a port with no address takes the port on every address, so projects collide.
 - A `localhost` URL in `environment` takes the project's name, or the subdomain Caddy serves on that port:
-  `http://localhost:3000` becomes `http://dashboard.crm.test`.
+  `http://localhost:3000` becomes `http://dashboard.blog.test`.
 - Healthchecks, commands and comments keep `localhost`: inside a container it is the container itself.
 - Above the file, a `next dev` without `-H` in the project's `package.json`, or in a shell script one of its
   scripts runs, such as `scripts/dev.sh`, gets `-H <address>`: without it Next listens on every address, so two
@@ -128,11 +128,11 @@ form save that changes a linked name's compose file or address do the same.
 
 ### Rules
 
-- **Names end in `.test`.** macOS sends a name like `flowy.local`, with one label before `.local`, to Bonjour
+- **Names end in `.test`.** macOS sends a name like `media.local`, with one label before `.local`, to Bonjour
   only. Labels use `a-z`, `0-9` and inner `-`, 1–63 characters each.
-- **A project is the last two labels.** `crm.test`, `api.crm.test` and `test.crm.test` are one project.
-- **A subdomain shares its project's address or takes its own.** The form fills in the parent's. While `crm.test`
-  is on, an unlisted `foo.crm.test` resolves to its address anyway, and so does a listed one you turn off.
+- **A project is the last two labels.** `blog.test`, `api.blog.test` and `test.blog.test` are one project.
+- **A subdomain shares its project's address or takes its own.** The form fills in the parent's. While `blog.test`
+  is on, an unlisted `foo.blog.test` resolves to its address anyway, and so does a listed one you turn off.
 - **An own address belongs to one project.** The own block is `127.0.1.1`–`127.0.1.50`. `127.0.0.1`, or any
   other address in `127.0.0.0/8`, can be shared.
 - **A port makes `http://<name>` reach `<address>:<port>`** through Caddy on port 80. HTTP only. Port 80 itself
@@ -151,8 +151,8 @@ fails. The list does the same after every change. It refuses to run before `lodo
 
 ```json
 {"version": 1, "domains": [
-  {"name": "crm.test", "address": "127.0.1.1", "enabled": true},
-  {"name": "dashboard.crm.test", "address": "127.0.1.1", "port": 3000, "enabled": true}
+  {"name": "blog.test", "address": "127.0.1.1", "enabled": true},
+  {"name": "dashboard.blog.test", "address": "127.0.1.1", "port": 3000, "enabled": true}
 ]}
 ```
 
@@ -194,24 +194,24 @@ Start with `lodo doctor`: every failed check prints the command that fixes it.
 - **`can't assign requested address` from Docker, or `EADDRNOTAVAIL` from Node:** the loopback addresses are
   missing. Check 3; `lodo setup` adds them again.
 - **`sudo: a password is required`:** the sudoers rule is missing or the script changed. Check 4, then `lodo setup`.
-- **`dig flowy.test` finds nothing:** expected. `dig` and `nslookup` skip `/etc/resolver`; apps and browsers use
-  it. Test with `dscacheutil -q host -a name flowy.test`, or ask dnsmasq: `dig @127.0.0.1 -p 53535 flowy.test`.
+- **`dig media.test` finds nothing:** expected. `dig` and `nslookup` skip `/etc/resolver`; apps and browsers use
+  it. Test with `dscacheutil -q host -a name media.test`, or ask dnsmasq: `dig @127.0.0.1 -p 53535 media.test`.
 - **A name isn't found right after you add it, or the log view shows no queries:** the lookup never reached
   dnsmasq. Its resolver file is missing (check 4), or a VPN is capturing DNS.
 - **Check 4 says a resolver file is "not written by lodo":** someone made it by hand, and lodo never replaces such
   a file. Run the `sudo rm` that doctor prints, then `lodo apply`.
 - **A name resolves to the wrong address:** an `/etc/hosts` line for it wins over DNS. The name's check points
   at the line; remove it.
-- **`foo.crm.test` resolves although it isn't listed:** expected. dnsmasq's `address=` lines and the resolver
+- **`foo.blog.test` resolves although it isn't listed:** expected. dnsmasq's `address=` lines and the resolver
   files both match subdomains. Add a row only to give it another address or a port.
-- **`502 Bad Gateway` on `http://dashboard.crm.test`:** Caddy is up but nothing listens on `127.0.1.1:3000`; the
+- **`502 Bad Gateway` on `http://dashboard.blog.test`:** Caddy is up but nothing listens on `127.0.1.1:3000`; the
   check says `app down`. Vite needs `--host 127.0.1.1`, and Docker ports bind `DOCKER_HOST_IP`.
 - **The wrong app answers:** a Node app listening on `*:3000` answers on every loopback address, so it shadows
   other projects' port 3000. Start each app on its own address: `next dev -H 127.0.1.3`.
-- **`http://dashboard.crm.test` refuses the connection:** Caddy isn't running or another program holds port 80.
+- **`http://dashboard.blog.test` refuses the connection:** Caddy isn't running or another program holds port 80.
   Check 8 names it.
 - **Names resolve for one app but not another:** a VPN or Cloudflare WARP is capturing DNS.
-- **Containers can't reach `flowy.test`:** they don't need to. Inside Docker they use the service name.
+- **Containers can't reach `media.test`:** they don't need to. Inside Docker they use the service name.
 
 ## Uninstall
 

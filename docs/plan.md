@@ -7,15 +7,15 @@ own loopback address (`127.0.1.x`), so many projects run at once on their standa
 reached by name:
 
 ```text
-flowy.test -> 127.0.1.3 -> 127.0.1.3:5432 (flowy's Postgres), 127.0.1.3:3000 (its Next app)
-crm.test   -> 127.0.1.1 -> 127.0.1.1:5432 (crm's Postgres)
+media.test -> 127.0.1.3 -> 127.0.1.3:5432 (media's Postgres), 127.0.1.3:3000 (its Next app)
+blog.test  -> 127.0.1.1 -> 127.0.1.1:5432 (blog's Postgres)
 ```
 
-A project may have subdomains, like `test.crm.test`. Each is a row of its own: it shares the project's address
+A project may have subdomains, like `test.blog.test`. Each is a row of its own: it shares the project's address
 by default, or gets its own when it needs its own ports. Subdomains that aren't listed resolve to the parent's
 address anyway, because dnsmasq's `address=` lines and the `/etc/resolver` files both match by suffix.
 
-A row may also carry a port. Then Caddy answers `http://dashboard.crm.test` on port 80 and forwards it to
+A row may also carry a port. Then Caddy answers `http://dashboard.blog.test` on port 80 and forwards it to
 `127.0.1.1:3000`, so a monorepo's apps get port-less URLs while every service keeps its own port.
 
 Admin rights are needed once, for `lodo setup`. Adding, editing and removing names never asks for a password.
@@ -29,11 +29,11 @@ Settled 2026-10-08. The steps below follow them.
   after the cache flush. No launchd job watches files; `launchd.plist(5)` calls `WatchPaths` "highly
   race-prone".
 - **Address:** one form field, prefilled with the lowest free `127.0.1.x`. You may overwrite it (`127.0.1.3`
-  to match flowy's `.env.example`, or `127.0.0.1` to share). "Own" is derived: the address lies in
+  to match a project's `.env.example`, or `127.0.0.1` to share). "Own" is derived: the address lies in
   `127.0.1.1`–`127.0.1.50`. An own-block address belongs to one project; other addresses may be shared.
 - **Subdomains:** a subdomain is a normal row; the hierarchy is derived from the name, nothing is nested in
   `domains.json`. The form prefills a subdomain with its parent's address. A project is the last two labels
-  (`crm.test`), and any name in a project may share its own-block address. Editing or deleting a parent leaves
+  (`blog.test`), and any name in a project may share its own-block address. Editing or deleting a parent leaves
   its subdomains as they are.
 - **Ports:** a row has an optional port. With one, lodo writes a Caddy site
   `http://<name> { reverse_proxy <address>:<port> }` and restarts Caddy as the user. HTTP only; HTTPS stays out.
@@ -45,13 +45,12 @@ Settled 2026-10-08. The steps below follow them.
 - **Hand test:** Phase 2 runs on this Mac right after Phase 1, with Sang at the keyboard for the password.
 - **Uninstall:** restores the conf backup and leaves dnsmasq stopped; prints the command that brings the old
   root job back.
-- **flowy README:** the pointer edit is the last step, its own commit on `sang-dev` in `opscom/flowy`.
 
 ### Settled while building
 
 - **Branch:** `master` already held Sang's first commit, so Phase 0 is committed on `sang-dev`.
-- **Order:** rows sort by their labels read right to left: `crm.test`, `api.crm.test`, `a.api.crm.test`,
-  `test.crm.test`, `flowy.test`. A parent comes right before its subdomains, at any depth.
+- **Order:** rows sort by their labels read right to left: `blog.test`, `api.blog.test`, `a.api.blog.test`,
+  `test.blog.test`, `media.test`. A parent comes right before its subdomains, at any depth.
 - **Port 80 is refused:** Caddy listens there, so a route to it would loop back into Caddy.
 - **Probing is separate from applying:** `system.Apply` changes the system; `check.Env.Probe` checks the names.
   `lodo apply` and the TUI call both. `check` reads `system`'s templates, so `system` can't import `check`.
@@ -66,8 +65,8 @@ Settled 2026-10-08. The steps below follow them.
   the name.
 - **Charm modules are added in Phase 3,** where the TUI first imports them; `go mod tidy` drops them earlier.
 - **Names end in `.test`** (`store.TLD`). The hand test showed macOS 27 sends a name with one label before
-  `.local`, like `flowy.local`, to Bonjour only and ignores its resolver file (`docs/setup-log.md`). `.dev` was
-  ruled out: browsers force HTTPS on all of it (HSTS preload) and `flowy.dev` is a registered domain. RFC 6761
+  `.local`, like `media.local`, to Bonjour only and ignores its resolver file (`docs/setup-log.md`). `.dev` was
+  ruled out: browsers force HTTPS on all of it (HSTS preload) and `media.dev` is a registered domain. RFC 6761
   reserves `.test` for testing, so it never enters the public root zone. The tool was renamed from `lcd` to `oo`
   on 2026-10-08 and to `lodo` on 2026-10-09, when names moved from `.oo` to `.test`.
 - **The TUI has one `Backend` interface** (load, save, apply, report) instead of separate applier and checker
@@ -84,7 +83,7 @@ Settled 2026-10-08. The steps below follow them.
   `system.Apply` returns `ErrNotSetUp` and changes nothing. Without it, `lodo apply` before setup started a user
   dnsmasq against the old config.
 - **Doctor names hand-made resolver files:** an `/etc/resolver/<name>` without lodo's marker gets `sudo rm` as its
-  fix, because the script never replaces it. The old flowy README recipe made exactly such files.
+  fix, because the script never replaces it. Hand-written setup recipes make exactly such files.
 - **Probes name `/etc/hosts` conflicts:** macOS and dnsmasq answer from `/etc/hosts` first, so an entry with another
   address is reported as the cause of a failed lookup.
 
@@ -165,7 +164,7 @@ reach it.
 macOS sends a name to dnsmasq only when a file in `/etc/resolver/` matches it:
 
 ```text
-# /etc/resolver/flowy.test
+# /etc/resolver/media.test
 # lodo
 nameserver 127.0.0.1
 port 53535
@@ -202,7 +201,7 @@ A row with a port gets a Caddy site. Caddy listens on port 80 as the user and fo
 ```text
 # ~/.config/lodo/Caddyfile
 # Generated by lodo from domains.json. Edits are overwritten.
-http://dashboard.crm.test {
+http://dashboard.blog.test {
 	reverse_proxy 127.0.1.1:3000
 }
 ```
@@ -238,10 +237,10 @@ A failure at any step shows in the status line. The saved file stays as written;
 ```text
  lodo   caddy ●   dnsmasq ●   loopback ●   resolvers ●
  ─────────────────────────────────────────────────────────────────────────────
-  ● crm.test                127.0.1.1          own    dns ✓
-    ● dashboard.crm.test    127.0.1.1  :3000   own    dns ✓  http ✓
-    ● service.crm.test      127.0.1.1  :3002   own    dns ✓  http ✗ 502, app down
-  ● flowy.test              127.0.1.3          own    dns ✓
+  ● blog.test               127.0.1.1          own    dns ✓
+    ● dashboard.blog.test   127.0.1.1  :3000   own    dns ✓  http ✓
+    ● service.blog.test     127.0.1.1  :3002   own    dns ✓  http ✗ 502, app down
+  ● media.test              127.0.1.3          own    dns ✓
   ○ old.test                127.0.0.1                 –
     Add new domain
  ─────────────────────────────────────────────────────────────────────────────
@@ -251,9 +250,9 @@ A failure at any step shows in the status line. The saved file stays as written;
 
 ```text
  Add domain
- Name     dashboard.crm .test
- Address  127.0.1.1          crm.test's address; next free: 127.0.1.4
- Port     3000               optional; http://dashboard.crm.test then reaches 127.0.1.1:3000
+ Name     dashboard.blog .test
+ Address  127.0.1.1          blog.test's address; next free: 127.0.1.4
+ Port     3000               optional; http://dashboard.blog.test then reaches 127.0.1.1:3000
  enter save   esc cancel
 ```
 
@@ -272,8 +271,8 @@ A failure at any step shows in the status line. The saved file stays as written;
 - **Spinner:** while a change runs, the changed row's mark spins, whether the name is on or off; the first
   check and `r` spin every enabled row. A name being added is listed at once with the spinner, and goes away
   if the save fails.
-- **Delete:** `d` asks `delete flowy.test? y/N` in the status line; only `y` deletes. A name's subdomains go with
-  it, at any depth, and the question names them: `delete crm.test and its 2 subdomains? y/N`.
+- **Delete:** `d` asks `delete media.test? y/N` in the status line; only `y` deletes. A name's subdomains go with
+  it, at any depth, and the question names them: `delete blog.test and its 2 subdomains? y/N`.
 - **Link** (`l`): the name gets the compose file of the project lodo started in, or keeps its own outside one, and
   `DOCKER_HOST_IP=<address>` goes into the `.env` that file runs with: the one a `package.json` script passes
   with `--env-file`, else the project root's (`compose.EnvFile`, `compose.SetEnv`). A `.env` git tracks is
@@ -314,7 +313,7 @@ A failure at any step shows in the status line. The saved file stays as written;
   `lodo` itself. Regex:
   `^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*\.test$`
 - Names are unique.
-- A project is the last two labels of a name: `crm.test`, `test.crm.test` and `api.crm.test` are one
+- A project is the last two labels of a name: `blog.test`, `test.blog.test` and `api.blog.test` are one
   project. Rows sort by their labels read right to left, so a parent comes right before its subdomains.
 - Addresses: IPv4 inside `127.0.0.0/8`. `127.0.1.1`–`127.0.1.50` is the own block. An own-block address belongs
   to one project; any name in that project may share it. Every other address may be shared by anyone.
@@ -324,7 +323,7 @@ A failure at any step shows in the status line. The saved file stays as written;
   needs Caddy installed and set up.
 - Turning a subdomain off removes its own lines only. While its parent is on, the parent's lines still answer
   for it.
-- Editing or deleting a row never changes other rows: moving `crm.test` leaves `test.crm.test` where it is.
+- Editing or deleting a row never changes other rows: moving `blog.test` leaves `test.blog.test` where it is.
 - Deleting a domain frees its address.
 - `lodo` refuses to start the TUI when checks 1–5 fail, and prints them.
 
@@ -436,14 +435,14 @@ Each step ends with `go test -race ./...`, `go vet ./...` and `gofmt -l .` clean
 
 Tests for Phase 1:
 
-- `store`: names accept `flowy.test`, `a-b.dev.test`; reject `test`, `.test`, `X.TEST`, `x.com`, `flowy.local`,
+- `store`: names accept `media.test`, `a-b.dev.test`; reject `test`, `.test`, `X.TEST`, `x.com`, `media.local`,
   `../x.test`, `x.test\nfoo`, `-x.test`, a 64-char label. Addresses accept `127.0.0.1`, `127.0.1.3`;
   reject `10.0.0.1`, `::1`, `127.0.1`, `abc`. Ports accept empty (none), `1`, `3000`, `65535`; reject `0`,
   `70000`, `abc`. `NextFree`: empty gives `.1`; `.1,.2` gives `.3`; a gap gives the
   gap; 50 taken gives `ErrBlockFull`. `Add` rejects a duplicate name and an own address held by another
-  project; it allows `test.crm.test` at `crm.test`'s address, at its own free address, and two `127.0.0.1`.
-  `Parent` of `a.test.crm.test` is `test.crm.test` when it and `crm.test` are listed, and none when neither
-  is. `Sort` puts `crm.test` before `test.crm.test` before `flowy.test`. `Remove` frees the address. `Save`
+  project; it allows `test.blog.test` at `blog.test`'s address, at its own free address, and two `127.0.0.1`.
+  `Parent` of `a.test.blog.test` is `test.blog.test` when it and `blog.test` are listed, and none when neither
+  is. `Sort` puts `blog.test` before `test.blog.test` before `media.test`. `Remove` frees the address. `Save`
   then `Load` round-trips and leaves no temp file.
 - `dnsmasq`: golden files `testdata/dnsmasq.conf.golden` and `testdata/resolvers.golden` (disabled domains
   left out, sorted, one subdomain sharing its parent's address and one with its own; dnsmasq answers from the
@@ -493,12 +492,12 @@ Commit: `feat: domain store, generated configs, caddyfile and resolver script`.
   `ifconfig lo0 -alias 127.0.1.$i` for 1–50, remove sudoers and the script. Keep `~/.config/lodo`. Print the
   `sudo brew services start dnsmasq` hint.
 - **2.5 `cmd/lodo`:** wire `setup`, `apply`, `doctor` (table, exit 1 on any failure) and `uninstall`.
-- **2.6 Hand test on this Mac, Sang present:** `go run ./cmd/lodo setup`; `doctor`; add `flowy.test` and
-  `test.flowy.test`, both `127.0.1.3`, to `domains.json` by hand; `apply`; `time dscacheutil -q host -a name`
-  for `flowy.test`, `test.flowy.test` and the unlisted `foo.flowy.test` (all `127.0.1.3`, which proves suffix
-  matching on both sides); `ifconfig lo0 | grep 127.0.1`. Then ports: add `dashboard.flowy.test`,
+- **2.6 Hand test on this Mac, Sang present:** `go run ./cmd/lodo setup`; `doctor`; add `media.test` and
+  `test.media.test`, both `127.0.1.3`, to `domains.json` by hand; `apply`; `time dscacheutil -q host -a name`
+  for `media.test`, `test.media.test` and the unlisted `foo.media.test` (all `127.0.1.3`, which proves suffix
+  matching on both sides); `ifconfig lo0 | grep 127.0.1`. Then ports: add `dashboard.media.test`,
   `127.0.1.3`, port 3000; `apply`; in another terminal `python3 -m http.server 3000 --bind 127.0.1.3`;
-  `curl -s http://dashboard.flowy.test/ | head -3` shows the listing; stop the server, `apply` reports
+  `curl -s http://dashboard.media.test/ | head -3` shows the listing; stop the server, `apply` reports
   `http ✗ 502`. Then `uninstall`; `doctor` (expect failures); `setup` again. Record the output in
   `docs/setup-log.md`.
 
@@ -576,10 +575,6 @@ Commit: `feat: dnsmasq log view`.
 |      | `doctor`, `uninstall`, how it works (short: project, subdomain and port rules), troubleshooting        |
 | 6.2  | `CLAUDE.md` final pass, under 200 lines                                                                |
 | 6.3  | `.github/workflows/ci.yml` like randomport's, plus `go test -race ./...`, on `macos-latest`            |
-| 6.4  | `opscom/flowy`: branch `sang-dev`; shrink "Local services on their own address" to the address table, |
-|      | `lodo` install and `lodo setup`, "add `flowy.test` with `127.0.1.3`", and the `.env` note; move          |
-|      | `.env.example` hosts from `flowy.local` to `flowy.test`. Own commit                                    |
-|      | `docs: point local network setup at lodo`. Search the flowy Linear project for a matching ticket first |
 
 ### Phase 7: compose files
 
@@ -627,7 +622,7 @@ Commits: one per step group.
 - **A VPN that captures DNS.** Cloudflare WARP and NordVPN helpers are installed here. When one is on, `.test`
   lookups may skip `/etc/resolver`. Troubleshooting line; nothing lodo can do.
 - **Bad sudoers file locks `sudo`.** `visudo -cf` runs on the temp file and install happens only when it passes.
-- **Docker Desktop binding to `127.0.1.x`.** The flowy compose file proves it after the hand test; lodo only
+- **Docker Desktop binding to `127.0.1.x`.** A project's compose file proves it after the hand test; lodo only
   provides the aliases.
 - **Port 80 taken.** Docker publishing `:80` or another proxy keeps Caddy from starting. Doctor check 8 names
   the listener; nothing else lodo can do.
@@ -639,18 +634,18 @@ Commits: one per step group.
 - `can't assign requested address` from Docker: the loopback job didn't run. Run `lodo doctor`.
 - `sudo: a password is required` in the TUI: the sudoers rule is missing or the script changed. `lodo doctor`
   check 4, then `lodo setup`.
-- `dig flowy.test` finds nothing: expected. `dig` and `nslookup` skip `/etc/resolver`; Node, `psql` and
-  browsers use it. Test with `dscacheutil -q host -a name flowy.test`.
+- `dig media.test` finds nothing: expected. `dig` and `nslookup` skip `/etc/resolver`; Node, `psql` and
+  browsers use it. Test with `dscacheutil -q host -a name media.test`.
 - A name isn't found right after adding it: the resolver file is missing, so macOS asked the public DNS servers.
   `lodo doctor` check 4.
-- `foo.crm.test` resolves although it isn't listed: expected. dnsmasq's `address=` and the resolver file both
+- `foo.blog.test` resolves although it isn't listed: expected. dnsmasq's `address=` and the resolver file both
   match subdomains. Add a row only to give it another address or a port.
-- `502 Bad Gateway` on `http://dashboard.crm.test`: Caddy is up but nothing listens on `127.0.1.1:3000`. Start
+- `502 Bad Gateway` on `http://dashboard.blog.test`: Caddy is up but nothing listens on `127.0.1.1:3000`. Start
   the app on its address: `next dev -H 127.0.1.1`, Vite `--host 127.0.1.1`; Docker ports bind `DOCKER_HOST_IP`.
-- `http://dashboard.crm.test` refuses the connection: Caddy isn't running or port 80 is taken. `lodo doctor`
+- `http://dashboard.blog.test` refuses the connection: Caddy isn't running or port 80 is taken. `lodo doctor`
   check 8.
 - Names resolve for one app but not another: a VPN or WARP is capturing DNS.
-- Containers can't reach `flowy.test`: they don't need to. Inside Docker they use the service name.
+- Containers can't reach `media.test`: they don't need to. Inside Docker they use the service name.
 - The log view shows no queries: the lookup never reached dnsmasq. Check 4 (resolver file) or the VPN line.
 
 ## Out of scope for v1
