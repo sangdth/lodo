@@ -39,6 +39,9 @@ type Paths struct {
 	Sudoers       string
 	ResolverDir   string
 
+	// Hosts is the hosts file; macOS and dnsmasq answer from it before DNS.
+	Hosts string
+
 	// Tools, by absolute path so a changed PATH can't swap them.
 	Brew        string
 	Dnsmasq     string
@@ -99,6 +102,8 @@ func build(root, home, user string) Paths {
 		Script:        sys("/Library/Application Support/lcd/apply-resolvers.sh"),
 		Sudoers:       sys("/etc/sudoers.d/lcd"),
 		ResolverDir:   sys("/etc/resolver"),
+
+		Hosts: sys("/etc/hosts"),
 
 		Brew:        sys("/opt/homebrew/bin/brew"),
 		Dnsmasq:     sys("/opt/homebrew/opt/dnsmasq/sbin/dnsmasq"),

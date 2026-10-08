@@ -24,8 +24,10 @@ go run ./cmd/lcd doctor                   # run the CLI from source
 - `internal/store`: `domains.json` and every domain rule: names, addresses, ports, projects, the own block, order.
 - `internal/brew`, `internal/dnsmasq`, `internal/caddy`: `brew services`, the generated dnsmasq config and
   resolver list, the generated Caddyfile.
-- `internal/system`: the root script, sudoers rule and loopback plist templates, and lcd's blocks in Homebrew's
-  dnsmasq.conf and Caddyfile.
+- `internal/system`: setup, apply and uninstall; the root script, sudoers rule and loopback plist templates;
+  lcd's blocks in Homebrew's dnsmasq.conf and Caddyfile. `Apply` refuses to run until setup has.
+- `internal/check`: the eight doctor checks and the per-domain probes: dnsmasq directly, macOS, and HTTP through
+  Caddy.
 
 ## Rules
 

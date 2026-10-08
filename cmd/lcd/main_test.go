@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestRun(t *testing.T) {
+func TestDispatch(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -19,12 +19,13 @@ func TestRun(t *testing.T) {
 		{name: "help", args: []string{"help"}, wantCode: 0, wantStdout: "Usage:"},
 		{name: "no command", args: nil, wantCode: 2, wantStderr: "Usage:"},
 		{name: "unknown command", args: []string{"frobnicate"}, wantCode: 2, wantStderr: `lcd: unknown command "frobnicate"`},
+		{name: "extra argument", args: []string{"doctor", "now"}, wantCode: 2, wantStderr: "lcd: doctor takes no arguments"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			var stdout, stderr strings.Builder
-			code := run(tt.args, &stdout, &stderr)
+			code := dispatch(tt.args, &stdout, &stderr)
 			if code != tt.wantCode {
 				t.Errorf("exit code = %d, want %d", code, tt.wantCode)
 			}

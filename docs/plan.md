@@ -66,6 +66,13 @@ Settled 2026-10-08. The steps below follow them.
   the name.
 - **Charm modules are added in Phase 3,** where the TUI first imports them; `go mod tidy` drops them earlier.
 - **Golden files** use `github.com/charmbracelet/x/exp/golden`: `testdata/<TestName>.golden`, `-update` per package.
+- **`apply` refuses before setup:** until the script is installed and Homebrew's dnsmasq.conf includes lcd's,
+  `system.Apply` returns `ErrNotSetUp` and changes nothing. Without it, `lcd apply` before setup started a user
+  dnsmasq against the old config.
+- **Doctor names hand-made resolver files:** an `/etc/resolver/<name>` without lcd's marker gets `sudo rm` as its
+  fix, because the script never replaces it. The old flowy README recipe made exactly such files.
+- **Probes name `/etc/hosts` conflicts:** macOS and dnsmasq answer from `/etc/hosts` first, so an entry with another
+  address is reported as the cause of a failed lookup.
 
 ## Stack
 
