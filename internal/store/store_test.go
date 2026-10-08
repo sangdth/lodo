@@ -102,6 +102,30 @@ func TestValidatePort(t *testing.T) {
 	}
 }
 
+func TestValidateCompose(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		in      string
+		wantMsg string
+	}{
+		{name: "not asked yet", in: ""},
+		{name: "said no", in: store.NoCompose},
+		{name: "yml", in: "/Users/me/Projects/flowy/compose.dev.yml"},
+		{name: "yaml, any case", in: "/Users/me/Projects/flowy/docker-compose.YAML"},
+		{name: "relative", in: "compose.yml", wantMsg: "compose file must be an absolute path"},
+		{name: "home not expanded", in: "~/Projects/flowy/compose.yml", wantMsg: "compose file must be an absolute path"},
+		{name: "not yaml", in: "/Users/me/Projects/flowy/compose.json", wantMsg: "compose file must end in .yml or .yaml"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			assertFieldErr(t, store.ValidateCompose(tt.in), store.FieldCompose, tt.wantMsg)
+		})
+	}
+}
+
 func TestParsePort(t *testing.T) {
 	t.Parallel()
 
@@ -449,6 +473,7 @@ func TestLoad(t *testing.T) {
 		{name: "unknown field", content: ptr(`{"version":1,"domains":[{"name":"crm.oo","addr":"127.0.1.1"}]}`), wantErrs: `unknown field "addr"`},
 		{name: "wrong version", content: ptr(`{"version":2,"domains":[]}`), wantErrs: "format version 2, this oo reads version 1"},
 		{name: "invalid domain", content: ptr(`{"version":1,"domains":[{"name":"crm.com","address":"127.0.1.1","enabled":true}]}`), wantErrs: `"crm.com": name must end in .oo`},
+		{name: "relative compose path", content: ptr(`{"version":1,"domains":[{"name":"crm.oo","address":"127.0.1.1","compose":"compose.yml"}]}`), wantErrs: `"crm.oo": compose file must be an absolute path`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -485,8 +510,8 @@ func TestSave(t *testing.T) {
 		path := filepath.Join(dir, "nested", "domains.json")
 		in := []store.Domain{
 			{Name: "test.crm.oo", Address: "127.0.1.1", Port: 3000, Enabled: true},
-			{Name: "crm.oo", Address: "127.0.1.1", Enabled: true},
-			{Name: "old.oo", Address: "127.0.0.1"},
+			{Name: "crm.oo", Address: "127.0.1.1", Enabled: true, Compose: "/Users/me/Projects/crm/compose.dev.yml"},
+			{Name: "old.oo", Address: "127.0.0.1", Compose: store.NoCompose},
 		}
 		if err := store.Save(path, in); err != nil {
 			t.Fatal(err)
@@ -504,6 +529,9 @@ func TestSave(t *testing.T) {
 		}
 		if strings.Count(string(raw), `"port"`) != 1 {
 			t.Errorf("port written for rows without one:\n%s", raw)
+		}
+		if strings.Count(string(raw), `"compose"`) != 2 {
+			t.Errorf("compose written for rows without one:\n%s", raw)
 		}
 		entries, err := os.ReadDir(filepath.Dir(path))
 		if err != nil {

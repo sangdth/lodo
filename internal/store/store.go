@@ -61,19 +61,25 @@ var (
 )
 
 // Domain is one row: a name, the address it resolves to, an optional port
-// Caddy forwards to, and whether it is on.
+// Caddy forwards to, whether it is on, and its project's compose file.
 type Domain struct {
 	Name    string `json:"name"`
 	Address string `json:"address"`
 	Port    int    `json:"port,omitempty"`
 	Enabled bool   `json:"enabled"`
+	Compose string `json:"compose,omitempty"` // an absolute path, NoCompose, or empty before oo asked
 }
+
+// NoCompose is a domain's compose value once the user said its project has no
+// compose file for oo, so oo stops asking.
+const NoCompose = "none"
 
 // The fields a FieldError can concern.
 const (
 	FieldName    = "name"
 	FieldAddress = "address"
 	FieldPort    = "port"
+	FieldCompose = "compose"
 )
 
 // FieldError is a rule a domain breaks, tied to the form field it concerns.
@@ -126,6 +132,20 @@ func ValidatePort(port int) error {
 		return fieldErr(FieldPort, "port must be between 1 and 65535")
 	case port == ProxyPort:
 		return fieldErr(FieldPort, "port 80 is where Caddy listens; use the app's own port")
+	}
+	return nil
+}
+
+// ValidateCompose checks a compose value: empty, NoCompose, or an absolute
+// path to a .yml or .yaml file.
+func ValidateCompose(compose string) error {
+	switch ext := strings.ToLower(filepath.Ext(compose)); {
+	case compose == "" || compose == NoCompose:
+		return nil
+	case !filepath.IsAbs(compose):
+		return fieldErr(FieldCompose, "compose file must be an absolute path")
+	case ext != ".yml" && ext != ".yaml":
+		return fieldErr(FieldCompose, "compose file must end in .yml or .yaml")
 	}
 	return nil
 }
@@ -237,6 +257,9 @@ func check(others []Domain, d Domain) error {
 		return err
 	}
 	if err := ValidatePort(d.Port); err != nil {
+		return err
+	}
+	if err := ValidateCompose(d.Compose); err != nil {
 		return err
 	}
 	for _, o := range others {
