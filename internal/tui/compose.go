@@ -158,6 +158,18 @@ func (m *Model) maybeAsk() {
 		rel = "./" + r
 	}
 	m.mode, m.question = modeAsk, question{name: name, path: path, rel: rel, listed: listed}
+	m.point(name)
+}
+
+// point puts the cursor on name's row, or on the add row when name isn't
+// listed, so the row a question is about is the one highlighted.
+func (m *Model) point(name string) {
+	i := slices.IndexFunc(m.listed(), func(d store.Domain) bool { return d.Name == name })
+	if i < 0 {
+		i = len(m.listed())
+	}
+	m.table.SetCursor(i)
+	m.table.SetRows(m.rows()) // the add row looks different under the cursor
 }
 
 // nonLabel matches what a folder's name holds that a DNS label can't.

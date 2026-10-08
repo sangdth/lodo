@@ -121,6 +121,22 @@ func TestQuestion(t *testing.T) {
 	}
 }
 
+func TestQuestion_PointsAtItsRow(t *testing.T) {
+	t.Parallel()
+
+	listed := readyIn(inFlowy(), sample, flowyOrigin)
+	if got := listed.cursorName(); listed.mode != modeAsk || got != "flowy.oo" {
+		t.Errorf("mode %v, cursor on %q; want the question with flowy.oo highlighted", listed.mode, got)
+	}
+	unlisted := readyIn(inFlowy(), sample[:2], flowyOrigin)
+	if unlisted.mode != modeAsk || !unlisted.onAddRow() {
+		t.Errorf("mode %v, cursor on %q; want the question with the add row highlighted", unlisted.mode, unlisted.cursorName())
+	}
+	if got := unlisted.table.Rows()[len(sample[:2])][0]; got != addRowText {
+		t.Errorf("add row = %q, want it plain so it takes the highlight", got)
+	}
+}
+
 func TestQuestion_EditFillsThePath(t *testing.T) {
 	t.Parallel()
 
