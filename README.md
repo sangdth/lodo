@@ -190,8 +190,28 @@ on port 53 again, as before oo: `sudo brew services start dnsmasq`.
 go test -race ./...                       # all tests
 go vet ./... && golangci-lint run ./...   # lint, config in .golangci.yml
 go test ./internal/tui -update            # rewrite that package's golden files after an intended change
-go run ./cmd/oo doctor                   # run oo from source
+go run ./cmd/oo doctor                    # run oo from source
 ```
+
+### Change it and use it right away
+
+Edit the code, then install the new build over the old one. It runs at once, as long as `~/go/bin` is on your
+`PATH` (`echo 'export PATH="$HOME/go/bin:$PATH"' >> ~/.zshrc`):
+
+```sh
+go vet ./... && go test -race ./... && golangci-lint run ./...   # the checks CI runs
+go install ./cmd/oo                                              # replaces ~/go/bin/oo
+oo
+```
+
+| What you changed                                      | After `go install`                       |
+| ----------------------------------------------------- | ---------------------------------------- |
+| TUI, messages, checks, the CLI                        | nothing, just run `oo`                   |
+| What goes into the generated dnsmasq or Caddy files   | `oo apply`                               |
+| The root script, the sudoers rule or the loopback job | `oo setup`, which asks for your password |
+
+`oo doctor` tells you which applies: "script out of date" means `oo setup`, and "generated files out of date"
+means `oo apply`.
 
 Golden files live in each package's `testdata/`; only packages that have them take `-update`. No test changes
 the system, and the few that run `dnsmasq --test`, `caddy validate`, `visudo -c` or `plutil -lint` skip when the
