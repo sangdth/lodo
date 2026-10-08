@@ -13,6 +13,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/sangdth/oo/internal/check"
+	"github.com/sangdth/oo/internal/compose"
 	"github.com/sangdth/oo/internal/store"
 )
 
@@ -33,7 +34,8 @@ type fakeBackend struct {
 	off           map[string]bool   // services turned off
 	setServices   []string          // each SetService call, such as "caddy off"
 	linkErr       error
-	log           string // dnsmasq's log
+	nextDev       []compose.Fix // what NextDev returns for any compose file
+	log           string        // dnsmasq's log
 	tailErr       error
 	saved         [][]store.Domain
 	applied       [][]store.Domain
@@ -89,6 +91,8 @@ func (f *fakeBackend) appendLog(s string) {
 	defer f.mu.Unlock()
 	f.log += s
 }
+
+func (f *fakeBackend) NextDev(string, string) []compose.Fix { return f.nextDev }
 
 // LinkEnv records the link and names the .env next to the compose file.
 func (f *fakeBackend) LinkEnv(_ context.Context, composePath, address string) (string, error) {

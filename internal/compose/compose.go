@@ -1,6 +1,7 @@
 // Package compose finds a project's Docker Compose file and rewrites it so
 // the project's ports bind its own loopback address and its browser URLs use
-// its .oo name. It reads files and never writes them.
+// its .oo name, and finds the next dev lines that need the address too. It
+// reads files and never writes them.
 package compose
 
 // EnvVar is the variable a rewritten port binds to. Linking a name writes it,

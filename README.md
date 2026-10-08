@@ -115,6 +115,10 @@ asking; any other key leaves the question open. A name that isn't listed gets th
 - A `localhost` URL in `environment` takes the project's name, or the subdomain Caddy serves on that port:
   `http://localhost:3000` becomes `http://dashboard.crm.oo`.
 - Healthchecks, commands and comments keep `localhost`: inside a container it is the container itself.
+- Above the file, a `next dev` without `-H` in the project's `package.json`, or in a shell script one of its
+  scripts runs, such as `scripts/dev.sh`, gets `-H <address>`: without it Next listens on every address, so two
+  projects can't both use port 3000. oo doesn't edit these files, since git tracks them; you add the flag. After
+  `l`, the status line says when one needs it.
 
 `l` links the selected name: the compose file of the project oo started in, or outside one the name's own,
 becomes the name's, and `DOCKER_HOST_IP=<address>` goes into the `.env` that file runs with. That is the file a

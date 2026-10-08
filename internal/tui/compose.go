@@ -32,6 +32,7 @@ type previewMsg struct {
 	owner   store.Domain
 	out     []byte
 	changes []compose.Change
+	fixes   []compose.Fix // next dev lines that need -H
 	err     error
 }
 
@@ -51,7 +52,8 @@ func (m Model) readPreview(owner store.Domain) tea.Cmd {
 			return previewMsg{err: err}
 		}
 		out, changes, err := compose.Rewrite(src, values)
-		return previewMsg{owner: owner, out: out, changes: changes, err: err}
+		fixes := b.NextDev(owner.Compose, owner.Address)
+		return previewMsg{owner: owner, out: out, changes: changes, fixes: fixes, err: err}
 	}
 }
 
@@ -81,7 +83,8 @@ func (m Model) composeOwner(d store.Domain) (store.Domain, bool) {
 }
 
 // showPreview fills the preview: changed lines marked in green, and the
-// .env line when the file's ports bind EnvVar.
+// .env line when the file's ports bind EnvVar. The next dev lines that need
+// -H come first, marked the same way.
 func (m *Model) showPreview(msg previewMsg) {
 	changed := make(map[int]bool, len(msg.changes))
 	for _, c := range msg.changes {
@@ -108,9 +111,24 @@ func (m *Model) showPreview(msg previewMsg) {
 	if strings.Contains(string(msg.out), "${"+compose.EnvVar) {
 		m.previewEnv = compose.EnvVar + "=" + msg.owner.Address
 	}
-	m.preview.SetContentLines(lines)
+	m.preview.SetContentLines(append(m.fixLines(msg.fixes), lines...))
 	m.preview.GotoTop()
 	m.preview.SetXOffset(0)
+}
+
+// fixLines shows each next dev fix under its file and line, then a line
+// before the compose file. oo leaves those files to the user.
+func (m Model) fixLines(fixes []compose.Fix) []string {
+	if len(fixes) == 0 {
+		return nil
+	}
+	lines := []string{m.styles.dim.Render("  next dev listens on every address; add -H to these lines yourself:")}
+	for _, f := range fixes {
+		lines = append(lines,
+			m.styles.dim.Render("  "+f.File+":"+strconv.Itoa(f.Line)),
+			m.styles.ok.Render("~ "+f.New))
+	}
+	return append(lines, "")
 }
 
 func (m Model) findProject() tea.Cmd {

@@ -16,10 +16,7 @@ import (
 // path, or else the .env at the project's root. The root is the git root
 // above path, or path's folder outside a repository.
 func EnvFile(path string) string {
-	root, ok := gitRoot(filepath.Dir(path))
-	if !ok {
-		root = filepath.Dir(path)
-	}
+	root := projectDir(path)
 	if env, ok := scriptEnvFile(root, path); ok {
 		return env
 	}

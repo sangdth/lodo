@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/x/exp/golden"
 
 	"github.com/sangdth/oo/internal/check"
+	"github.com/sangdth/oo/internal/compose"
 	"github.com/sangdth/oo/internal/paths"
 	"github.com/sangdth/oo/internal/run"
 	"github.com/sangdth/oo/internal/store"
@@ -345,6 +346,29 @@ func TestPreview_SubdomainUsesItsProjectsFile(t *testing.T) {
 	}
 }
 
+// devFix is a package.json line NextDev would fix for flowy.oo.
+var devFix = []compose.Fix{{File: "package.json", Line: 6, Old: `    "dev": "next dev",`, New: `    "dev": "next dev -H 127.0.1.3",`}}
+
+func TestPreview_NextDev(t *testing.T) {
+	t.Parallel()
+
+	domains := slices.Clone(sample)
+	domains[2].Compose = flowyDev
+	b := inFlowy()
+	b.nextDev = devFix
+	m := readyIn(b, domains, Start{Home: home})
+	m = send(send(send(m, "down"), "down"), "p") // flowy.oo
+	if m.mode != modePreview {
+		t.Fatalf("mode = %v after p, err %v; want the preview", m.mode, m.err)
+	}
+	view := ansi.Strip(m.View().Content)
+	for _, want := range []string{"add -H to these lines yourself", "package.json:6", `~     "dev": "next dev -H 127.0.1.3",`} {
+		if !strings.Contains(view, want) {
+			t.Errorf("preview lacks %q:\n%s", want, view)
+		}
+	}
+}
+
 func TestPreview_Refused(t *testing.T) {
 	t.Parallel()
 
@@ -451,6 +475,12 @@ func TestLink(t *testing.T) {
 		{
 			name: "outside a project: its own file", backend: &fakeBackend{}, domains: withFile, origin: Start{Home: home},
 			wantCompose: flowyProd, wantNote: "linked flowy.oo · DOCKER_HOST_IP=127.0.1.3 in ~/Projects/flowy/.env",
+		},
+		{
+			name: "next dev needs -H: the note says so before the path", domains: withFile, origin: flowyOrigin,
+			backend:     &fakeBackend{projectRoot: flowyRoot, projectFiles: []string{flowyDev}, nextDev: devFix},
+			wantCompose: flowyDev,
+			wantNote:    "linked flowy.oo · next dev needs -H: p shows it · DOCKER_HOST_IP=127.0.1.3 in ~/Projects/flowy/.env",
 		},
 		{
 			name: "no file at all", backend: &fakeBackend{}, domains: sample, origin: Start{Home: home},

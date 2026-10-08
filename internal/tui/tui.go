@@ -43,6 +43,9 @@ type Backend interface {
 	// LinkEnv writes DOCKER_HOST_IP=address into the .env the compose file at
 	// composePath runs with, and returns that file.
 	LinkEnv(ctx context.Context, composePath, address string) (string, error)
+	// NextDev returns the lines of the compose file's project that start
+	// next dev on every address, with -H address added. oo doesn't write them.
+	NextDev(composePath, address string) []compose.Fix
 	// Tail returns what dnsmasq logged since offset, and the next offset.
 	Tail(offset int64) (string, int64, error)
 }
@@ -128,6 +131,10 @@ func (b backend) LinkEnv(ctx context.Context, composePath, address string) (stri
 		return env, fmt.Errorf("write %s: %w", env, err)
 	}
 	return env, nil
+}
+
+func (b backend) NextDev(composePath, address string) []compose.Fix {
+	return compose.NextDev(composePath, address)
 }
 
 func (b backend) Tail(offset int64) (string, int64, error) { return dnsmasq.Tail(b.paths.Log, offset) }

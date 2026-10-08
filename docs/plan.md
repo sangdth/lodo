@@ -285,7 +285,10 @@ A failure at any step shows in the status line. The saved file stays as written;
   folder suggests, defaulting to yes: `y` or `enter` links it, `e` edits it first, `n` or `esc` saves `none`, and
   any other key waits; an unlisted name gets the add form. A compose path is saved without an apply: it changes
   no generated file. `p` previews the file rewritten by `compose.Rewrite` in a `viewport`, the changed lines
-  marked, with the `.env` line; `l` links. The preview scrolls sideways with the arrows only. oo writes one project file: the linked `.env`, and only its
+  marked, with the `.env` line; `l` links. The preview scrolls sideways with the arrows only. Above the file it lists
+  the `next dev` lines without `-H <address>` in the root `package.json` and the shell scripts its scripts run
+  (`compose.NextDev`), with the flag added, for the user to copy: those files are tracked, so oo doesn't write
+  them. `l`'s note says when there are any. oo writes one project file: the linked `.env`, and only its
   `DOCKER_HOST_IP` lines.
 - **Status bar:** checks 8, 1, 3 and 4, in that order. A green `●` is on and works, a dim `○` is off: turned off,
   or Caddy not running while no row has a port. A red `○` fails. Any red one says "run `oo doctor`".

@@ -250,7 +250,13 @@ func (m Model) thenLink(cmd tea.Cmd, d store.Domain) tea.Cmd {
 			msg.err = errors.Join(msg.err, err)
 			return msg
 		}
-		msg.note = "linked " + d.Name + " · " + compose.EnvVar + "=" + d.Address + " in " + shortPath(env, home)
+		// The next dev hint goes before the .env's path, which a narrow
+		// status line cuts.
+		hint := ""
+		if len(b.NextDev(d.Compose, d.Address)) > 0 {
+			hint = " · next dev needs -H: p shows it"
+		}
+		msg.note = "linked " + d.Name + hint + " · " + compose.EnvVar + "=" + d.Address + " in " + shortPath(env, home)
 		return msg
 	}
 }
