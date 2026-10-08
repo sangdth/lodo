@@ -7,11 +7,14 @@ import (
 	"io"
 	"strings"
 
+	tea "charm.land/bubbletea/v2"
+
 	"github.com/sangdth/lcd/internal/check"
 	"github.com/sangdth/lcd/internal/paths"
 	"github.com/sangdth/lcd/internal/run"
 	"github.com/sangdth/lcd/internal/store"
 	"github.com/sangdth/lcd/internal/system"
+	"github.com/sangdth/lcd/internal/tui"
 )
 
 // app runs the commands that read or change the system.
@@ -25,6 +28,29 @@ type app struct {
 
 func newApp(p paths.Paths, r run.Runner, stdout, stderr io.Writer) app {
 	return app{paths: p, runner: r, env: check.NewEnv(p, r), stdout: stdout, stderr: stderr}
+}
+
+// tui opens the terminal UI. It refuses while checks 1 to 5 fail: those need
+// lcd setup or a manual fix, which the TUI can't do.
+func (a app) tui(ctx context.Context) int {
+	domains, err := store.Load(a.paths.DomainsJSON)
+	if err != nil {
+		a.fail(err)
+		return 1
+	}
+	if failed := check.Failed(a.env.Prerequisites(ctx, domains)); len(failed) > 0 {
+		fmt.Fprint(a.stderr, formatChecks(failed))
+		fmt.Fprintln(a.stderr, "lcd opens once these pass; lcd doctor shows every check.")
+		return 1
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	program := tea.NewProgram(tui.New(ctx, tui.NewBackend(a.paths, a.runner), domains), tea.WithContext(ctx))
+	if _, err := program.Run(); err != nil {
+		a.fail(err)
+		return 1
+	}
+	return 0
 }
 
 // setup installs lcd's system parts, then prints the doctor table.

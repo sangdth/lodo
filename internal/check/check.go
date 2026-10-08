@@ -63,10 +63,11 @@ const (
 	fixApply = "lcd apply"
 )
 
-// doctorChecks are the eight checks, in ID order.
+// doctorChecks are the eight checks, in ID order. Each gets the whole domain
+// list and the probe results, which only "names resolve" reads.
 var doctorChecks = []struct {
 	name string
-	run  func(Env, context.Context, []store.Domain) Check
+	run  func(Env, context.Context, []store.Domain, []Result) Check
 }{
 	{"dnsmasq", Env.checkDnsmasq},
 	{"dnsmasq config", Env.checkConfig},
@@ -78,12 +79,34 @@ var doctorChecks = []struct {
 	{"caddy", Env.checkCaddy},
 }
 
+// prerequisites is how many checks, from the first, need lcd setup or a
+// manual fix rather than lcd apply.
+const prerequisites = 5
+
 // Run runs the eight checks one after another and returns them in ID order.
 // domains is the whole list from domains.json, enabled or not.
 func (e Env) Run(ctx context.Context, domains []store.Domain) []Check {
-	checks := make([]Check, len(doctorChecks))
-	for i, c := range doctorChecks {
-		checks[i] = c.run(e, ctx, domains)
+	checks, _ := e.Report(ctx, domains)
+	return checks
+}
+
+// Report runs the eight checks like Run and also returns the probe results
+// that "names resolve" is built from, so a caller showing both probes once.
+func (e Env) Report(ctx context.Context, domains []store.Domain) ([]Check, []Result) {
+	results := e.Probe(ctx, domains)
+	return e.run(ctx, domains, results, len(doctorChecks)), results
+}
+
+// Prerequisites runs checks 1 to 5, which need lcd setup or a manual fix.
+// It probes nothing, so it is quick enough to run before the TUI starts.
+func (e Env) Prerequisites(ctx context.Context, domains []store.Domain) []Check {
+	return e.run(ctx, domains, nil, prerequisites)
+}
+
+func (e Env) run(ctx context.Context, domains []store.Domain, results []Result, n int) []Check {
+	checks := make([]Check, n)
+	for i, c := range doctorChecks[:n] {
+		checks[i] = c.run(e, ctx, domains, results)
 		checks[i].ID, checks[i].Name = i+1, c.name
 	}
 	return checks
@@ -102,7 +125,7 @@ func Failed(checks []Check) []Check {
 
 // checkDnsmasq: dnsmasq is installed, no root job shadows lcd's, and
 // Homebrew's job runs it as the user.
-func (e Env) checkDnsmasq(ctx context.Context, _ []store.Domain) Check {
+func (e Env) checkDnsmasq(ctx context.Context, _ []store.Domain, _ []Result) Check {
 	p := e.Paths
 	if !installed(p.Dnsmasq) {
 		return fail("not installed", "brew install dnsmasq")
@@ -126,7 +149,7 @@ func (e Env) checkDnsmasq(ctx context.Context, _ []store.Domain) Check {
 
 // checkConfig: Homebrew's dnsmasq.conf includes lcd's file and makes dnsmasq
 // listen where the resolver files point.
-func (e Env) checkConfig(_ context.Context, _ []store.Domain) Check {
+func (e Env) checkConfig(_ context.Context, _ []store.Domain, _ []Result) Check {
 	p := e.Paths
 	content, err := readFile(p.SystemConf)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -142,7 +165,7 @@ func (e Env) checkConfig(_ context.Context, _ []store.Domain) Check {
 }
 
 // checkLoopback: the loopback job is loaded and every own address is on lo0.
-func (e Env) checkLoopback(ctx context.Context, _ []store.Domain) Check {
+func (e Env) checkLoopback(ctx context.Context, _ []store.Domain, _ []Result) Check {
 	p := e.Paths
 	_, err := e.Runner.Run(ctx, p.Launchctl, "print", "system/"+system.LoopbackLabel)
 	loaded := err == nil
@@ -160,7 +183,7 @@ func (e Env) checkLoopback(ctx context.Context, _ []store.Domain) Check {
 
 // checkResolvers: the root script is the one setup installs, sudo runs it
 // without a password, and every enabled domain has its resolver file.
-func (e Env) checkResolvers(ctx context.Context, domains []store.Domain) Check {
+func (e Env) checkResolvers(ctx context.Context, domains []store.Domain, _ []Result) Check {
 	p := e.Paths
 	if problem := e.scriptProblem(); problem != "" {
 		return fail(problem, fixSetup)
@@ -226,7 +249,7 @@ func (e Env) scriptProblem() string {
 // checkResolverLocal: no /etc/resolver/local takes every .local name away
 // from Bonjour. Like setup, it counts the file as present only when lstat
 // finds it.
-func (e Env) checkResolverLocal(_ context.Context, _ []store.Domain) Check {
+func (e Env) checkResolverLocal(_ context.Context, _ []store.Domain, _ []Result) Check {
 	local := filepath.Join(e.Paths.ResolverDir, "local")
 	if _, err := os.Lstat(local); err != nil {
 		return pass("absent")
@@ -235,7 +258,7 @@ func (e Env) checkResolverLocal(_ context.Context, _ []store.Domain) Check {
 }
 
 // checkGenerated: lcd's three generated files hold what domains generates.
-func (e Env) checkGenerated(_ context.Context, domains []store.Domain) Check {
+func (e Env) checkGenerated(_ context.Context, domains []store.Domain, _ []Result) Check {
 	p := e.Paths
 	var stale []string
 	for _, f := range []struct{ path, want string }{
@@ -253,9 +276,8 @@ func (e Env) checkGenerated(_ context.Context, domains []store.Domain) Check {
 	return pass("match domains.json")
 }
 
-// checkNames: every enabled domain passes its probes.
-func (e Env) checkNames(ctx context.Context, domains []store.Domain) Check {
-	results := e.Probe(ctx, domains)
+// checkNames: every enabled domain passed its probes.
+func (e Env) checkNames(_ context.Context, _ []store.Domain, results []Result) Check {
 	if len(results) == 0 {
 		return pass("no enabled domains")
 	}
@@ -273,7 +295,7 @@ func (e Env) checkNames(ctx context.Context, domains []store.Domain) Check {
 
 // checkCaddy: when an enabled domain has a port, Caddy is installed, set up,
 // running and valid, and it owns the HTTP port.
-func (e Env) checkCaddy(ctx context.Context, domains []store.Domain) Check {
+func (e Env) checkCaddy(ctx context.Context, domains []store.Domain, _ []Result) Check {
 	sites := 0
 	for _, d := range enabled(domains) {
 		if d.Port > 0 {

@@ -1,0 +1,78 @@
+package tui
+
+import (
+	"errors"
+	"strings"
+	"testing"
+
+	"github.com/charmbracelet/x/ansi"
+	"github.com/charmbracelet/x/exp/golden"
+)
+
+func TestModel_View(t *testing.T) {
+	t.Parallel()
+
+	b := &fakeBackend{failing: map[string]string{"dashboard.crm.lcd": "app down: nothing answers on 127.0.1.1:3000"}}
+	m := ready(b, sample)
+	v := m.View()
+	if !v.AltScreen {
+		t.Error("the view does not use the alternate screen")
+	}
+	golden.RequireEqual(t, v.Content)
+}
+
+func TestModel_StatusLine(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		backend *fakeBackend
+		keys    []string
+		want    string
+	}{
+		{name: "all good", backend: &fakeBackend{}, want: ""},
+		{
+			name:    "the selected name fails",
+			backend: &fakeBackend{failing: map[string]string{"crm.lcd": "macOS: no address"}},
+			want:    "crm.lcd: macOS: no address",
+		},
+		{
+			name:    "another name fails",
+			backend: &fakeBackend{failing: map[string]string{"flowy.lcd": "macOS: no address"}},
+			want:    "",
+		},
+		{
+			name:    "a system part fails",
+			backend: &fakeBackend{failingChecks: map[int]string{1: "not running", 3: "job not loaded"}},
+			want:    "dnsmasq, loopback need attention: run lcd doctor",
+		},
+		{
+			name:    "a failed change",
+			backend: &fakeBackend{applyErr: errors.New("restart dnsmasq: exit status 1")},
+			keys:    []string{"space"},
+			want:    "✗ restart dnsmasq: exit status 1",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m := ready(tt.backend, sample)
+			for _, k := range tt.keys {
+				m = send(m, k)
+			}
+			if got := strings.TrimSpace(ansi.Strip(m.statusLine())); got != tt.want {
+				t.Errorf("status line = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestModel_StatusLineFitsTheWidth(t *testing.T) {
+	t.Parallel()
+
+	b := &fakeBackend{failing: map[string]string{"crm.lcd": strings.Repeat("very long detail ", 20)}}
+	m := ready(b, sample)
+	if w := ansi.StringWidth(m.statusLine()); w > m.width {
+		t.Errorf("status line is %d wide, terminal %d", w, m.width)
+	}
+}

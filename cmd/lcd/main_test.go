@@ -17,7 +17,6 @@ func TestDispatch(t *testing.T) {
 	}{
 		{name: "version", args: []string{"version"}, wantCode: 0, wantStdout: "dev\n"},
 		{name: "help", args: []string{"help"}, wantCode: 0, wantStdout: "Usage:"},
-		{name: "no command", args: nil, wantCode: 2, wantStderr: "Usage:"},
 		{name: "unknown command", args: []string{"frobnicate"}, wantCode: 2, wantStderr: `lcd: unknown command "frobnicate"`},
 		{name: "extra argument", args: []string{"doctor", "now"}, wantCode: 2, wantStderr: "lcd: doctor takes no arguments"},
 	}

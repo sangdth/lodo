@@ -569,6 +569,38 @@ func TestEnv_Run_Caddy(t *testing.T) {
 	})
 }
 
+func TestEnv_Report(t *testing.T) {
+	t.Parallel()
+
+	m := newMac(t, healthyDomains)
+	checks, results := m.env.Report(t.Context(), m.domains)
+	if len(checks) != 8 || !checks[6].OK {
+		t.Fatalf("checks = %+v, want eight with names resolving", checks)
+	}
+	if len(results) != 2 || !results[0].OK() || !results[1].OK() {
+		t.Errorf("results = %+v, want both enabled domains passing", results)
+	}
+}
+
+func TestEnv_Prerequisites(t *testing.T) {
+	t.Parallel()
+
+	m := newMac(t, healthyDomains)
+	m.fake.Fail(run.Line(m.p.Launchctl, "print", "system/io.lcd.loopback"), "Could not find service")
+	got := m.env.Prerequisites(t.Context(), m.domains)
+	if len(got) != 5 {
+		t.Fatalf("got %d checks, want checks 1 to 5", len(got))
+	}
+	for i, c := range got {
+		if c.ID != i+1 {
+			t.Errorf("check %d has ID %d", i, c.ID)
+		}
+	}
+	if failed := check.Failed(got); len(failed) != 1 || failed[0].ID != 3 {
+		t.Errorf("failed = %+v, want only the loopback check", failed)
+	}
+}
+
 func TestFailed(t *testing.T) {
 	t.Parallel()
 

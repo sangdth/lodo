@@ -20,6 +20,7 @@ var Version = "dev"
 const usage = `lcd manages .lcd names on macOS through dnsmasq.
 
 Usage:
+  lcd            open the TUI: the list of names, their checks, and keys to change them
   lcd setup      one-time system setup; asks for your password
   lcd apply      write the configs from domains.json, reload, and check every name
   lcd doctor     check every part and print what to fix
@@ -33,33 +34,34 @@ func main() {
 }
 
 // dispatch runs one command and returns the exit code: 0 on success, 1 when
-// the command failed, 2 for bad usage.
+// the command failed, 2 for bad usage. No command opens the TUI.
 func dispatch(args []string, stdout, stderr io.Writer) int {
-	if len(args) == 0 {
-		fmt.Fprint(stderr, usage)
-		return 2
+	command := ""
+	if len(args) > 0 {
+		command = args[0]
 	}
-	switch args[0] {
+	switch command {
 	case "version", "--version":
 		fmt.Fprintln(stdout, version())
 		return 0
 	case "help", "-h", "--help":
 		fmt.Fprint(stdout, usage)
 		return 0
-	case "setup", "apply", "doctor", "uninstall":
-		return runSystem(args, stdout, stderr)
+	case "", "setup", "apply", "doctor", "uninstall":
+		if len(args) > 1 {
+			fmt.Fprintf(stderr, "lcd: %s takes no arguments\n\n%s", command, usage)
+			return 2
+		}
+		return runApp(command, stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "lcd: unknown command %q\n\n%s", args[0], usage)
 		return 2
 	}
 }
 
-// runSystem runs a command that reads or changes the system, as the user.
-func runSystem(args []string, stdout, stderr io.Writer) int {
-	if len(args) > 1 {
-		fmt.Fprintf(stderr, "lcd: %s takes no arguments\n\n%s", args[0], usage)
-		return 2
-	}
+// runApp runs the TUI or a command that reads or changes the system, as the
+// user.
+func runApp(command string, stdout, stderr io.Writer) int {
 	if os.Geteuid() == 0 {
 		fmt.Fprintln(stderr, "lcd: run lcd as your user, not with sudo; it asks for your password when it needs it")
 		return 2
@@ -73,7 +75,9 @@ func runSystem(args []string, stdout, stderr io.Writer) int {
 	defer stop()
 
 	a := newApp(p, run.Exec{}, stdout, stderr)
-	switch args[0] {
+	switch command {
+	case "":
+		return a.tui(ctx)
 	case "setup":
 		return a.setup(ctx)
 	case "apply":

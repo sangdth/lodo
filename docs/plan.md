@@ -69,6 +69,13 @@ Settled 2026-10-08. The steps below follow them.
   `.local`, like `flowy.local`, to Bonjour only and ignores its resolver file (`docs/setup-log.md`). `.dev` was
   ruled out: browsers force HTTPS on all of it (HSTS preload) and `flowy.dev` is a registered domain. `.lcd` is in
   no public zone today.
+- **The TUI has one `Backend` interface** (load, save, apply, report) instead of separate applier and checker
+  interfaces; the real one wraps `store`, `system` and `check`.
+- **`lcd` refuses to open while checks 1–5 fail,** using `check.Env.Prerequisites`, which probes nothing. The
+  TUI then runs `check.Env.Report` in the background: one probe feeds the status bar and every row.
+- **The table has its own key map:** the default binds `space` and `d` to paging.
+- **TUI snapshots golden `View().Content`,** not teatest's byte stream, which holds spinner frames and timing;
+  one teatest test drives the real program loop.
 - **Golden files** use `github.com/charmbracelet/x/exp/golden`: `testdata/<TestName>.golden`, `-update` per package.
 - **`apply` refuses before setup:** until the script is installed and Homebrew's dnsmasq.conf includes lcd's,
   `system.Apply` returns `ErrNotSetUp` and changes nothing. Without it, `lcd apply` before setup started a user

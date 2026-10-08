@@ -27,6 +27,22 @@ func TestApp_Doctor(t *testing.T) {
 	}
 }
 
+func TestApp_TUIRefusesBeforeSetup(t *testing.T) {
+	t.Parallel()
+
+	var stdout, stderr strings.Builder
+	a := newApp(paths.ForTest(t.TempDir()), run.NewFake(), &stdout, &stderr)
+	if code := a.tui(context.Background()); code != 1 {
+		t.Errorf("exit code = %d on a Mac with nothing set up, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "✗ 1 dnsmasq") || !strings.Contains(stderr.String(), "lcd opens once these pass") {
+		t.Errorf("stderr does not list the failing checks:\n%s", stderr.String())
+	}
+	if strings.Contains(stderr.String(), " 7 ") {
+		t.Errorf("the gate ran past check 5:\n%s", stderr.String())
+	}
+}
+
 func TestFormatChecks(t *testing.T) {
 	t.Parallel()
 
