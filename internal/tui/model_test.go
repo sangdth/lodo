@@ -12,7 +12,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/sangdth/oo/internal/store"
+	"github.com/sangdth/lodo/internal/store"
 )
 
 func TestPress(t *testing.T) {
@@ -36,12 +36,12 @@ func TestNew(t *testing.T) {
 	if got := m.rows()[0][5]; got != "…" {
 		t.Errorf("check cell before the first report = %q, want …", got)
 	}
-	spinning := m.spinner.View() + " crm.oo"
+	spinning := m.spinner.View() + " crm.test"
 	if got := m.table.Rows()[0][0]; got != spinning {
 		t.Errorf("enabled row before the first report = %q, want %q", got, spinning)
 	}
-	if got := m.table.Rows()[3][0]; got != "○ old.oo" {
-		t.Errorf("disabled row before the first report = %q, want ○ old.oo", got)
+	if got := m.table.Rows()[3][0]; got != "○ old.test" {
+		t.Errorf("disabled row before the first report = %q, want ○ old.test", got)
 	}
 	if got := strings.TrimSpace(m.statusLine()); got != "" {
 		t.Errorf("status line while busy = %q, want empty", got)
@@ -50,8 +50,8 @@ func TestNew(t *testing.T) {
 	if m.busy || b.reports != 1 || len(m.checks) != 8 || len(m.results) != 3 {
 		t.Errorf("after Init: busy %v, %d reports, %d checks, %d results", m.busy, b.reports, len(m.checks), len(m.results))
 	}
-	if got := m.table.Rows()[0][0]; got != "● crm.oo" {
-		t.Errorf("enabled row after the first report = %q, want ● crm.oo", got)
+	if got := m.table.Rows()[0][0]; got != "● crm.test" {
+		t.Errorf("enabled row after the first report = %q, want ● crm.test", got)
 	}
 }
 
@@ -60,10 +60,10 @@ func TestModel_Toggle(t *testing.T) {
 
 	b := &fakeBackend{}
 	m := ready(b, sample)
-	m = send(m, "down") // dashboard.crm.oo
+	m = send(m, "down") // dashboard.crm.test
 	m = send(m, "space")
 
-	want, err := store.Toggle(sample, "dashboard.crm.oo")
+	want, err := store.Toggle(sample, "dashboard.crm.test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,9 +90,9 @@ func TestModel_SpinnerOnTheChangedRow(t *testing.T) {
 		row   int
 		label string
 	}{
-		{name: "turn a name off", keys: []string{"space"}, row: 0, label: "crm.oo"},
-		{name: "turn a name on", keys: []string{"down", "down", "down", "space"}, row: 3, label: "old.oo"},
-		{name: "delete a name", keys: []string{"down", "down", "d", "y"}, row: 2, label: "flowy.oo"},
+		{name: "turn a name off", keys: []string{"space"}, row: 0, label: "crm.test"},
+		{name: "turn a name on", keys: []string{"down", "down", "down", "space"}, row: 3, label: "old.test"},
+		{name: "delete a name", keys: []string{"down", "down", "d", "y"}, row: 2, label: "flowy.test"},
 		{name: "reload", keys: []string{"r"}, row: -1},
 	}
 	for _, tt := range tests {
@@ -141,7 +141,7 @@ func TestModel_Services(t *testing.T) {
 		t.Errorf("SetService calls = %q, want %q", b.setServices, want)
 	}
 	bar := ansi.Strip(m.statusBar())
-	if !strings.HasPrefix(bar, " oo   caddy ○   dnsmasq ○   loopback ●   resolvers ●") {
+	if !strings.HasPrefix(bar, " lodo   caddy ○   dnsmasq ○   loopback ●   resolvers ●") {
 		t.Errorf("status bar = %q, want both services off", bar)
 	}
 	if got := strings.TrimSpace(ansi.Strip(m.statusLine())); got != "" {
@@ -205,7 +205,7 @@ func TestModel_StatusBarMarks(t *testing.T) {
 
 	b := &fakeBackend{failingChecks: map[int]string{3: "job not loaded"}, off: map[string]bool{"dnsmasq": true}}
 	m := ready(b, sample)
-	if bar, want := ansi.Strip(m.statusBar()), " oo   caddy ●   dnsmasq ○   loopback ○   resolvers ●"; bar != want {
+	if bar, want := ansi.Strip(m.statusBar()), " lodo   caddy ●   dnsmasq ○   loopback ○   resolvers ●"; bar != want {
 		t.Errorf("status bar = %q, want %q", bar, want)
 	}
 	for _, tt := range []struct {
@@ -254,7 +254,7 @@ func TestModel_AddRow(t *testing.T) {
 	}
 	for _, k := range []string{"space", "enter", "a"} {
 		got := send(m, k)
-		if got.mode != modeForm || got.form.parent != "" || got.form.suffix != ".oo" {
+		if got.mode != modeForm || got.form.parent != "" || got.form.suffix != ".test" {
 			t.Errorf("%s on the add row: mode %v, parent %q; want the plain add form", k, got.mode, got.form.parent)
 		}
 	}
@@ -268,14 +268,14 @@ func TestModel_AddKeys(t *testing.T) {
 		{Code: 'a', ShiftedCode: 'A', Text: "A", Mod: tea.ModShift},
 		{Code: 'a', Mod: tea.ModShift}, // a terminal that reports keys without their text
 	} {
-		next, _ := ready(&fakeBackend{}, sample).Update(k) // the cursor is on crm.oo
+		next, _ := ready(&fakeBackend{}, sample).Update(k) // the cursor is on crm.test
 		if m := next.(Model); m.mode != modeForm || m.form.parent != "" {
 			t.Errorf("%s: mode %v, parent %q; want the plain add form", k, m.mode, m.form.parent)
 		}
 	}
 	m := send(ready(&fakeBackend{}, sample), "a")
-	if m.mode != modeForm || m.form.parent != "crm.oo" {
-		t.Errorf("a on crm.oo: mode %v, parent %q; want a subdomain of crm.oo", m.mode, m.form.parent)
+	if m.mode != modeForm || m.form.parent != "crm.test" {
+		t.Errorf("a on crm.test: mode %v, parent %q; want a subdomain of crm.test", m.mode, m.form.parent)
 	}
 }
 
@@ -283,7 +283,7 @@ func TestModel_RowsIndentTheMark(t *testing.T) {
 	t.Parallel()
 
 	m := ready(&fakeBackend{}, sample)
-	for i, want := range []string{"● crm.oo", "  ● dashboard.crm.oo", "● flowy.oo", "○ old.oo"} {
+	for i, want := range []string{"● crm.test", "  ● dashboard.crm.test", "● flowy.test", "○ old.test"} {
 		if got := m.table.Rows()[i][0]; got != want {
 			t.Errorf("row %d = %q, want %q", i, got, want)
 		}
@@ -292,15 +292,15 @@ func TestModel_RowsIndentTheMark(t *testing.T) {
 
 // lastProject ends with a project and its subdomain.
 var lastProject = []store.Domain{
-	{Name: "aaa.oo", Address: "127.0.1.2", Enabled: true},
-	{Name: "crm.oo", Address: "127.0.1.1", Enabled: true},
-	{Name: "dashboard.crm.oo", Address: "127.0.1.1", Port: 3000, Enabled: true},
+	{Name: "aaa.test", Address: "127.0.1.2", Enabled: true},
+	{Name: "crm.test", Address: "127.0.1.1", Enabled: true},
+	{Name: "dashboard.crm.test", Address: "127.0.1.1", Port: 3000, Enabled: true},
 }
 
 func TestDelete_TakesItsSubdomains(t *testing.T) {
 	t.Parallel()
 
-	many := append(slices.Clone(sample), store.Domain{Name: "api.crm.oo", Address: "127.0.1.1", Enabled: true})
+	many := append(slices.Clone(sample), store.Domain{Name: "api.crm.test", Address: "127.0.1.1", Enabled: true})
 	tests := []struct {
 		name     string
 		domains  []store.Domain
@@ -308,9 +308,9 @@ func TestDelete_TakesItsSubdomains(t *testing.T) {
 		wantAsk  string
 		wantLeft []string
 	}{
-		{name: "one subdomain, named", domains: sample, wantAsk: "delete crm.oo and dashboard.crm.oo? y/N", wantLeft: []string{"flowy.oo", "old.oo"}},
-		{name: "several, counted", domains: many, wantAsk: "delete crm.oo and its 2 subdomains? y/N", wantLeft: []string{"flowy.oo", "old.oo"}},
-		{name: "a subdomain alone", domains: sample, downs: 1, wantAsk: "delete dashboard.crm.oo? y/N", wantLeft: []string{"crm.oo", "flowy.oo", "old.oo"}},
+		{name: "one subdomain, named", domains: sample, wantAsk: "delete crm.test and dashboard.crm.test? y/N", wantLeft: []string{"flowy.test", "old.test"}},
+		{name: "several, counted", domains: many, wantAsk: "delete crm.test and its 2 subdomains? y/N", wantLeft: []string{"flowy.test", "old.test"}},
+		{name: "a subdomain alone", domains: sample, downs: 1, wantAsk: "delete dashboard.crm.test? y/N", wantLeft: []string{"crm.test", "flowy.test", "old.test"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -348,11 +348,11 @@ func TestModel_DeleteMovesToANeighbor(t *testing.T) {
 		downs   int
 		want    string // the name under the cursor after the delete; empty for the add row
 	}{
-		{name: "a middle name", domains: sample, downs: 1, want: "flowy.oo"},
-		{name: "the last name", domains: sample, downs: 3, want: "flowy.oo"},
+		{name: "a middle name", domains: sample, downs: 1, want: "flowy.test"},
+		{name: "the last name", domains: sample, downs: 3, want: "flowy.test"},
 		{name: "the only name", domains: sample[2:3], want: ""},
-		{name: "a project with its subdomain: past them", domains: sample, downs: 0, want: "flowy.oo"},
-		{name: "the last project with its subdomain: back up", domains: lastProject, downs: 1, want: "aaa.oo"},
+		{name: "a project with its subdomain: past them", domains: sample, downs: 0, want: "flowy.test"},
+		{name: "the last project with its subdomain: back up", domains: lastProject, downs: 1, want: "aaa.test"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -386,20 +386,20 @@ func TestModel_CursorMovedDuringAChangeStays(t *testing.T) {
 			name:  "toggle, then move down",
 			start: func(m Model) (tea.Model, tea.Cmd) { return m.Update(press("space")) },
 			moves: []string{"down"},
-			want:  "dashboard.crm.oo",
+			want:  "dashboard.crm.test",
 		},
 		{
 			name:  "toggle, no move",
 			start: func(m Model) (tea.Model, tea.Cmd) { return m.Update(press("space")) },
-			want:  "crm.oo",
+			want:  "crm.test",
 		},
 		{
 			name: "add above the row moved to",
 			start: func(m Model) (tea.Model, tea.Cmd) {
-				return typeText(send(m, "a"), "api").Update(press("enter")) // api.crm.oo is listed right under crm.oo
+				return typeText(send(m, "a"), "api").Update(press("enter")) // api.crm.test is listed right under crm.test
 			},
 			moves: []string{"down", "down", "down"},
-			want:  "flowy.oo",
+			want:  "flowy.test",
 		},
 		{
 			name: "move onto the name being added",
@@ -407,14 +407,14 @@ func TestModel_CursorMovedDuringAChangeStays(t *testing.T) {
 				return typeText(send(m, "a"), "api").Update(press("enter"))
 			},
 			moves: []string{"down", "down", "up"},
-			want:  "api.crm.oo",
+			want:  "api.crm.test",
 		},
 		{
 			name: "add, no move",
 			start: func(m Model) (tea.Model, tea.Cmd) {
 				return typeText(send(m, "a"), "api").Update(press("enter"))
 			},
-			want: "api.crm.oo",
+			want: "api.crm.test",
 		},
 		{
 			name:  "move to the add row",
@@ -448,18 +448,18 @@ func TestModel_CursorMovedDuringAChangeStays(t *testing.T) {
 func TestModel_AddingShowsTheRowAtOnce(t *testing.T) {
 	t.Parallel()
 
-	m := send(ready(&fakeBackend{}, sample), "a") // a subdomain of crm.oo
+	m := send(ready(&fakeBackend{}, sample), "a") // a subdomain of crm.test
 	next, cmd := typeText(m, "api").Update(press("enter"))
 	m = next.(Model)
 	rows := m.table.Rows()
-	if len(rows) != len(sample)+2 || rows[1][0] != "  "+m.spinner.View()+" api.crm.oo" {
-		t.Fatalf("rows while saving = %q, want api.crm.oo under crm.oo with the spinner", rows)
+	if len(rows) != len(sample)+2 || rows[1][0] != "  "+m.spinner.View()+" api.crm.test" {
+		t.Fatalf("rows while saving = %q, want api.crm.test under crm.test with the spinner", rows)
 	}
 	if got := m.table.Height(); got != len(sample)+2 {
 		t.Errorf("table shows %d rows, want room for the new one", got)
 	}
 	m = settle(m, cmd)
-	if m.adding.Name != "" || len(m.table.Rows()) != len(sample)+2 || m.table.Rows()[1][0] != "  ● api.crm.oo" {
+	if m.adding.Name != "" || len(m.table.Rows()) != len(sample)+2 || m.table.Rows()[1][0] != "  ● api.crm.test" {
 		t.Errorf("rows after saving = %q, adding %q; want the saved row once", m.table.Rows(), m.adding.Name)
 	}
 }
@@ -509,12 +509,12 @@ func TestModel_Reload(t *testing.T) {
 
 	b := &fakeBackend{}
 	m := ready(b, sample)
-	b.onDisk = []store.Domain{{Name: "new.oo", Address: "127.0.1.9", Enabled: true}}
+	b.onDisk = []store.Domain{{Name: "new.test", Address: "127.0.1.9", Enabled: true}}
 	m = send(m, "r")
-	if len(b.applied) != 1 || b.applied[0][0].Name != "new.oo" {
+	if len(b.applied) != 1 || b.applied[0][0].Name != "new.test" {
 		t.Errorf("applied %v, want the list on disk", b.applied)
 	}
-	if len(m.domains) != 1 || m.domains[0].Name != "new.oo" {
+	if len(m.domains) != 1 || m.domains[0].Name != "new.test" {
 		t.Errorf("domains = %v, want the list on disk", m.domains)
 	}
 }
@@ -575,7 +575,7 @@ func TestModel_WindowSize(t *testing.T) {
 		{terminal: 100, box: minBoxWidth},
 		{terminal: 80, box: 80}, // narrower than the floor: the whole terminal
 	}
-	longest := ansi.StringWidth("  ● dashboard.crm.oo")
+	longest := ansi.StringWidth("  ● dashboard.crm.test")
 	for _, tt := range tests {
 		next, _ := m.Update(tea.WindowSizeMsg{Width: tt.terminal, Height: 40})
 		cols := next.(Model).table.Columns()
@@ -597,7 +597,7 @@ func TestModel_BoxFitsTheNames(t *testing.T) {
 
 	many := make([]store.Domain, 40)
 	for i := range many {
-		many[i] = store.Domain{Name: "n" + strconv.Itoa(i) + ".oo", Address: "127.0.0.1"}
+		many[i] = store.Domain{Name: "n" + strconv.Itoa(i) + ".test", Address: "127.0.0.1"}
 	}
 	tests := []struct {
 		name    string

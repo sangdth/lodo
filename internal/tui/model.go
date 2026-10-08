@@ -13,9 +13,9 @@ import (
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/sangdth/oo/internal/check"
-	"github.com/sangdth/oo/internal/compose"
-	"github.com/sangdth/oo/internal/store"
+	"github.com/sangdth/lodo/internal/check"
+	"github.com/sangdth/lodo/internal/compose"
+	"github.com/sangdth/lodo/internal/store"
 )
 
 // The terminal size before the first WindowSizeMsg.
@@ -39,10 +39,10 @@ const (
 	modeConfirm             // a delete waiting for y
 	modeLog                 // dnsmasq's query log
 	modeAsk                 // the compose question at startup
-	modePreview             // a compose file with oo's changes
+	modePreview             // a compose file with lodo's changes
 )
 
-// Start is where oo started: the folder the compose question looks for a
+// Start is where lodo started: the folder the compose question looks for a
 // project in, empty to skip it, and the home folder that ~ stands for.
 type Start struct {
 	Dir  string
@@ -53,9 +53,9 @@ type Start struct {
 type Model struct {
 	ctx     context.Context
 	backend Backend
-	origin  Start // where oo started
+	origin  Start // where lodo started
 
-	project  projectMsg // the project oo started in; empty outside one
+	project  projectMsg // the project lodo started in; empty outside one
 	asked    bool       // the compose question has run, or had nothing to ask
 	question question   // what the compose question offers, while it is open
 
@@ -78,7 +78,7 @@ type Model struct {
 	logEvery   time.Duration // how often the open log is read
 
 	preview      viewport.Model
-	previewTitle string // the file, its name and how many changes, such as compose.dev.yaml for flowy.oo · 3 changes
+	previewTitle string // the file, its name and how many changes, such as compose.dev.yaml for flowy.test · 3 changes
 	previewEnv   string // the .env line the file's ports need, such as DOCKER_HOST_IP=127.0.1.3; empty when none binds it
 	previewOwner string // the name whose compose file the preview shows
 
@@ -96,7 +96,7 @@ type Model struct {
 }
 
 // New returns the TUI for domains, which the caller loaded from domains.json.
-// ctx bounds every command the TUI runs; start says where oo started.
+// ctx bounds every command the TUI runs; start says where lodo started.
 func New(ctx context.Context, b Backend, domains []store.Domain, start Start) Model {
 	m := Model{
 		ctx:      ctx,
@@ -126,7 +126,7 @@ func previewPort() viewport.Model {
 }
 
 // tableKeys moves the cursor with arrows, j/k, page and home/end keys only,
-// so the table never takes a key oo uses, such as space.
+// so the table never takes a key lodo uses, such as space.
 func tableKeys() table.KeyMap {
 	return table.KeyMap{
 		LineUp:     key.NewBinding(key.WithKeys("up", "k")),
@@ -139,7 +139,7 @@ func tableKeys() table.KeyMap {
 }
 
 // Init checks the system and every name while the spinner runs, and looks
-// for the project oo started in.
+// for the project lodo started in.
 func (m Model) Init() tea.Cmd {
 	cmds := []tea.Cmd{m.report(m.domains), m.spinner.Tick}
 	if m.origin.Dir != "" {

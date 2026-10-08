@@ -1,4 +1,4 @@
-module github.com/sangdth/oo
+module github.com/sangdth/lodo
 
 go 1.27.0
 

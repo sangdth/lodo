@@ -12,9 +12,9 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/sangdth/oo/internal/check"
-	"github.com/sangdth/oo/internal/store"
-	"github.com/sangdth/oo/internal/system"
+	"github.com/sangdth/lodo/internal/check"
+	"github.com/sangdth/lodo/internal/store"
+	"github.com/sangdth/lodo/internal/system"
 )
 
 // Column widths, without the one-space padding the table adds on each side.
@@ -95,7 +95,7 @@ var help = map[mode]string{
 	modePreview: " p or esc back to the list  ↑/↓ ←/→ scroll  l write the .env line\n q quit",
 }
 
-// The keys of the compose question, for a listed name and for one oo adds.
+// The keys of the compose question, for a listed name and for one lodo adds.
 const (
 	askHelp    = " y or enter use it  e edit the path first  n or esc no\n"
 	askAddHelp = " y or enter add it  n or esc no\n"
@@ -285,7 +285,7 @@ func mark(ok bool) string {
 // statusBar shows the system parts doctor checks, each with its state. The
 // service the keys act on is highlighted.
 func (m Model) statusBar() string {
-	parts := []string{m.styles.title.Render("oo")}
+	parts := []string{m.styles.title.Render("lodo")}
 	for _, p := range statusParts {
 		label := p.label
 		if m.onServices && label == services[m.service] {
@@ -325,7 +325,7 @@ func (m Model) check(id int) (check.Check, bool) {
 
 // statusLine says what a delete or the compose question waits for, what
 // failed, what was just done, why the selected name fails, or which system
-// part needs oo doctor, in that order.
+// part needs lodo doctor, in that order.
 func (m Model) statusLine() string {
 	line := ""
 	switch {
@@ -371,7 +371,7 @@ func (m Model) problem() string {
 		}
 	}
 	if len(failed) > 0 {
-		return m.styles.bad.Render(strings.Join(failed, ", ") + " need attention: run oo doctor")
+		return m.styles.bad.Render(strings.Join(failed, ", ") + " need attention: run lodo doctor")
 	}
 	return ""
 }

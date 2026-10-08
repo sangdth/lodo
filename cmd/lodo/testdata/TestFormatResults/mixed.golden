@@ -1,0 +1,3 @@
+✓ crm.test            127.0.1.1
+✗ dashboard.crm.test  127.0.1.1 port 3000  app down: nothing answers on 127.0.1.1:3000
+✗ flowy.test          127.0.1.3            macOS: no address

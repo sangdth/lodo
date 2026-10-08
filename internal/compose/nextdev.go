@@ -109,7 +109,7 @@ func fixLine(line, address string) string {
 }
 
 // isFixedHost reports whether a host option's value is a plain address that
-// oo can replace: not empty, quoted or a variable.
+// lodo can replace: not empty, quoted or a variable.
 func isFixedHost(value string) bool {
 	return value != "" && !strings.ContainsAny(value, `$'"`)
 }

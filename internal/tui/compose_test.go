@@ -12,11 +12,11 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/exp/golden"
 
-	"github.com/sangdth/oo/internal/check"
-	"github.com/sangdth/oo/internal/compose"
-	"github.com/sangdth/oo/internal/paths"
-	"github.com/sangdth/oo/internal/run"
-	"github.com/sangdth/oo/internal/store"
+	"github.com/sangdth/lodo/internal/check"
+	"github.com/sangdth/lodo/internal/compose"
+	"github.com/sangdth/lodo/internal/paths"
+	"github.com/sangdth/lodo/internal/run"
+	"github.com/sangdth/lodo/internal/store"
 )
 
 // A project in ~/Projects/flowy with a dev and a prod compose file.
@@ -25,7 +25,7 @@ const (
 	flowyRoot  = home + "/Projects/flowy"
 	flowyDev   = flowyRoot + "/compose.dev.yaml"
 	flowyProd  = flowyRoot + "/compose.prod.yaml"
-	flowyStart = flowyRoot + "/apps/web" // oo can start below the project's root
+	flowyStart = flowyRoot + "/apps/web" // lodo can start below the project's root
 )
 
 const flowyCompose = `services:
@@ -41,7 +41,7 @@ const flowyCompose = `services:
       APP_URL: http://localhost:3000
 `
 
-// inFlowy is a backend for an oo started inside the flowy project.
+// inFlowy is a backend for an lodo started inside the flowy project.
 func inFlowy() *fakeBackend {
 	return &fakeBackend{
 		projectRoot:  flowyRoot,
@@ -61,39 +61,39 @@ func TestQuestion(t *testing.T) {
 		key        string
 		wantMode   mode
 		wantStatus string // the question, before the key
-		wantSaved  string // flowy.oo's compose value once saved; empty when nothing is saved
+		wantSaved  string // flowy.test's compose value once saved; empty when nothing is saved
 	}{
 		{
 			name: "y links the file", domains: sample, key: "y", wantMode: modeList,
-			wantStatus: "use ./compose.dev.yaml for flowy.oo? Y/n", wantSaved: flowyDev,
+			wantStatus: "use ./compose.dev.yaml for flowy.test? Y/n", wantSaved: flowyDev,
 		},
 		{
 			name: "enter is yes", domains: sample, key: "enter", wantMode: modeList,
-			wantStatus: "use ./compose.dev.yaml for flowy.oo? Y/n", wantSaved: flowyDev,
+			wantStatus: "use ./compose.dev.yaml for flowy.test? Y/n", wantSaved: flowyDev,
 		},
 		{
 			name: "n saves no", domains: sample, key: "n", wantMode: modeList,
-			wantStatus: "use ./compose.dev.yaml for flowy.oo? Y/n", wantSaved: store.NoCompose,
+			wantStatus: "use ./compose.dev.yaml for flowy.test? Y/n", wantSaved: store.NoCompose,
 		},
 		{
 			name: "esc is no", domains: sample, key: "esc", wantMode: modeList,
-			wantStatus: "use ./compose.dev.yaml for flowy.oo? Y/n", wantSaved: store.NoCompose,
+			wantStatus: "use ./compose.dev.yaml for flowy.test? Y/n", wantSaved: store.NoCompose,
 		},
 		{
 			name: "e edits the path first", domains: sample, key: "e", wantMode: modeForm,
-			wantStatus: "use ./compose.dev.yaml for flowy.oo? Y/n",
+			wantStatus: "use ./compose.dev.yaml for flowy.test? Y/n",
 		},
 		{
 			name: "another key waits for an answer", domains: sample, key: "x", wantMode: modeAsk,
-			wantStatus: "use ./compose.dev.yaml for flowy.oo? Y/n",
+			wantStatus: "use ./compose.dev.yaml for flowy.test? Y/n",
 		},
 		{
 			name: "an unlisted name: enter opens the add form", domains: sample[:2], key: "enter", wantMode: modeForm,
-			wantStatus: "add flowy.oo with ./compose.dev.yaml? Y/n",
+			wantStatus: "add flowy.test with ./compose.dev.yaml? Y/n",
 		},
 		{
 			name: "an unlisted name: n saves nothing", domains: sample[:2], key: "n", wantMode: modeList,
-			wantStatus: "add flowy.oo with ./compose.dev.yaml? Y/n",
+			wantStatus: "add flowy.test with ./compose.dev.yaml? Y/n",
 		},
 	}
 	for _, tt := range tests {
@@ -120,10 +120,10 @@ func TestQuestion(t *testing.T) {
 				}
 				return
 			}
-			if got := composeOf(t, b, "flowy.oo"); got != tt.wantSaved {
-				t.Errorf("flowy.oo's compose = %q, want %q", got, tt.wantSaved)
+			if got := composeOf(t, b, "flowy.test"); got != tt.wantSaved {
+				t.Errorf("flowy.test's compose = %q, want %q", got, tt.wantSaved)
 			}
-			if d, _ := m.find("flowy.oo"); d.Compose != tt.wantSaved {
+			if d, _ := m.find("flowy.test"); d.Compose != tt.wantSaved {
 				t.Errorf("the list holds %q, want %q", d.Compose, tt.wantSaved)
 			}
 		})
@@ -134,8 +134,8 @@ func TestQuestion_PointsAtItsRow(t *testing.T) {
 	t.Parallel()
 
 	listed := readyIn(inFlowy(), sample, flowyOrigin)
-	if got := listed.cursorName(); listed.mode != modeAsk || got != "flowy.oo" {
-		t.Errorf("mode %v, cursor on %q; want the question with flowy.oo highlighted", listed.mode, got)
+	if got := listed.cursorName(); listed.mode != modeAsk || got != "flowy.test" {
+		t.Errorf("mode %v, cursor on %q; want the question with flowy.test highlighted", listed.mode, got)
 	}
 	unlisted := readyIn(inFlowy(), sample[:2], flowyOrigin)
 	if unlisted.mode != modeAsk || !unlisted.onAddRow() {
@@ -151,15 +151,15 @@ func TestQuestion_EditFillsThePath(t *testing.T) {
 
 	b := inFlowy()
 	m := send(readyIn(b, sample, flowyOrigin), "e")
-	if m.form.editing != "flowy.oo" || m.form.focus != fieldCompose {
-		t.Fatalf("editing %q with field %d focused, want flowy.oo's compose field", m.form.editing, m.form.focus)
+	if m.form.editing != "flowy.test" || m.form.focus != fieldCompose {
+		t.Fatalf("editing %q with field %d focused, want flowy.test's compose field", m.form.editing, m.form.focus)
 	}
 	if got := m.form.inputs[fieldCompose].Value(); got != "~/Projects/flowy/compose.dev.yaml" {
 		t.Errorf("compose field = %q, want the file found, from home", got)
 	}
 	m = send(m, "enter")
-	if got := composeOf(t, b, "flowy.oo"); got != flowyDev {
-		t.Errorf("flowy.oo's compose = %q, want %q", got, flowyDev)
+	if got := composeOf(t, b, "flowy.test"); got != flowyDev {
+		t.Errorf("flowy.test's compose = %q, want %q", got, flowyDev)
 	}
 	if len(b.applied) != 0 {
 		t.Errorf("applied %v; only the compose path changed", b.applied)
@@ -178,7 +178,7 @@ func TestQuestion_AddFillsTheForm(t *testing.T) {
 		t.Errorf("compose field = %q, want the file found", got)
 	}
 	m = send(m, "enter")
-	want := store.Domain{Name: "flowy.oo", Address: "127.0.1.2", Enabled: true, Compose: flowyDev}
+	want := store.Domain{Name: "flowy.test", Address: "127.0.1.2", Enabled: true, Compose: flowyDev}
 	if len(b.saved) != 1 || !slices.Contains(b.saved[0], want) {
 		t.Errorf("saved %v, want it to hold %+v; form errors %q", b.saved, want, m.form.errs)
 	}
@@ -192,7 +192,7 @@ func TestQuestion_NotAsked(t *testing.T) {
 	declined := slices.Clone(sample)
 	declined[2].Compose = store.NoCompose
 	otherName := slices.Clone(sample)
-	otherName[0].Compose = flowyDev // crm.oo links flowy's file
+	otherName[0].Compose = flowyDev // crm.test links flowy's file
 	tests := []struct {
 		name    string
 		backend *fakeBackend
@@ -246,12 +246,12 @@ func TestProjectName(t *testing.T) {
 	t.Parallel()
 
 	for root, want := range map[string]string{
-		"/Users/me/Projects/flowy":      "flowy.oo",
-		"/Users/me/Projects/My_App":     "my-app.oo",
-		"/Users/me/Projects/web.v2":     "web-v2.oo",
-		"/Users/me/Projects/--x--":      "x.oo",
+		"/Users/me/Projects/flowy":      "flowy.test",
+		"/Users/me/Projects/My_App":     "my-app.test",
+		"/Users/me/Projects/web.v2":     "web-v2.test",
+		"/Users/me/Projects/--x--":      "x.test",
 		"/Users/me/Projects/___":        "",
-		"/Users/me/Projects/" + "émoji": "moji.oo",
+		"/Users/me/Projects/" + "émoji": "moji.test",
 	} {
 		if got := projectName(root); got != want {
 			t.Errorf("projectName(%q) = %q, want %q", root, got, want)
@@ -265,11 +265,11 @@ func TestForm_Compose(t *testing.T) {
 	tests := []struct {
 		name     string
 		typed    string
-		want     string // flowy.oo's compose once saved
+		want     string // flowy.test's compose once saved
 		wantErr  string // under the compose field; the form stays open
 		wantSave bool   // saved without an apply
 	}{
-		{name: "relative to where oo started", typed: "../../compose.dev.yaml", want: flowyDev},
+		{name: "relative to where lodo started", typed: "../../compose.dev.yaml", want: flowyDev},
 		{name: "from home", typed: "~/Projects/flowy/compose.prod.yaml", want: flowyProd},
 		{name: "absolute", typed: flowyDev, want: flowyDev},
 		{name: "none", typed: "none", want: store.NoCompose},
@@ -280,7 +280,7 @@ func TestForm_Compose(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			b := &fakeBackend{composeFiles: inFlowy().composeFiles}                     // started in flowy's folder, which is no project here
-			m := send(send(send(readyIn(b, sample, flowyOrigin), "down"), "down"), "e") // flowy.oo
+			m := send(send(send(readyIn(b, sample, flowyOrigin), "down"), "down"), "e") // flowy.test
 			for m.form.focus != fieldCompose {
 				m = send(m, "tab")
 			}
@@ -291,8 +291,8 @@ func TestForm_Compose(t *testing.T) {
 				}
 				return
 			}
-			if got := composeOf(t, b, "flowy.oo"); got != tt.want {
-				t.Errorf("flowy.oo's compose = %q, want %q; form errors %q", got, tt.want, m.form.errs)
+			if got := composeOf(t, b, "flowy.test"); got != tt.want {
+				t.Errorf("flowy.test's compose = %q, want %q; form errors %q", got, tt.want, m.form.errs)
 			}
 			if len(b.applied) != 0 {
 				t.Errorf("applied %v; only the compose path changed", b.applied)
@@ -308,11 +308,11 @@ func TestPreview(t *testing.T) {
 	domains[2].Compose = flowyDev
 	b := inFlowy()
 	m := readyIn(b, domains, Start{Home: home})
-	m = send(send(send(m, "down"), "down"), "p") // flowy.oo
+	m = send(send(send(m, "down"), "down"), "p") // flowy.test
 	if m.mode != modePreview {
 		t.Fatalf("mode = %v after p, err %v; want the preview", m.mode, m.err)
 	}
-	if m.previewTitle != "compose.dev.yaml for flowy.oo · 2 changes" || m.previewEnv != "DOCKER_HOST_IP=127.0.1.3" {
+	if m.previewTitle != "compose.dev.yaml for flowy.test · 2 changes" || m.previewEnv != "DOCKER_HOST_IP=127.0.1.3" {
 		t.Errorf("title %q, env %q", m.previewTitle, m.previewEnv)
 	}
 	golden.RequireEqual(t, m.View().Content)
@@ -333,20 +333,20 @@ func TestPreview_SubdomainUsesItsProjectsFile(t *testing.T) {
 	t.Parallel()
 
 	domains := slices.Clone(sample)
-	domains[0].Compose = flowyDev                           // crm.oo's, for this test
-	m := send(send(ready(inFlowy(), domains), "down"), "p") // dashboard.crm.oo, on port 3000
+	domains[0].Compose = flowyDev                           // crm.test's, for this test
+	m := send(send(ready(inFlowy(), domains), "down"), "p") // dashboard.crm.test, on port 3000
 	if m.mode != modePreview {
 		t.Fatalf("mode = %v, err %v; want the preview", m.mode, m.err)
 	}
-	if !strings.HasPrefix(m.previewTitle, "compose.dev.yaml for crm.oo") {
-		t.Errorf("title = %q, want crm.oo's file", m.previewTitle)
+	if !strings.HasPrefix(m.previewTitle, "compose.dev.yaml for crm.test") {
+		t.Errorf("title = %q, want crm.test's file", m.previewTitle)
 	}
-	if content := ansi.Strip(m.preview.GetContent()); !strings.Contains(content, "APP_URL: http://dashboard.crm.oo") {
-		t.Errorf("preview:\n%s\nwant localhost:3000 sent to dashboard.crm.oo, which Caddy serves on port 3000", content)
+	if content := ansi.Strip(m.preview.GetContent()); !strings.Contains(content, "APP_URL: http://dashboard.crm.test") {
+		t.Errorf("preview:\n%s\nwant localhost:3000 sent to dashboard.crm.test, which Caddy serves on port 3000", content)
 	}
 }
 
-// devFix is a package.json line NextDev would fix for flowy.oo.
+// devFix is a package.json line NextDev would fix for flowy.test.
 var devFix = []compose.Fix{{File: "package.json", Line: 6, Old: `    "dev": "next dev",`, New: `    "dev": "next dev -H 127.0.1.3",`}}
 
 func TestPreview_NextDev(t *testing.T) {
@@ -357,7 +357,7 @@ func TestPreview_NextDev(t *testing.T) {
 	b := inFlowy()
 	b.nextDev = devFix
 	m := readyIn(b, domains, Start{Home: home})
-	m = send(send(send(m, "down"), "down"), "p") // flowy.oo
+	m = send(send(send(m, "down"), "down"), "p") // flowy.test
 	if m.mode != modePreview {
 		t.Fatalf("mode = %v after p, err %v; want the preview", m.mode, m.err)
 	}
@@ -380,7 +380,7 @@ func TestPreview_Refused(t *testing.T) {
 		downs   int
 		wantErr string
 	}{
-		{name: "no compose file", domains: sample, downs: 3, wantErr: "old.oo has no compose file: e sets one"},
+		{name: "no compose file", domains: sample, downs: 3, wantErr: "old.test has no compose file: e sets one"},
 		{name: "the file is gone", domains: missing, downs: 2, wantErr: "open " + flowyRoot + "/gone.yml: file does not exist"},
 	}
 	for _, tt := range tests {
@@ -404,7 +404,7 @@ func TestPreview_WorksWhileAChangeRuns(t *testing.T) {
 	domains := slices.Clone(sample)
 	domains[2].Compose = flowyDev
 	m := ready(inFlowy(), domains)
-	next, _ := m.Update(press("space")) // crm.oo turns off; the change has not landed
+	next, _ := m.Update(press("space")) // crm.test turns off; the change has not landed
 	m = send(send(send(next.(Model), "down"), "down"), "p")
 	if !m.busy || m.mode != modePreview {
 		t.Errorf("busy %v, mode %v; want the preview while the change runs", m.busy, m.mode)
@@ -427,14 +427,14 @@ func TestColumns(t *testing.T) {
 	if want := []string{"name", "address", "port", "compose", "own", "check"}; !slices.Equal(titles, want) {
 		t.Errorf("columns = %q, want %q", titles, want)
 	}
-	if got, want := m.table.Columns()[0].Width, ansi.StringWidth("  ● dashboard.crm.oo"); got != want {
+	if got, want := m.table.Columns()[0].Width, ansi.StringWidth("  ● dashboard.crm.test"); got != want {
 		t.Errorf("name column = %d wide, want %d, the longest row", got, want)
 	}
 	if got := m.table.Rows()[2][3]; got != "~/Projects/flowy/compose.dev.yaml" {
-		t.Errorf("flowy.oo's compose cell = %q, want the path from home", got)
+		t.Errorf("flowy.test's compose cell = %q, want the path from home", got)
 	}
 	if got := m.table.Rows()[3][3]; got != "–" {
-		t.Errorf("old.oo's compose cell = %q, want – for no", got)
+		t.Errorf("old.test's compose cell = %q, want – for no", got)
 	}
 }
 
@@ -464,27 +464,27 @@ func TestLink(t *testing.T) {
 		backend     *fakeBackend
 		domains     []store.Domain
 		origin      Start
-		wantCompose string // flowy.oo's compose once linked; empty when nothing is saved
+		wantCompose string // flowy.test's compose once linked; empty when nothing is saved
 		wantErr     string
 		wantNote    string
 	}{
 		{
 			name: "in a project: the project's best file", backend: inFlowy(), domains: withFile, origin: flowyOrigin,
-			wantCompose: flowyDev, wantNote: "linked flowy.oo · DOCKER_HOST_IP=127.0.1.3 in ~/Projects/flowy/.env",
+			wantCompose: flowyDev, wantNote: "linked flowy.test · DOCKER_HOST_IP=127.0.1.3 in ~/Projects/flowy/.env",
 		},
 		{
 			name: "outside a project: its own file", backend: &fakeBackend{}, domains: withFile, origin: Start{Home: home},
-			wantCompose: flowyProd, wantNote: "linked flowy.oo · DOCKER_HOST_IP=127.0.1.3 in ~/Projects/flowy/.env",
+			wantCompose: flowyProd, wantNote: "linked flowy.test · DOCKER_HOST_IP=127.0.1.3 in ~/Projects/flowy/.env",
 		},
 		{
 			name: "next dev needs -H: the note says so before the path", domains: withFile, origin: flowyOrigin,
 			backend:     &fakeBackend{projectRoot: flowyRoot, projectFiles: []string{flowyDev}, nextDev: devFix},
 			wantCompose: flowyDev,
-			wantNote:    "linked flowy.oo · next dev needs -H: p shows it · DOCKER_HOST_IP=127.0.1.3 in ~/Projects/flowy/.env",
+			wantNote:    "linked flowy.test · next dev needs -H: p shows it · DOCKER_HOST_IP=127.0.1.3 in ~/Projects/flowy/.env",
 		},
 		{
 			name: "no file at all", backend: &fakeBackend{}, domains: sample, origin: Start{Home: home},
-			wantErr: "no compose file to link: start oo in the project, or e to set one",
+			wantErr: "no compose file to link: start lodo in the project, or e to set one",
 		},
 		{
 			name: "the .env can't be written: the link stays", domains: withFile, origin: flowyOrigin,
@@ -496,14 +496,14 @@ func TestLink(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			m := readyIn(tt.backend, tt.domains, tt.origin)
-			m = send(send(send(m, "down"), "down"), "l") // flowy.oo
+			m = send(send(send(m, "down"), "down"), "l") // flowy.test
 			if tt.wantCompose == "" {
 				if len(tt.backend.saved) != 0 || len(tt.backend.linked) != 0 {
 					t.Errorf("saved %v, linked %v; want neither", tt.backend.saved, tt.backend.linked)
 				}
 			} else {
-				if got := composeOf(t, tt.backend, "flowy.oo"); got != tt.wantCompose {
-					t.Errorf("flowy.oo's compose = %q, want %q", got, tt.wantCompose)
+				if got := composeOf(t, tt.backend, "flowy.test"); got != tt.wantCompose {
+					t.Errorf("flowy.test's compose = %q, want %q", got, tt.wantCompose)
 				}
 				if want := []string{tt.wantCompose + " 127.0.1.3"}; !slices.Equal(tt.backend.linked, want) {
 					t.Errorf("linked %q, want %q", tt.backend.linked, want)
@@ -544,7 +544,7 @@ func TestLink_FollowsFormChanges(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			b := &fakeBackend{composeFiles: inFlowy().composeFiles}
-			m := send(send(send(ready(b, tt.domains), "down"), "down"), "e") // flowy.oo
+			m := send(send(send(ready(b, tt.domains), "down"), "down"), "e") // flowy.test
 			for m.form.focus != tt.field {
 				m = send(m, "tab")
 			}

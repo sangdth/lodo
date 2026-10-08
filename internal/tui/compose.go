@@ -1,7 +1,7 @@
 package tui
 
 // The compose file of a project: the question at startup, the compose cell
-// and field, and the preview of the file rewritten for oo.
+// and field, and the preview of the file rewritten for lodo.
 
 import (
 	"errors"
@@ -15,13 +15,13 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/sangdth/oo/internal/compose"
-	"github.com/sangdth/oo/internal/store"
+	"github.com/sangdth/lodo/internal/compose"
+	"github.com/sangdth/lodo/internal/store"
 )
 
-// question is the compose file oo offers at startup for a project's name.
+// question is the compose file lodo offers at startup for a project's name.
 type question struct {
-	name   string // the name the project's folder suggests, such as flowy.oo
+	name   string // the name the project's folder suggests, such as flowy.test
 	path   string // the compose file found, absolute
 	rel    string // the same file from the project's root, for the prompt
 	listed bool   // name is in the list; otherwise yes adds it
@@ -36,7 +36,7 @@ type previewMsg struct {
 	err     error
 }
 
-// projectMsg is the project oo started in: its root and its compose files,
+// projectMsg is the project lodo started in: its root and its compose files,
 // best first. files is empty outside a project.
 type projectMsg struct {
 	root  string
@@ -117,7 +117,7 @@ func (m *Model) showPreview(msg previewMsg) {
 }
 
 // fixLines shows each next dev fix under its file and line, then a line
-// before the compose file. oo leaves those files to the user.
+// before the compose file. lodo leaves those files to the user.
 func (m Model) fixLines(fixes []compose.Fix) []string {
 	if len(fixes) == 0 {
 		return nil
@@ -155,7 +155,7 @@ func (m Model) checkCompose(path string) error {
 	return nil
 }
 
-// maybeAsk opens the compose question once the first check is done, when oo
+// maybeAsk opens the compose question once the first check is done, when lodo
 // started in a project that no listed name links yet and whose folder's name
 // has no answer. It asks once.
 func (m *Model) maybeAsk() {
@@ -181,7 +181,7 @@ func (m *Model) maybeAsk() {
 }
 
 // projectLinked reports whether a listed name, whatever it is called, links a
-// compose file inside the project at root: oo asks about the project, and the
+// compose file inside the project at root: lodo asks about the project, and the
 // folder's name only suggests a name for it.
 func (m Model) projectLinked(root string) bool {
 	return slices.ContainsFunc(m.domains, func(d store.Domain) bool {
@@ -203,7 +203,7 @@ func (m *Model) point(name string) {
 // nonLabel matches what a folder's name holds that a DNS label can't.
 var nonLabel = regexp.MustCompile(`[^a-z0-9-]+`)
 
-// projectName is the name a project's folder suggests: flowy.oo for
+// projectName is the name a project's folder suggests: flowy.test for
 // ~/Projects/flowy. It is empty when the folder's name makes no valid label.
 func projectName(root string) string {
 	label := strings.Trim(nonLabel.ReplaceAllString(strings.ToLower(filepath.Base(root)), "-"), "-")
@@ -225,7 +225,7 @@ func (m Model) find(name string) (store.Domain, bool) {
 
 // askKey answers the compose question, which defaults to yes. For a listed
 // name, y or enter links the file, e opens the edit form with it, and n or esc
-// saves no, so oo stops asking. For a name that isn't listed, y, enter or e
+// saves no, so lodo stops asking. For a name that isn't listed, y, enter or e
 // opens the add form with both filled in. Any other key waits: a stray key
 // must not write the project's .env.
 func (m Model) askKey(k string) (tea.Model, tea.Cmd) {
@@ -264,7 +264,7 @@ func (m Model) askKey(k string) (tea.Model, tea.Cmd) {
 	return m.start(d.Name, m.save(next))
 }
 
-// link links d to the compose file of the project oo started in, or, outside
+// link links d to the compose file of the project lodo started in, or, outside
 // one, to its own: d's compose path is saved and d's address is written into
 // the .env that file runs with.
 func (m Model) link(d store.Domain) (Model, tea.Cmd) {
@@ -273,7 +273,7 @@ func (m Model) link(d store.Domain) (Model, tea.Cmd) {
 		path = m.project.files[0]
 	}
 	if path == "" || path == store.NoCompose {
-		m.err = errors.New("no compose file to link: start oo in the project, or e to set one")
+		m.err = errors.New("no compose file to link: start lodo in the project, or e to set one")
 		return m, nil
 	}
 	return m.linkTo(d, path)
@@ -297,7 +297,7 @@ func linked(d store.Domain) bool {
 }
 
 // openPreview shows the selected name's compose file, its own or its
-// project's, rewritten for oo.
+// project's, rewritten for lodo.
 func (m Model) openPreview() (tea.Model, tea.Cmd) {
 	d, ok := m.selected()
 	if !ok {
@@ -355,7 +355,7 @@ func (m Model) shortPath(path string) string {
 // previewView draws the rewritten compose file under its title and the .env
 // line its ports need.
 func (m Model) previewView() string {
-	env := "no port binds " + compose.EnvVar + ", so the project's .env needs nothing from oo"
+	env := "no port binds " + compose.EnvVar + ", so the project's .env needs nothing from lodo"
 	if m.previewEnv != "" {
 		env = "the ports need " + m.previewEnv + " in the project's .env: l writes it"
 	}

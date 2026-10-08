@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sangdth/oo/internal/paths"
-	"github.com/sangdth/oo/internal/run"
-	"github.com/sangdth/oo/internal/store"
-	"github.com/sangdth/oo/internal/system"
+	"github.com/sangdth/lodo/internal/paths"
+	"github.com/sangdth/lodo/internal/run"
+	"github.com/sangdth/lodo/internal/store"
+	"github.com/sangdth/lodo/internal/system"
 )
 
 func uninstallCalls(p paths.Paths, withScript, withCaddy bool) []string {
@@ -23,7 +23,7 @@ func uninstallCalls(p paths.Paths, withScript, withCaddy bool) []string {
 		calls = append(calls, run.Line(p.Brew, "services", "stop", "caddy"))
 	}
 	calls = append(calls,
-		run.Line(p.Sudo, "-n", p.Launchctl, "bootout", "system/io.oo.loopback"),
+		run.Line(p.Sudo, "-n", p.Launchctl, "bootout", "system/io.lodo.loopback"),
 		run.Line(p.Sudo, "-n", p.Rm, "-f", p.LoopbackPlist),
 	)
 	for i := store.OwnFirst; i <= store.OwnLast; i++ {
@@ -44,7 +44,7 @@ func TestUninstall(t *testing.T) {
 	if err := system.Setup(ctx, p, r, &strings.Builder{}); err != nil {
 		t.Fatal(err)
 	}
-	domains := []store.Domain{{Name: "crm.oo", Address: "127.0.1.1", Enabled: true}}
+	domains := []store.Domain{{Name: "crm.test", Address: "127.0.1.1", Enabled: true}}
 	if err := store.Save(p.DomainsJSON, domains); err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +83,7 @@ func TestUninstall_WithoutBackups(t *testing.T) {
 	}
 	assertFile(t, p.SystemConf, "server=1.1.1.1\n")
 	if exists(p.SystemCaddyfile) {
-		t.Error("Caddyfile holding only oo's import was not removed")
+		t.Error("Caddyfile holding only lodo's import was not removed")
 	}
 	assertCalls(t, r.Calls(), uninstallCalls(p, false, true))
 }

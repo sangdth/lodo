@@ -8,16 +8,16 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/sangdth/oo/internal/brew"
-	"github.com/sangdth/oo/internal/caddy"
-	"github.com/sangdth/oo/internal/paths"
-	"github.com/sangdth/oo/internal/run"
-	"github.com/sangdth/oo/internal/store"
+	"github.com/sangdth/lodo/internal/brew"
+	"github.com/sangdth/lodo/internal/caddy"
+	"github.com/sangdth/lodo/internal/paths"
+	"github.com/sangdth/lodo/internal/run"
+	"github.com/sangdth/lodo/internal/store"
 )
 
-// ErrNotSetUp means oo setup has not run. Apply then changes nothing: it
-// would start dnsmasq against a config that does not include oo's.
-var ErrNotSetUp = errors.New("oo is not set up: run oo setup")
+// ErrNotSetUp means lodo setup has not run. Apply then changes nothing: it
+// would start dnsmasq against a config that does not include lodo's.
+var ErrNotSetUp = errors.New("lodo is not set up: run lodo setup")
 
 // Apply makes the running system match domains: it writes the generated
 // files, restarts dnsmasq, runs the resolver script through sudo (which also
@@ -45,8 +45,8 @@ func Apply(ctx context.Context, p paths.Paths, r run.Runner, domains []store.Dom
 }
 
 // errCaddyNotSetUp means a domain has a port but setup never pointed
-// Homebrew's Caddy at oo's Caddyfile.
-var errCaddyNotSetUp = errors.New("a domain has a port but Caddy is not set up for oo: brew install caddy, then oo setup")
+// Homebrew's Caddy at lodo's Caddyfile.
+var errCaddyNotSetUp = errors.New("a domain has a port but Caddy is not set up for lodo: brew install caddy, then lodo setup")
 
 func applyCaddy(ctx context.Context, p paths.Paths, r run.Runner, domains []store.Domain, changed bool) error {
 	needed := slices.ContainsFunc(domains, func(d store.Domain) bool { return d.Enabled && d.Port > 0 })
@@ -82,7 +82,7 @@ var Services = []string{"dnsmasq", "caddy"}
 
 // SetService turns a service on or off. On validates Caddy's config first,
 // then starts the service and registers it to start at login; off stops and
-// unregisters it, which Apply and oo doctor read as turned off.
+// unregisters it, which Apply and lodo doctor read as turned off.
 func SetService(ctx context.Context, p paths.Paths, r run.Runner, service string, on bool) error {
 	if !SetupDone(p) {
 		return ErrNotSetUp
@@ -95,7 +95,7 @@ func SetService(ctx context.Context, p paths.Paths, r run.Runner, service string
 	}
 	if service == "caddy" {
 		if !CaddySetUp(p) {
-			return errors.New("caddy is not set up for oo: brew install caddy, then oo setup")
+			return errors.New("caddy is not set up for lodo: brew install caddy, then lodo setup")
 		}
 		if err := caddy.Validate(ctx, r, p.Caddy, p.SystemCaddyfile); err != nil {
 			return err
@@ -111,13 +111,13 @@ func turnedOff(ctx context.Context, p paths.Paths, r run.Runner, service string)
 	return err == nil && st.Off()
 }
 
-// SetupDone reports whether oo setup has run: the resolver script is
-// installed and Homebrew's dnsmasq.conf includes oo's file.
+// SetupDone reports whether lodo setup has run: the resolver script is
+// installed and Homebrew's dnsmasq.conf includes lodo's file.
 func SetupDone(p paths.Paths) bool {
 	return exists(p.Script) && hasLine(p.SystemConf, "conf-file="+p.DnsmasqConf)
 }
 
-// CaddySetUp reports whether Homebrew's Caddyfile imports oo's.
+// CaddySetUp reports whether Homebrew's Caddyfile imports lodo's.
 func CaddySetUp(p paths.Paths) bool {
 	return hasLine(p.SystemCaddyfile, "import "+p.Caddyfile)
 }

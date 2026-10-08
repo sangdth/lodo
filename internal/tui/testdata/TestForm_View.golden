@@ -2,14 +2,14 @@
                                                                                 
                                                                                 
 [90m╭──────────────────────────────────────────────────────────────────────────────╮[m
-[90m│[m [1moo[m   caddy [32m●[m   dnsmasq [32m●[m   loopback [32m●[m   resolvers [32m●[m                          [90m│[m
+[90m│[m [1mlodo[m   caddy [32m●[m   dnsmasq [32m●[m   loopback [32m●[m   resolvers [32m●[m                        [90m│[m
 [90m│[m[90m──────────────────────────────────────────────────────────────────────────────[m[90m│[m
 [90m│[m                                                                              [90m│[m
 [90m│[m [1mAdd a name[m                                                                   [90m│[m
 [90m│[m                                                                              [90m│[m
-[90m│[m name     [37m[m[37mtest.crm[m [37m[m[90m.oo[m                                                        [90m│[m
-[90m│[m address  [37m[m[37m127.0.1.1[m [37m       [m  [90mcrm.oo's address; next free: 127.0.1.2[m           [90m│[m
-[90m│[m port     [37m[m3001[7;37m [m    [90mhttp://test.crm.oo then reaches 127.0.1.1:3001[m             [90m│[m
+[90m│[m name     [37m[m[37mtest.crm[m [37m[m[90m.test[m                                                      [90m│[m
+[90m│[m address  [37m[m[37m127.0.1.1[m [37m       [m  [90mcrm.test's address; next free: 127.0.1.2[m         [90m│[m
+[90m│[m port     [37m[m3001[7;37m [m    [90mhttp://test.crm.test then reaches 127.0.1.1:3001[m           [90m│[m
 [90m│[m compose  [37m[m[38;5;240mo[m[38;5;240mptional: ~/path/to/compose.dev.yml[m[38;5;240m      [m                           [90m│[m
 [90m│[m                                                                              [90m│[m
 [90m│[m                                                                              [90m│[m

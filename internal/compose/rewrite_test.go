@@ -12,12 +12,12 @@ import (
 	"github.com/charmbracelet/x/exp/golden"
 	"go.yaml.in/yaml/v3"
 
-	"github.com/sangdth/oo/internal/compose"
+	"github.com/sangdth/lodo/internal/compose"
 )
 
-// flowy is what every test rewrites for: the project flowy.oo, with Caddy
-// serving dashboard.flowy.oo on port 3000.
-var flowy = compose.Values{Domain: "flowy.oo", Names: map[int]string{3000: "dashboard.flowy.oo"}}
+// flowy is what every test rewrites for: the project flowy.test, with Caddy
+// serving dashboard.flowy.test on port 3000.
+var flowy = compose.Values{Domain: "flowy.test", Names: map[int]string{3000: "dashboard.flowy.test"}}
 
 // yml joins lines into a file.
 func yml(lines ...string) string { return strings.Join(lines, "\n") + "\n" }
@@ -98,11 +98,11 @@ func TestRewrite(t *testing.T) {
 		{Line: 49, Service: "minio", Kind: compose.KindPort, Old: "9000:9000", New: ip + ":9000:9000"},
 		{Line: 50, Service: "minio", Kind: compose.KindPort, Old: "9001:9001", New: ip + ":9001:9001"},
 		{Line: 61, Service: "app", Kind: compose.KindPort, Old: "127.0.0.1", New: ip},
-		{Line: 63, Service: "app", Kind: compose.KindURL, Old: "${BETTER_AUTH_URL:-http://localhost:3000}", New: "${BETTER_AUTH_URL:-http://dashboard.flowy.oo}"},
-		{Line: 64, Service: "app", Kind: compose.KindURL, Old: "http://localhost:3000", New: "http://dashboard.flowy.oo"},
-		{Line: 65, Service: "app", Kind: compose.KindURL, Old: "https://localhost:8443/api", New: "https://flowy.oo:8443/api"},
-		{Line: 74, Service: "worker", Kind: compose.KindURL, Old: "OLLAMA_ENDPOINT=http://localhost:11434", New: "OLLAMA_ENDPOINT=http://flowy.oo:11434"},
-		{Line: 76, Service: "worker", Kind: compose.KindURL, Old: "EVENTS_URL=ws://localhost:3000/events", New: "EVENTS_URL=ws://dashboard.flowy.oo/events"},
+		{Line: 63, Service: "app", Kind: compose.KindURL, Old: "${BETTER_AUTH_URL:-http://localhost:3000}", New: "${BETTER_AUTH_URL:-http://dashboard.flowy.test}"},
+		{Line: 64, Service: "app", Kind: compose.KindURL, Old: "http://localhost:3000", New: "http://dashboard.flowy.test"},
+		{Line: 65, Service: "app", Kind: compose.KindURL, Old: "https://localhost:8443/api", New: "https://flowy.test:8443/api"},
+		{Line: 74, Service: "worker", Kind: compose.KindURL, Old: "OLLAMA_ENDPOINT=http://localhost:11434", New: "OLLAMA_ENDPOINT=http://flowy.test:11434"},
+		{Line: 76, Service: "worker", Kind: compose.KindURL, Old: "EVENTS_URL=ws://localhost:3000/events", New: "EVENTS_URL=ws://dashboard.flowy.test/events"},
 		{Line: 83, Service: "proxy", Kind: compose.KindPort, Old: "8443:443/tcp", New: ip + ":8443:443/tcp"},
 	})
 }
@@ -168,18 +168,18 @@ func TestRewrite_URLs(t *testing.T) {
 		value string
 		want  string // empty means it stays
 	}{
-		{name: "http to the name caddy serves", value: "http://localhost:3000", want: "http://dashboard.flowy.oo"},
-		{name: "path and query stay", value: "http://localhost:3000/api/auth?next=/", want: "http://dashboard.flowy.oo/api/auth?next=/"},
-		{name: "http on a port without a name", value: "http://localhost:8080", want: "http://flowy.oo:8080"},
-		{name: "http without a port", value: "http://localhost", want: "http://flowy.oo"},
-		{name: "loopback address", value: "http://127.0.0.1:3000/health", want: "http://dashboard.flowy.oo/health"},
-		{name: "https keeps its port", value: "https://localhost:3000", want: "https://flowy.oo:3000"},
-		{name: "ws to the name caddy serves", value: "ws://localhost:3000/socket", want: "ws://dashboard.flowy.oo/socket"},
-		{name: "wss keeps its port", value: "wss://127.0.0.1:3000", want: "wss://flowy.oo:3000"},
-		{name: "scheme keeps its case", value: "HTTP://LocalHost:3000", want: "HTTP://dashboard.flowy.oo"},
-		{name: "default of a variable", value: "${BETTER_AUTH_URL:-http://localhost:3000}", want: "${BETTER_AUTH_URL:-http://dashboard.flowy.oo}"},
-		{name: "port from a variable", value: "http://localhost:${PORT}", want: "http://flowy.oo:${PORT}"},
-		{name: "two urls", value: "http://localhost:3000,https://127.0.0.1:8443", want: "http://dashboard.flowy.oo,https://flowy.oo:8443"},
+		{name: "http to the name caddy serves", value: "http://localhost:3000", want: "http://dashboard.flowy.test"},
+		{name: "path and query stay", value: "http://localhost:3000/api/auth?next=/", want: "http://dashboard.flowy.test/api/auth?next=/"},
+		{name: "http on a port without a name", value: "http://localhost:8080", want: "http://flowy.test:8080"},
+		{name: "http without a port", value: "http://localhost", want: "http://flowy.test"},
+		{name: "loopback address", value: "http://127.0.0.1:3000/health", want: "http://dashboard.flowy.test/health"},
+		{name: "https keeps its port", value: "https://localhost:3000", want: "https://flowy.test:3000"},
+		{name: "ws to the name caddy serves", value: "ws://localhost:3000/socket", want: "ws://dashboard.flowy.test/socket"},
+		{name: "wss keeps its port", value: "wss://127.0.0.1:3000", want: "wss://flowy.test:3000"},
+		{name: "scheme keeps its case", value: "HTTP://LocalHost:3000", want: "HTTP://dashboard.flowy.test"},
+		{name: "default of a variable", value: "${BETTER_AUTH_URL:-http://localhost:3000}", want: "${BETTER_AUTH_URL:-http://dashboard.flowy.test}"},
+		{name: "port from a variable", value: "http://localhost:${PORT}", want: "http://flowy.test:${PORT}"},
+		{name: "two urls", value: "http://localhost:3000,https://127.0.0.1:8443", want: "http://dashboard.flowy.test,https://flowy.test:8443"},
 		{name: "host alone", value: "localhost"},
 		{name: "host and port", value: "localhost:9222"},
 		{name: "address alone", value: "127.0.0.1"},
@@ -238,32 +238,32 @@ func TestRewrite_Tokens(t *testing.T) {
 		{
 			name: "plain, with a comment after",
 			in:   yml("services:", "  app:", "    environment:", "      APP_URL: http://localhost:3000 # the app"),
-			want: yml("services:", "  app:", "    environment:", "      APP_URL: http://dashboard.flowy.oo # the app"),
+			want: yml("services:", "  app:", "    environment:", "      APP_URL: http://dashboard.flowy.test # the app"),
 		},
 		{
 			name: "double quotes stay",
 			in:   yml("services:", "  app:", "    environment:", `      APP_URL: "http://localhost:3000"`),
-			want: yml("services:", "  app:", "    environment:", `      APP_URL: "http://dashboard.flowy.oo"`),
+			want: yml("services:", "  app:", "    environment:", `      APP_URL: "http://dashboard.flowy.test"`),
 		},
 		{
 			name: "single quotes stay",
 			in:   yml("services:", "  app:", "    environment:", `      APP_URL: 'http://localhost:3000'`),
-			want: yml("services:", "  app:", "    environment:", `      APP_URL: 'http://dashboard.flowy.oo'`),
+			want: yml("services:", "  app:", "    environment:", `      APP_URL: 'http://dashboard.flowy.test'`),
 		},
 		{
 			name: "quoted list item",
 			in:   yml("services:", "  app:", "    environment:", `      - "APP_URL=http://localhost:8080"`),
-			want: yml("services:", "  app:", "    environment:", `      - "APP_URL=http://flowy.oo:8080"`),
+			want: yml("services:", "  app:", "    environment:", `      - "APP_URL=http://flowy.test:8080"`),
 		},
 		{
 			name: "wide characters before the token",
 			in:   yml("services:", "  app:", `    environment: {NAME: "café ☕", APP_URL: http://localhost:3000}`),
-			want: yml("services:", "  app:", `    environment: {NAME: "café ☕", APP_URL: http://dashboard.flowy.oo}`),
+			want: yml("services:", "  app:", `    environment: {NAME: "café ☕", APP_URL: http://dashboard.flowy.test}`),
 		},
 		{
 			name: "crlf line endings",
 			in:   "services:\r\n  db:\r\n    ports:\r\n      - \"5432:5432\"\r\n    environment:\r\n      APP_URL: http://localhost:3000\r\n",
-			want: "services:\r\n  db:\r\n    ports:\r\n      - \"" + compose.HostIP + ":5432:5432\"\r\n    environment:\r\n      APP_URL: http://dashboard.flowy.oo\r\n",
+			want: "services:\r\n  db:\r\n    ports:\r\n      - \"" + compose.HostIP + ":5432:5432\"\r\n    environment:\r\n      APP_URL: http://dashboard.flowy.test\r\n",
 		},
 		{
 			name: "byte order mark",

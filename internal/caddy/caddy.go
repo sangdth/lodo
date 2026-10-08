@@ -1,4 +1,4 @@
-// Package caddy generates oo's Caddyfile and validates it.
+// Package caddy generates lodo's Caddyfile and validates it.
 package caddy
 
 import (
@@ -8,11 +8,11 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/sangdth/oo/internal/run"
-	"github.com/sangdth/oo/internal/store"
+	"github.com/sangdth/lodo/internal/run"
+	"github.com/sangdth/lodo/internal/store"
 )
 
-// Config returns oo's Caddyfile: one site per enabled domain with a port, in
+// Config returns lodo's Caddyfile: one site per enabled domain with a port, in
 // store.Sort order, that forwards http://<name> to <address>:<port>. The
 // http:// prefix keeps Caddy on port 80, without automatic HTTPS. With no such
 // domain it is the header line alone, which Caddy takes as a config with no

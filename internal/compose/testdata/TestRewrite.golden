@@ -60,9 +60,9 @@ services:
         published: "3001"
         host_ip: "${DOCKER_HOST_IP:-127.0.0.1}"
     environment:
-      BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://dashboard.flowy.oo}
-      NEXT_PUBLIC_APP_URL: http://dashboard.flowy.oo
-      API_URL: "https://flowy.oo:8443/api"
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://dashboard.flowy.test}
+      NEXT_PUBLIC_APP_URL: http://dashboard.flowy.test
+      API_URL: "https://flowy.test:8443/api"
       DATABASE_URL: postgres://postgres:postgres@localhost:5432/flowy
       MILVUS_HOST: 127.0.0.1
     labels:
@@ -71,9 +71,9 @@ services:
   worker:
     image: ghcr.io/flowy/worker:latest
     environment:
-      - OLLAMA_ENDPOINT=http://flowy.oo:11434
+      - OLLAMA_ENDPOINT=http://flowy.test:11434
       - CHROME_DEBUGGING_HOST=localhost
-      - "EVENTS_URL=ws://dashboard.flowy.oo/events"
+      - "EVENTS_URL=ws://dashboard.flowy.test/events"
     depends_on: [postgres, redis]
 
   proxy:

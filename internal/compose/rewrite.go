@@ -16,8 +16,8 @@ import (
 
 // Values are what Rewrite puts in place of localhost.
 type Values struct {
-	Domain string         // the project's name, such as flowy.oo
-	Names  map[int]string // names Caddy serves on the project's address, by port: 3000 → dashboard.flowy.oo
+	Domain string         // the project's name, such as flowy.test
+	Names  map[int]string // names Caddy serves on the project's address, by port: 3000 → dashboard.flowy.test
 }
 
 // Kind says what a Change rewrote.
@@ -46,7 +46,7 @@ var urlRE = regexp.MustCompile(`(?i)\b(https?|wss?)://(?:localhost|127\.0\.0\.1)
 const hostChars = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz.-_@"
 
 // Rewrite returns src with the project's ports bound to HostIP and its
-// localhost URLs pointing at its .oo names, and the changes it made.
+// localhost URLs pointing at its .test names, and the changes it made.
 //
 // It visits only each service's ports and environment: inside a container
 // localhost is the container itself, so a healthcheck or command that calls

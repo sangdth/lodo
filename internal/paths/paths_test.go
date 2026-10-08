@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sangdth/oo/internal/paths"
+	"github.com/sangdth/lodo/internal/paths"
 )
 
 func TestDefault(t *testing.T) {
@@ -20,12 +20,12 @@ func TestDefault(t *testing.T) {
 		t.Fatalf("user %q, home %q: want both set", p.User, p.Home)
 	}
 	want := map[string]string{
-		"DomainsJSON":   filepath.Join(p.Home, ".config/oo/domains.json"),
+		"DomainsJSON":   filepath.Join(p.Home, ".config/lodo/domains.json"),
 		"SystemConf":    "/opt/homebrew/etc/dnsmasq.conf",
-		"Script":        "/Library/Application Support/oo/apply-resolvers.sh",
-		"Sudoers":       "/etc/sudoers.d/oo",
+		"Script":        "/Library/Application Support/lodo/apply-resolvers.sh",
+		"Sudoers":       "/etc/sudoers.d/lodo",
 		"ResolverDir":   "/etc/resolver",
-		"LoopbackPlist": "/Library/LaunchDaemons/io.oo.loopback.plist",
+		"LoopbackPlist": "/Library/LaunchDaemons/io.lodo.loopback.plist",
 		"Sudo":          "/usr/bin/sudo",
 	}
 	v := reflect.ValueOf(p)

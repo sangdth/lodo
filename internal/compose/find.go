@@ -24,7 +24,7 @@ var lockSuffixes = []string{".lock", ".lockb", "-lock.json", "-lock.yaml"}
 // docker-compose.yaml, compose.dev.yaml. The group is the variant, dev.
 var fileNameRE = regexp.MustCompile(`(?i)^(?:docker[-.])?compose(?:\.([a-z0-9][a-z0-9_-]*))?\.ya?ml$`)
 
-// ProjectRoot returns the git root dir is in when it holds a lock file, so oo
+// ProjectRoot returns the git root dir is in when it holds a lock file, so lodo
 // knows it started in a project. ok is false otherwise.
 func ProjectRoot(dir string) (root string, ok bool) {
 	root, ok = gitRoot(dir)

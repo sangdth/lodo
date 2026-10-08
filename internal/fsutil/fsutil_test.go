@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/sangdth/oo/internal/fsutil"
+	"github.com/sangdth/lodo/internal/fsutil"
 )
 
 func TestWriteFile(t *testing.T) {

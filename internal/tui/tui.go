@@ -1,4 +1,4 @@
-// Package tui is oo's terminal UI: the domain list with each name's checks,
+// Package tui is lodo's terminal UI: the domain list with each name's checks,
 // a status bar for the system parts, and the keys that change the list.
 package tui
 
@@ -10,14 +10,14 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/sangdth/oo/internal/check"
-	"github.com/sangdth/oo/internal/compose"
-	"github.com/sangdth/oo/internal/dnsmasq"
-	"github.com/sangdth/oo/internal/fsutil"
-	"github.com/sangdth/oo/internal/paths"
-	"github.com/sangdth/oo/internal/run"
-	"github.com/sangdth/oo/internal/store"
-	"github.com/sangdth/oo/internal/system"
+	"github.com/sangdth/lodo/internal/check"
+	"github.com/sangdth/lodo/internal/compose"
+	"github.com/sangdth/lodo/internal/dnsmasq"
+	"github.com/sangdth/lodo/internal/fsutil"
+	"github.com/sangdth/lodo/internal/paths"
+	"github.com/sangdth/lodo/internal/run"
+	"github.com/sangdth/lodo/internal/store"
+	"github.com/sangdth/lodo/internal/system"
 )
 
 // Backend is what the TUI reads, changes and checks. NewBackend returns the
@@ -44,7 +44,7 @@ type Backend interface {
 	// composePath runs with, and returns that file.
 	LinkEnv(ctx context.Context, composePath, address string) (string, error)
 	// NextDev returns the lines of the compose file's project that start
-	// next dev on every address, with -H address added. oo doesn't write them.
+	// next dev on every address, with -H address added. lodo doesn't write them.
 	NextDev(composePath, address string) []compose.Fix
 	// Tail returns what dnsmasq logged since offset, and the next offset.
 	Tail(offset int64) (string, int64, error)
@@ -77,13 +77,13 @@ func (b backend) Report(ctx context.Context, domains []store.Domain) ([]check.Ch
 	return b.env.Report(ctx, domains)
 }
 
-// PortsReady needs Caddy installed and Homebrew's Caddyfile importing oo's.
+// PortsReady needs Caddy installed and Homebrew's Caddyfile importing lodo's.
 func (b backend) PortsReady() error {
 	if _, err := os.Stat(b.paths.Caddy); err != nil {
-		return errors.New("caddy is not installed: brew install caddy, then oo setup")
+		return errors.New("caddy is not installed: brew install caddy, then lodo setup")
 	}
 	if !system.CaddySetUp(b.paths) {
-		return errors.New("caddy is not set up for oo: run oo setup")
+		return errors.New("caddy is not set up for lodo: run lodo setup")
 	}
 	return nil
 }
@@ -115,7 +115,7 @@ func (b backend) LinkEnv(ctx context.Context, composePath, address string) (stri
 		env = real
 	}
 	if _, err := b.runner.Run(ctx, b.paths.Git, "-C", filepath.Dir(env), "ls-files", "--error-unmatch", "--", filepath.Base(env)); err == nil {
-		return env, fmt.Errorf("git tracks %s, so oo leaves it: this Mac's address doesn't belong in a shared file", env)
+		return env, fmt.Errorf("git tracks %s, so lodo leaves it: this Mac's address doesn't belong in a shared file", env)
 	}
 	content, err := os.ReadFile(env) //nolint:gosec // G304: the project's own .env
 	mode := fs.FileMode(0o644)

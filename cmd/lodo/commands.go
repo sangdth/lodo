@@ -10,12 +10,12 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/sangdth/oo/internal/check"
-	"github.com/sangdth/oo/internal/paths"
-	"github.com/sangdth/oo/internal/run"
-	"github.com/sangdth/oo/internal/store"
-	"github.com/sangdth/oo/internal/system"
-	"github.com/sangdth/oo/internal/tui"
+	"github.com/sangdth/lodo/internal/check"
+	"github.com/sangdth/lodo/internal/paths"
+	"github.com/sangdth/lodo/internal/run"
+	"github.com/sangdth/lodo/internal/store"
+	"github.com/sangdth/lodo/internal/system"
+	"github.com/sangdth/lodo/internal/tui"
 )
 
 // app runs the commands that read or change the system.
@@ -32,7 +32,7 @@ func newApp(p paths.Paths, r run.Runner, stdout, stderr io.Writer) app {
 }
 
 // tui opens the terminal UI. It refuses while checks 1 to 5 fail: those need
-// oo setup or a manual fix, which the TUI can't do.
+// lodo setup or a manual fix, which the TUI can't do.
 func (a app) tui(ctx context.Context) int {
 	domains, err := store.Load(a.paths.DomainsJSON)
 	if err != nil {
@@ -41,7 +41,7 @@ func (a app) tui(ctx context.Context) int {
 	}
 	if failed := check.Failed(a.env.Prerequisites(ctx, domains)); len(failed) > 0 {
 		fmt.Fprint(a.stderr, formatChecks(failed))
-		fmt.Fprintln(a.stderr, "oo opens once these pass; oo doctor shows every check.")
+		fmt.Fprintln(a.stderr, "lodo opens once these pass; lodo doctor shows every check.")
 		return 1
 	}
 	ctx, cancel := context.WithCancel(ctx)
@@ -56,7 +56,7 @@ func (a app) tui(ctx context.Context) int {
 	return 0
 }
 
-// setup installs oo's system parts, then prints the doctor table.
+// setup installs lodo's system parts, then prints the doctor table.
 func (a app) setup(ctx context.Context) int {
 	if err := system.Setup(ctx, a.paths, a.runner, a.stdout); err != nil {
 		a.fail(err)

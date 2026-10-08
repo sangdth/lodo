@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sangdth/oo/internal/compose"
+	"github.com/sangdth/lodo/internal/compose"
 )
 
 // tree creates each path under root, with its parent folders: a path ending

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sangdth/oo/internal/run"
+	"github.com/sangdth/lodo/internal/run"
 )
 
 func TestExec_Run(t *testing.T) {

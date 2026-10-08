@@ -10,7 +10,7 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/sangdth/oo/internal/store"
+	"github.com/sangdth/lodo/internal/store"
 )
 
 // The form's fields, in tab order.
@@ -37,10 +37,10 @@ var fieldIndex = map[string]int{
 // form adds a domain, or edits one when editing names it; with parent set,
 // the name is a subdomain of parent and stays one.
 type form struct {
-	origin         Start // where oo started, for compose paths typed with ~/ or relative
+	origin         Start // where lodo started, for compose paths typed with ~/ or relative
 	editing        string
 	parent         string       // the name a new subdomain goes under
-	suffix         string       // what the typed labels end in: .oo, or .<parent>
+	suffix         string       // what the typed labels end in: .test, or .<parent>
 	original       store.Domain // the domain being edited
 	inputs         [fieldCount]textinput.Model
 	focus          int
@@ -165,7 +165,7 @@ func (f form) domain() (store.Domain, error) {
 }
 
 // compose reads the compose field: empty, none, or a path, which ~/ starts at
-// the home folder and a relative one at the folder oo started in.
+// the home folder and a relative one at the folder lodo started in.
 func (f form) compose() string {
 	v := strings.TrimSpace(f.inputs[fieldCompose].Value())
 	switch {

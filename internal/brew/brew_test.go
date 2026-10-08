@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sangdth/oo/internal/brew"
-	"github.com/sangdth/oo/internal/paths"
-	"github.com/sangdth/oo/internal/run"
+	"github.com/sangdth/lodo/internal/brew"
+	"github.com/sangdth/lodo/internal/paths"
+	"github.com/sangdth/lodo/internal/run"
 )
 
 // failure is what brew prints when launchctl refuses a job.

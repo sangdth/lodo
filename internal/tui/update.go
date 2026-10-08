@@ -9,7 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
-	"github.com/sangdth/oo/internal/store"
+	"github.com/sangdth/lodo/internal/store"
 )
 
 // Update handles one message.
