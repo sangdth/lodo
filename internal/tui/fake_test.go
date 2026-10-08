@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"slices"
 	"sync"
 	"time"
@@ -25,8 +26,11 @@ type fakeBackend struct {
 	failingChecks map[int]string    // a check's detail when it fails
 	portsErr      error
 	serviceErr    error
-	off           map[string]bool // services turned off
-	setServices   []string        // each SetService call, such as "caddy off"
+	projectRoot   string            // what Project returns for any folder
+	projectFiles  []string          // the compose files Project finds, best first
+	composeFiles  map[string]string // ReadCompose's files, by path
+	off           map[string]bool   // services turned off
+	setServices   []string          // each SetService call, such as "caddy off"
 	copyErr       error
 	log           string // dnsmasq's log
 	tailErr       error
@@ -37,6 +41,16 @@ type fakeBackend struct {
 }
 
 func (f *fakeBackend) PortsReady() error { return f.portsErr }
+
+func (f *fakeBackend) Project(string) (string, []string) { return f.projectRoot, f.projectFiles }
+
+func (f *fakeBackend) ReadCompose(path string) ([]byte, error) {
+	content, ok := f.composeFiles[path]
+	if !ok {
+		return nil, &fs.PathError{Op: "open", Path: path, Err: fs.ErrNotExist}
+	}
+	return []byte(content), nil
+}
 
 func (f *fakeBackend) SetService(_ context.Context, service string, on bool) error {
 	f.mu.Lock()
@@ -193,7 +207,12 @@ func settle(m Model, cmd tea.Cmd) Model {
 // ready returns a model for domains after its first report. Its log timer
 // fires at once, and settle drops the tick, so tests drive reads themselves.
 func ready(b *fakeBackend, domains []store.Domain) Model {
-	m := New(context.Background(), b, domains)
+	return readyIn(b, domains, Start{})
+}
+
+// readyIn is ready for an oo started in start's folder.
+func readyIn(b *fakeBackend, domains []store.Domain, start Start) Model {
+	m := New(context.Background(), b, domains, start)
 	m.logEvery = time.Millisecond
 	return settle(m, m.Init())
 }
@@ -233,7 +252,7 @@ func typeText(m Model, s string) Model {
 
 // clearField empties the focused field.
 func clearField(m Model) Model {
-	for range 64 {
+	for m.form.inputs[m.form.focus].Position() > 0 {
 		m = send(m, "backspace")
 	}
 	return m

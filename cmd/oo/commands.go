@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -45,7 +46,9 @@ func (a app) tui(ctx context.Context) int {
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	program := tea.NewProgram(tui.New(ctx, tui.NewBackend(a.paths, a.runner), domains), tea.WithContext(ctx))
+	dir, _ := os.Getwd() // an unknown folder only skips the compose question
+	start := tui.Start{Dir: dir, Home: a.paths.Home}
+	program := tea.NewProgram(tui.New(ctx, tui.NewBackend(a.paths, a.runner), domains, start), tea.WithContext(ctx))
 	if _, err := program.Run(); err != nil {
 		a.fail(err)
 		return 1

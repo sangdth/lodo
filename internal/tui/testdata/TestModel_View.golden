@@ -3,18 +3,18 @@
                                                                                 
                                                                                 
                                                                                 
-                                                                                
 [90m╭──────────────────────────────────────────────────────────────────────────────╮[m
 [90m│[m [1moo[m   caddy [32m●[m   dnsmasq [32m●[m   loopback [32m●[m   resolvers [32m●[m                          [90m│[m
 [90m│[m[90m──────────────────────────────────────────────────────────────────────────────[m[90m│[m
-[90m│[m [1;90mname                            [m  [1;90maddress        [m  [1;90mport [m  [1;90mown[m  [1;90mcheck        [m [90m│[m
-[90m│[m[1;38;5;212m ● crm.oo                          127.0.1.1               own  dns ✓         [m[90m│[m
-[90m│[m   ● dashboard.crm.oo              127.0.1.1        3000   own  dns ✗  http ✗ [90m│[m
-[90m│[m ● flowy.oo                        127.0.1.3               own  dns ✓         [90m│[m
-[90m│[m ○ old.oo                          127.0.0.1                    –             [90m│[m
+[90m│[m [1;90mname                [m  [1;90maddress        [m  [1;90mport [m  [1;90mcompose   [m  [1;90mown[m  [1;90mcheck        [m [90m│[m
+[90m│[m[1;38;5;212m ● crm.oo              127.0.1.1                           own  dns ✓         [m[90m│[m
+[90m│[m   ● dashboard.crm.oo  127.0.1.1        3000               own  dns ✗  http ✗ [90m│[m
+[90m│[m ● flowy.oo            127.0.1.3                           own  dns ✓         [90m│[m
+[90m│[m ○ old.oo              127.0.0.1                                –             [90m│[m
 [90m│[m [90m  Add new domain[m                                                             [90m│[m
 [90m│[m                                                                              [90m│[m
-[90m│[m[90m a sub  e edit  d del  space on/off  c env  g log  r apply  tab top  q quit[m   [90m│[m
+[90m│[m[90m a sub  e edit  d del  space on/off  c env  p compose[m                         [90m│[m
+[90m│[m[90m g log  r apply  tab top  q quit[m                                              [90m│[m
 [90m╰──────────────────────────────────────────────────────────────────────────────╯[m
                                                                                 
                                                                                 

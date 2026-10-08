@@ -29,11 +29,11 @@ func TestNew(t *testing.T) {
 	t.Parallel()
 
 	b := &fakeBackend{}
-	m := New(t.Context(), b, sample)
+	m := New(t.Context(), b, sample, Start{})
 	if !m.busy {
 		t.Error("not busy before the first report")
 	}
-	if got := m.rows()[0][4]; got != "…" {
+	if got := m.rows()[0][5]; got != "…" {
 		t.Errorf("check cell before the first report = %q, want …", got)
 	}
 	spinning := m.spinner.View() + " crm.oo"
@@ -76,7 +76,7 @@ func TestModel_Toggle(t *testing.T) {
 	if m.domains[1].Enabled || m.busy || m.err != nil {
 		t.Errorf("after the change: %+v, busy %v, err %v", m.domains[1], m.busy, m.err)
 	}
-	if got := m.rows()[1][4]; got != "–" {
+	if got := m.rows()[1][5]; got != "–" {
 		t.Errorf("check cell of a disabled name = %q, want –", got)
 	}
 }
@@ -524,11 +524,15 @@ func TestModel_WindowSize(t *testing.T) {
 		{terminal: 100, box: minBoxWidth},
 		{terminal: 80, box: 80}, // narrower than the floor: the whole terminal
 	}
+	longest := ansi.StringWidth("  ● dashboard.crm.oo")
 	for _, tt := range tests {
 		next, _ := m.Update(tea.WindowSizeMsg{Width: tt.terminal, Height: 40})
-		got := next.(Model).table.Columns()[0].Width
-		if want := tt.box - 2 - addressWidth - portWidth - ownWidth - checkWidth - 2*columns; got != want {
-			t.Errorf("name column = %d wide at %d columns, want %d", got, tt.terminal, want)
+		cols := next.(Model).table.Columns()
+		if cols[0].Width != longest {
+			t.Errorf("name column = %d wide at %d columns, want %d, the longest row", cols[0].Width, tt.terminal, longest)
+		}
+		if want := tt.box - 2 - longest - addressWidth - portWidth - ownWidth - checkWidth - 2*columns; cols[3].Width != want {
+			t.Errorf("compose column = %d wide at %d columns, want %d, the rest", cols[3].Width, tt.terminal, want)
 		}
 	}
 	next, _ := m.Update(tea.WindowSizeMsg{Width: 20, Height: 2})
@@ -551,7 +555,7 @@ func TestModel_BoxFitsTheNames(t *testing.T) {
 	}{
 		{name: "no names", domains: nil, want: 1},
 		{name: "a few names", domains: sample, want: len(sample) + 1},
-		{name: "more names than fit", domains: many, want: defaultHeight*boxHeightPercent/100 - 7},
+		{name: "more names than fit", domains: many, want: defaultHeight*boxHeightPercent/100 - 2 - 3 - keyLines - 1},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -287,7 +287,10 @@ func TestForm_Tab(t *testing.T) {
 	for _, step := range []struct {
 		key  string
 		want int
-	}{{"tab", fieldAddress}, {"tab", fieldPort}, {"tab", fieldName}, {"shift+tab", fieldPort}, {"up", fieldAddress}, {"down", fieldPort}} {
+	}{
+		{"tab", fieldAddress}, {"tab", fieldPort}, {"tab", fieldCompose}, {"tab", fieldName},
+		{"shift+tab", fieldCompose}, {"up", fieldPort}, {"down", fieldCompose},
+	} {
 		m = send(m, step.key)
 		if m.form.focus != step.want {
 			t.Errorf("after %s the cursor is in field %d, want %d", step.key, m.form.focus, step.want)

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -135,14 +136,19 @@ func TestModel_KeysFitAnEightyColumnTerminal(t *testing.T) {
 	m := ready(&fakeBackend{}, sample)
 	next, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24}) // narrower than minBoxWidth: the box takes it all
 	m = next.(Model)
+	all := map[string]string{"services": servicesHelp, "add row": addRowHelp, "question": askHelp, "question to add": askAddHelp}
 	for md, keys := range help {
-		if w := ansi.StringWidth(keys); w > m.innerWidth() {
-			t.Errorf("mode %v keys are %d wide, the box %d inside", md, w, m.innerWidth())
-		}
+		all["mode "+strconv.Itoa(int(md))] = keys
 	}
-	for name, keys := range map[string]string{"services": servicesHelp, "add row": addRowHelp} {
-		if w := ansi.StringWidth(keys); w > m.innerWidth() {
-			t.Errorf("%s keys are %d wide, the box %d inside", name, w, m.innerWidth())
+	for name, keys := range all {
+		lines := strings.Split(keys, "\n")
+		if len(lines) != keyLines {
+			t.Errorf("%s keys take %d lines, want %d, so the box keeps its height", name, len(lines), keyLines)
+		}
+		for _, line := range lines {
+			if w := ansi.StringWidth(line); w > m.innerWidth() {
+				t.Errorf("%s keys line %q is %d wide, the box %d inside", name, line, w, m.innerWidth())
+			}
 		}
 	}
 }

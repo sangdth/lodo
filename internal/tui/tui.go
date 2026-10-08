@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"github.com/sangdth/oo/internal/check"
+	"github.com/sangdth/oo/internal/compose"
 	"github.com/sangdth/oo/internal/dnsmasq"
 	"github.com/sangdth/oo/internal/paths"
 	"github.com/sangdth/oo/internal/run"
@@ -30,6 +31,11 @@ type Backend interface {
 	PortsReady() error
 	// SetService turns dnsmasq or Caddy on or off.
 	SetService(ctx context.Context, service string, on bool) error
+	// Project returns the project dir is in and its compose files, best
+	// first; root is empty outside a project.
+	Project(dir string) (root string, files []string)
+	// ReadCompose returns the compose file at path.
+	ReadCompose(path string) ([]byte, error)
 	// Copy puts text on the clipboard.
 	Copy(ctx context.Context, text string) error
 	// Tail returns what dnsmasq logged since offset, and the next offset.
@@ -72,6 +78,24 @@ func (b backend) PortsReady() error {
 		return errors.New("caddy is not set up for oo: run oo setup")
 	}
 	return nil
+}
+
+// Project needs a git root with a lock file. A root it can't search counts as
+// having no compose file: the question is only an offer.
+func (b backend) Project(dir string) (string, []string) {
+	root, ok := compose.ProjectRoot(dir)
+	if !ok {
+		return "", nil
+	}
+	files, err := compose.Find(root)
+	if err != nil {
+		return root, nil
+	}
+	return root, files
+}
+
+func (b backend) ReadCompose(path string) ([]byte, error) {
+	return os.ReadFile(path) //nolint:gosec // G304: the user named this compose file
 }
 
 func (b backend) Copy(ctx context.Context, text string) error {

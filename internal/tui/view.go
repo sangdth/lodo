@@ -18,13 +18,15 @@ import (
 )
 
 // Column widths, without the one-space padding the table adds on each side.
+// The name column fits its longest row; the compose column takes the rest.
 const (
-	addressWidth = 15
-	portWidth    = 5
-	ownWidth     = 3
-	checkWidth   = 13
-	minNameWidth = 12
-	columns      = 5
+	addressWidth    = 15
+	portWidth       = 5
+	ownWidth        = 3
+	checkWidth      = 13
+	minNameWidth    = 12
+	minComposeWidth = 8
+	columns         = 6
 )
 
 // The modal takes 70% of the terminal's width, but never less than
@@ -77,16 +79,27 @@ func serviceCheck(service string) int {
 	return 0
 }
 
-// servicesHelp is the keys while they act on the services.
-const servicesHelp = " ←/→ or h/l pick  space on/off  tab back to the names  g log  q quit"
+// keyLines is how many lines the keys take, in every mode, so the box keeps
+// its height when the mode changes.
+const keyLines = 2
 
-// The keys each mode takes, shown on the last line.
+// servicesHelp is the keys while they act on the services.
+const servicesHelp = " ←/→ or h/l pick  space on/off  tab back to the names\n g log  q quit"
+
+// The keys each mode takes, shown on the last lines.
 var help = map[mode]string{
-	modeList:    " a sub  e edit  d del  space on/off  c env  g log  r apply  tab top  q quit",
-	modeForm:    " enter save  tab next field  esc cancel",
-	modeConfirm: " y delete  any other key keeps it",
-	modeLog:     " g or esc back to the list  up/down scroll  q quit",
+	modeList:    " a sub  e edit  d del  space on/off  c env  p compose\n g log  r apply  tab top  q quit",
+	modeForm:    " enter save  tab next field  esc cancel\n",
+	modeConfirm: " y delete  any other key keeps it\n",
+	modeLog:     " g or esc back to the list  ↑/↓ scroll\n q quit",
+	modePreview: " p or esc back to the list  ↑/↓ ←/→ scroll  c copy the .env line\n q quit",
 }
+
+// The keys of the compose question, for a listed name and for one oo adds.
+const (
+	askHelp    = " y use it  e edit the path first  any other key: no\n"
+	askAddHelp = " y add it  any other key: no\n"
+)
 
 // View draws the status bar, a rule, the table or the form, the status line
 // and the keys in a bordered box at the middle of the terminal.
@@ -97,13 +110,19 @@ func (m Model) View() tea.View {
 		body = m.formView()
 	case modeLog:
 		body = m.logView()
+	case modePreview:
+		body = m.previewView()
+	}
+	keys := strings.Split(m.keys(), "\n")
+	for i, line := range keys {
+		keys[i] = ansi.Truncate(line, m.innerWidth(), "…")
 	}
 	lines := []string{
 		m.statusBar(),
 		m.styles.dim.Render(strings.Repeat("─", m.innerWidth())),
 		body,
 		m.statusLine(),
-		m.styles.dim.Render(ansi.Truncate(m.keys(), m.innerWidth(), "…")),
+		m.styles.dim.Render(strings.Join(keys, "\n")),
 	}
 	box := m.styles.box.Width(m.boxWidth()).Render(strings.Join(lines, "\n"))
 	v := tea.NewView(lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box))
@@ -112,28 +131,50 @@ func (m Model) View() tea.View {
 }
 
 // addRowHelp is the keys while the cursor is on the add row.
-const addRowHelp = " enter add  g log  r apply  tab top  q quit"
+const addRowHelp = " enter add\n g log  r apply  tab top  q quit"
 
-// keys is the help line for the mode, for the services when tab moved the
-// keys there, and for the add row when the cursor is on it.
+// keys is the help for the mode, for the services when tab moved the keys
+// there, for the add row when the cursor is on it, and for the question.
 func (m Model) keys() string {
 	switch {
 	case m.mode == modeList && m.onServices:
 		return servicesHelp
 	case m.mode == modeList && m.onAddRow():
 		return addRowHelp
+	case m.mode == modeAsk && m.question.listed:
+		return askHelp
+	case m.mode == modeAsk:
+		return askAddHelp
 	}
 	return help[m.mode]
 }
 
-// layout sizes the table to the box: the name column takes what the fixed
-// columns leave.
+// widths sizes the name column to its longest row and gives the compose
+// column what the fixed columns leave. Only a box too narrow for both cuts
+// the names.
+func (m Model) widths() (name, compose int) {
+	name = max(ansi.StringWidth(addRowText), minNameWidth)
+	for _, d := range m.listed() {
+		name = max(name, ansi.StringWidth(indent(d)+"● "+d.Name))
+	}
+	room := m.innerWidth() - addressWidth - portWidth - ownWidth - checkWidth - 2*columns
+	compose = room - name
+	if compose < minComposeWidth {
+		compose = minComposeWidth
+		name = max(room-compose, minNameWidth)
+	}
+	return name, compose
+}
+
+// layout sizes the table, the log and the preview to the box and redraws the
+// rows. It runs whenever the list changes, since the name column fits it.
 func (m *Model) layout() {
-	name := max(m.innerWidth()-addressWidth-portWidth-ownWidth-checkWidth-2*columns, minNameWidth)
+	name, compose := m.widths()
 	m.table.SetColumns([]table.Column{
 		{Title: "name", Width: name},
 		{Title: "address", Width: addressWidth},
 		{Title: "port", Width: portWidth},
+		{Title: "compose", Width: compose},
 		{Title: "own", Width: ownWidth},
 		{Title: "check", Width: checkWidth},
 	})
@@ -142,6 +183,8 @@ func (m *Model) layout() {
 	m.table.SetRows(m.rows())
 	m.log.SetWidth(m.innerWidth())
 	m.log.SetHeight(m.logHeight() - 1) // the log's title takes a line
+	m.preview.SetWidth(m.innerWidth())
+	m.preview.SetHeight(m.logHeight() - 2) // the preview's title and .env line take two
 }
 
 // boxWidth is the modal's width with its border.
@@ -161,15 +204,16 @@ func (m Model) bodyHeight() int {
 }
 
 // logHeight is the most lines the body gets: the border takes two, and the
-// status bar, the rule under it, the status line and the keys take four.
+// status bar, the rule under it, the status line and the keys take the rest.
 func (m Model) logHeight() int {
-	return max(m.height*boxHeightPercent/100-6, 3)
+	return max(m.height*boxHeightPercent/100-2-3-keyLines, 3)
 }
 
 // rows renders one table row per domain, its mark indented with its name,
 // and the add row last: dim, unless the cursor is on it.
 func (m Model) rows() []table.Row {
 	listed := m.listed()
+	_, composeWidth := m.widths()
 	rows := make([]table.Row, len(listed), len(listed)+1)
 	for i, d := range listed {
 		mark := "○"
@@ -179,7 +223,6 @@ func (m Model) rows() []table.Row {
 		case d.Enabled:
 			mark = "●"
 		}
-		indent := strings.Repeat("  ", strings.Count(d.Name, ".")-1)
 		port := ""
 		if d.Port > 0 {
 			port = strconv.Itoa(d.Port)
@@ -188,13 +231,19 @@ func (m Model) rows() []table.Row {
 		if store.IsOwn(d.Address) {
 			own = "own"
 		}
-		rows[i] = table.Row{indent + mark + " " + d.Name, d.Address, port, own, m.checkCell(d)}
+		rows[i] = table.Row{indent(d) + mark + " " + d.Name, d.Address, port, m.composeCell(d, composeWidth), own, m.checkCell(d)}
 	}
 	add := addRowText
 	if !m.onAddRow() {
 		add = m.styles.dim.Render(add)
 	}
-	return append(rows, table.Row{add, "", "", "", ""})
+	return append(rows, table.Row{add, "", "", "", "", ""})
+}
+
+// indent moves a subdomain's row in by two columns per label under its
+// project.
+func indent(d store.Domain) string {
+	return strings.Repeat("  ", strings.Count(d.Name, ".")-1)
 }
 
 // spins says whether d's row shows the spinner: the name a change is for,
@@ -274,14 +323,18 @@ func (m Model) check(id int) (check.Check, bool) {
 	return check.Check{}, false
 }
 
-// statusLine says what a delete waits for, what failed, what was just done,
-// why the selected name fails, or which system part needs oo doctor, in that
-// order.
+// statusLine says what a delete or the compose question waits for, what
+// failed, what was just done, why the selected name fails, or which system
+// part needs oo doctor, in that order.
 func (m Model) statusLine() string {
 	line := ""
 	switch {
 	case m.mode == modeConfirm:
 		line = m.styles.title.Render("delete " + m.target + "? y/N")
+	case m.mode == modeAsk && m.question.listed:
+		line = m.styles.title.Render("use " + m.question.rel + " for " + m.question.name + "? y/N")
+	case m.mode == modeAsk:
+		line = m.styles.title.Render("add " + m.question.name + " with " + m.question.rel + "? y/N")
 	case m.err != nil:
 		line = m.styles.bad.Render("✗ " + oneLine(m.err.Error()))
 	case m.note != "":
@@ -322,8 +375,8 @@ func (m Model) formView() string {
 		title = "Add a subdomain of " + f.parent
 	}
 	lines := []string{"", " " + m.styles.title.Render(title), ""}
-	labels := [fieldCount]string{"name", "address", "port"}
-	hints := [fieldCount]string{"", f.hint, m.portHint()}
+	labels := [fieldCount]string{"name", "address", "port", "compose"}
+	hints := [fieldCount]string{"", f.hint, m.portHint(), ""}
 	for i := range fieldCount {
 		input := f.inputs[i].View()
 		if i == fieldName {

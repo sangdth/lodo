@@ -36,12 +36,25 @@ const (
 	modeForm                // the add or edit form
 	modeConfirm             // a delete waiting for y
 	modeLog                 // dnsmasq's query log
+	modeAsk                 // the compose question at startup
+	modePreview             // a compose file with oo's changes
 )
+
+// Start is where oo started: the folder the compose question looks for a
+// project in, empty to skip it, and the home folder that ~ stands for.
+type Start struct {
+	Dir  string
+	Home string
+}
 
 // Model is the TUI's state. Build it with New.
 type Model struct {
 	ctx     context.Context
 	backend Backend
+	origin  Start // where oo started
+
+	project  projectMsg // the project oo started in, until the question about it opens
+	question question   // what the compose question offers, while it is open
 
 	mode       mode
 	form       form
@@ -61,6 +74,10 @@ type Model struct {
 	logSession int           // counts openings of the log, so a timer from an earlier one stops
 	logEvery   time.Duration // how often the open log is read
 
+	preview      viewport.Model
+	previewTitle string // the file, its name and how many changes, such as compose.dev.yaml for flowy.oo · 3 changes
+	previewEnv   string // the .env line the file's ports need, such as DOCKER_HOST_IP=127.0.1.3; empty when none binds it
+
 	table   table.Model
 	spinner spinner.Model
 	busy    bool   // a check or a change runs
@@ -75,14 +92,16 @@ type Model struct {
 }
 
 // New returns the TUI for domains, which the caller loaded from domains.json.
-// ctx bounds every command the TUI runs.
-func New(ctx context.Context, b Backend, domains []store.Domain) Model {
+// ctx bounds every command the TUI runs; start says where oo started.
+func New(ctx context.Context, b Backend, domains []store.Domain, start Start) Model {
 	m := Model{
 		ctx:      ctx,
 		backend:  b,
+		origin:   start,
 		domains:  store.Sort(domains),
 		spinner:  spinner.New(spinner.WithSpinner(spinner.MiniDot)),
 		log:      viewport.New(),
+		preview:  viewport.New(),
 		logEvery: logEvery,
 		busy:     true,
 		width:    defaultWidth,
@@ -107,9 +126,14 @@ func tableKeys() table.KeyMap {
 	}
 }
 
-// Init checks the system and every name while the spinner runs.
+// Init checks the system and every name while the spinner runs, and looks
+// for the project oo started in.
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(m.report(m.domains), m.spinner.Tick)
+	cmds := []tea.Cmd{m.report(m.domains), m.spinner.Tick}
+	if m.origin.Dir != "" {
+		cmds = append(cmds, m.findProject())
+	}
+	return tea.Batch(cmds...)
 }
 
 // reportMsg is a finished doctor run, after a service change when err is
@@ -138,7 +162,7 @@ type copiedMsg struct {
 }
 
 // changedMsg is a finished change. When stored is false nothing was saved and
-// the list stays as it was.
+// the list stays as it was; checks is nil when the change ran no check.
 type changedMsg struct {
 	domains []store.Domain
 	stored  bool
@@ -176,6 +200,18 @@ func (m Model) change(domains []store.Domain) tea.Cmd {
 		err := b.Apply(ctx, domains)
 		checks, results := b.Report(ctx, domains)
 		return changedMsg{domains: domains, stored: true, err: err, checks: checks, results: results}
+	}
+}
+
+// save writes domains without applying them: a compose path changes no
+// generated file, so nothing needs a restart or a check.
+func (m Model) save(domains []store.Domain) tea.Cmd {
+	b := m.backend
+	return func() tea.Msg {
+		if err := b.Save(domains); err != nil {
+			return changedMsg{err: err}
+		}
+		return changedMsg{domains: domains, stored: true}
 	}
 }
 
@@ -249,22 +285,17 @@ func (m *Model) appendLog(text string, offset int64) {
 func (m Model) start(name string, cmd tea.Cmd) (Model, tea.Cmd) {
 	m.busy, m.pending, m.err = true, name, nil
 	m.startedOn = m.cursorName()
-	m.table.SetHeight(m.bodyHeight()) // a name being added takes a row
-	m.table.SetRows(m.rows())
+	m.layout() // a name being added takes a row
 	return m, tea.Batch(cmd, m.spinner.Tick)
 }
 
-// setReport stores a doctor run, redraws the rows' checks and places the
-// cursor; here is the name it was on before the list changed.
-func (m *Model) setReport(checks []check.Check, results []check.Result, here string) {
+// setReport stores a doctor run.
+func (m *Model) setReport(checks []check.Check, results []check.Result) {
 	m.checks = checks
 	m.results = make(map[string]check.Result, len(results))
 	for _, r := range results {
 		m.results[r.Name] = r
 	}
-	m.table.SetHeight(m.bodyHeight()) // the box grows and shrinks with the names
-	m.table.SetRows(m.rows())
-	m.placeCursor(here)
 }
 
 // placeCursor puts the cursor on the name the change asked for. When the
@@ -288,6 +319,7 @@ func (m *Model) placeCursor(here string) {
 	if last := len(m.listed()); m.table.Cursor() > last {
 		m.table.SetCursor(last) // the add row
 	}
+	m.table.SetRows(m.rows()) // the add row looks different under the cursor
 }
 
 // cursorName returns the name under the cursor, or empty on the add row.

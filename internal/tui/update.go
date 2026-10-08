@@ -9,6 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
+	"github.com/sangdth/oo/internal/compose"
 	"github.com/sangdth/oo/internal/store"
 )
 
@@ -21,20 +22,35 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case reportMsg:
 		m.busy, m.err = false, msg.err
-		m.setReport(msg.checks, msg.results, m.cursorName())
+		here := m.cursorName()
+		m.setReport(msg.checks, msg.results)
+		m.layout()
+		m.placeCursor(here)
+		m.maybeAsk()
 		return m, nil
 	case changedMsg:
 		m.busy, m.err = false, msg.err
-		here := m.cursorName() // before the rows change under the cursor
-		m.adding = store.Domain{}
+		here := m.cursorName()    // before the rows change under the cursor
+		m.adding = store.Domain{} // saved, or gone when the save failed
 		if msg.stored {
 			m.domains = store.Sort(msg.domains)
-			m.setReport(msg.checks, msg.results, here)
-		} else {
-			m.placeCursor(here) // nothing was saved: a name being added goes away
-			m.table.SetHeight(m.bodyHeight())
 		}
-		m.table.SetRows(m.rows()) // the spinner leaves the rows
+		if msg.checks != nil {
+			m.setReport(msg.checks, msg.results)
+		}
+		m.layout()
+		m.placeCursor(here)
+		return m, nil
+	case projectMsg:
+		m.project = msg
+		m.maybeAsk()
+		return m, nil
+	case previewMsg:
+		if msg.err != nil {
+			m.err = msg.err
+			return m, nil
+		}
+		m.showPreview(msg)
 		return m, nil
 	case logMsg:
 		if msg.session != m.logSession || m.mode != modeLog {
@@ -88,6 +104,10 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.confirmKey(k)
 	case modeLog:
 		return m.logKey(msg)
+	case modeAsk:
+		return m.askKey(k)
+	case modePreview:
+		return m.previewKey(msg)
 	}
 	if k == "g" {
 		return m.openLog() // reading the log is safe while a change runs
@@ -107,6 +127,9 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.onServices {
 		return m.serviceKey(k)
 	}
+	if k == "p" {
+		return m.openPreview() // reading the compose file is safe while a change runs
+	}
 	if !m.busy {
 		if next, cmd, ok := m.listKey(k); ok {
 			return next, cmd
@@ -123,7 +146,13 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 // openAdd opens the add form, for a subdomain of parent when it is set.
 func (m Model) openAdd(parent string) Model {
-	m.mode, m.err, m.form = modeForm, nil, newAddForm(m.domains, parent)
+	m.mode, m.err, m.form = modeForm, nil, newAddForm(m.domains, parent, m.origin)
+	return m
+}
+
+// openEdit opens the edit form for d.
+func (m Model) openEdit(d store.Domain) Model {
+	m.mode, m.err, m.form = modeForm, nil, newEditForm(m.domains, d, m.origin)
 	return m
 }
 
@@ -158,13 +187,12 @@ func (m Model) listKey(k string) (Model, tea.Cmd, bool) {
 	case "a":
 		return m.openAdd(d.Name), nil, true
 	case "e":
-		m.mode, m.err, m.form = modeForm, nil, newEditForm(m.domains, d)
-		return m, nil, true
+		return m.openEdit(d), nil, true
 	case "d":
 		m.mode, m.err, m.target = modeConfirm, nil, d.Name
 		return m, nil, true
 	case "c":
-		return m, m.copyText("DOCKER_HOST_IP=" + d.Address), true
+		return m, m.copyText(compose.EnvVar + "=" + d.Address), true
 	}
 	return m, nil, false
 }
@@ -219,6 +247,9 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 			err = &store.FieldError{Field: store.FieldPort, Msg: notReady.Error()}
 		}
 	}
+	if err == nil && d.Compose != m.form.original.Compose {
+		err = m.checkCompose(d.Compose)
+	}
 	var next []store.Domain
 	if err == nil {
 		if m.form.editing == "" {
@@ -235,7 +266,11 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 	if m.form.editing == "" {
 		m.adding = d
 	}
-	return m.start(cmp.Or(m.form.editing, d.Name), m.change(next))
+	cmd := m.change(next)
+	if o := m.form.original; m.form.editing != "" && d.Name == o.Name && d.Address == o.Address && d.Port == o.Port {
+		cmd = m.save(next) // only the compose file changed, which nothing applies
+	}
+	return m.start(cmp.Or(m.form.editing, d.Name), cmd)
 }
 
 // neighbor returns the name the cursor goes to once name is deleted: the
