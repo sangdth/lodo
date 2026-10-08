@@ -1,0 +1,102 @@
+// Command oo manages .oo names on macOS through dnsmasq, /etc/resolver
+// files and Caddy.
+package main
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"os"
+	"os/signal"
+	"runtime/debug"
+
+	"github.com/sangdth/oo/internal/paths"
+	"github.com/sangdth/oo/internal/run"
+)
+
+// Version is set at build time with -ldflags "-X main.Version=v1.2.3".
+var Version = "dev"
+
+const usage = `oo manages .oo names on macOS through dnsmasq.
+
+Usage:
+  oo            open the TUI: the list of names, their checks, and keys to change them
+  oo setup      one-time system setup; asks for your password
+  oo apply      write the configs from domains.json, reload, and check every name
+  oo doctor     check every part and print what to fix
+  oo uninstall  remove what setup installed; keeps domains.json
+  oo version    print the version
+  oo help       print this help
+`
+
+func main() {
+	os.Exit(dispatch(os.Args[1:], os.Stdout, os.Stderr))
+}
+
+// dispatch runs one command and returns the exit code: 0 on success, 1 when
+// the command failed, 2 for bad usage. No command opens the TUI.
+func dispatch(args []string, stdout, stderr io.Writer) int {
+	command := ""
+	if len(args) > 0 {
+		command = args[0]
+	}
+	switch command {
+	case "version", "--version":
+		fmt.Fprintln(stdout, version())
+		return 0
+	case "help", "-h", "--help":
+		fmt.Fprint(stdout, usage)
+		return 0
+	case "", "setup", "apply", "doctor", "uninstall":
+		if len(args) > 1 {
+			fmt.Fprintf(stderr, "oo: %s takes no arguments\n\n%s", command, usage)
+			return 2
+		}
+		return runApp(command, stdout, stderr)
+	default:
+		fmt.Fprintf(stderr, "oo: unknown command %q\n\n%s", args[0], usage)
+		return 2
+	}
+}
+
+// runApp runs the TUI or a command that reads or changes the system, as the
+// user.
+func runApp(command string, stdout, stderr io.Writer) int {
+	if os.Geteuid() == 0 {
+		fmt.Fprintln(stderr, "oo: run oo as your user, not with sudo; it asks for your password when it needs it")
+		return 2
+	}
+	p, err := paths.Default()
+	if err != nil {
+		fmt.Fprintf(stderr, "oo: %v\n", err)
+		return 1
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
+	a := newApp(p, run.Exec{}, stdout, stderr)
+	switch command {
+	case "":
+		return a.tui(ctx)
+	case "setup":
+		return a.setup(ctx)
+	case "apply":
+		return a.apply(ctx)
+	case "doctor":
+		return a.doctor(ctx)
+	default:
+		return a.uninstall(ctx)
+	}
+}
+
+// version prefers the -ldflags value, then the module version that
+// `go install ...@v1.2.3` records.
+func version() string {
+	if Version != "dev" {
+		return Version
+	}
+	if bi, ok := debug.ReadBuildInfo(); ok && bi.Main.Version != "" && bi.Main.Version != "(devel)" {
+		return bi.Main.Version
+	}
+	return Version
+}

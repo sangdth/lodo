@@ -1,0 +1,3 @@
+# oo: lets tester run oo's resolver script as root without a password.
+# Installed by `oo setup`, removed by `oo uninstall`.
+tester ALL=(root) NOPASSWD: /fake/Library/Application\ Support/oo/apply-resolvers.sh ""

@@ -1,0 +1,68 @@
+#!/bin/sh
+# oo: writes one /etc/resolver file per name in the user's resolver list.
+# Installed by `oo setup`, run as root through /etc/sudoers.d/oo, removed by
+# `oo uninstall`. It only creates files named by lines that match the name
+# pattern, always with the same content, and only deletes files whose first
+# line is the marker. It never prints a line it read from the list.
+set -eu
+PATH=/usr/bin:/bin:/usr/sbin:/sbin
+LC_ALL=C
+export PATH LC_ALL
+umask 022
+
+list='/fake/Users/tester/.config/oo/resolvers'
+dir='/fake/etc/resolver'
+pattern='[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*\.oo'
+marker='# oo'
+
+if [ -L "$list" ] || [ ! -f "$list" ]; then
+	echo "oo: $list is missing or not a regular file" >&2
+	exit 1
+fi
+
+/bin/mkdir -p "$dir"
+work=$(/usr/bin/mktemp -d /tmp/oo.XXXXXX)
+trap '/bin/rm -rf "$work"' EXIT
+
+# Valid names only. grep exits 1 when no line matches, which is fine.
+/usr/bin/grep -E -x -e "$pattern" "$list" > "$work/names" || [ $? -eq 1 ]
+skipped=$(/usr/bin/grep -c -v -E -x -e "$pattern" "$list" || [ $? -eq 1 ])
+
+written=0
+while IFS= read -r name; do
+	if [ "${#name}" -gt 253 ]; then
+		skipped=$((skipped + 1))
+		continue
+	fi
+	target="$dir/$name"
+	if [ -e "$target" ] || [ -L "$target" ]; then
+		first=
+		IFS= read -r first < "$target" || :
+		if [ "$first" != "$marker" ]; then
+			echo "oo: left $target alone: oo did not write it" >&2
+			continue
+		fi
+	fi
+	/usr/bin/printf '%s\n' "$marker" 'nameserver 127.0.0.1' 'port 53535' > "$work/file"
+	/bin/chmod 644 "$work/file"
+	/bin/mv -f "$work/file" "$target"
+	written=$((written + 1))
+done < "$work/names"
+
+removed=0
+for f in "$dir"/*; do
+	[ -f "$f" ] && [ ! -L "$f" ] || continue
+	first=
+	IFS= read -r first < "$f" || :
+	[ "$first" = "$marker" ] || continue
+	if ! /usr/bin/grep -F -x -q -e "${f##*/}" "$work/names"; then
+		/bin/rm -f "$f"
+		removed=$((removed + 1))
+	fi
+done
+
+if [ "$(/usr/bin/id -u)" -eq 0 ]; then
+	/usr/bin/dscacheutil -flushcache
+	/usr/bin/killall -HUP mDNSResponder 2>/dev/null || :
+fi
+echo "oo: $written resolver files written, $removed removed, $skipped lines skipped"

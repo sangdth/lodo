@@ -1,0 +1,4 @@
+✓ 1 dnsmasq         running as tester, pid 42
+✗ 2 dnsmasq config  conf-file points at /old.conf
+                    fix: oo setup
+– 8 caddy           no enabled domain has a port

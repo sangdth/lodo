@@ -1,0 +1,24 @@
+ [1moo[m   dnsmasq [32m●[m   loopback [32m●[m   resolvers [32m●[m   caddy [32m●[m
+ [1mdnsmasq query log[m
+Oct  8 18:27:22 dnsmasq[52611]: query[A] crm.oo from 127.0.0.1                  
+Oct  8 18:27:22 dnsmasq[52611]: config crm.oo is 127.0.1.1                      
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+ 
+[90m l or esc back to the list  up/down scroll  q quit[m
