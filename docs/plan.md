@@ -213,9 +213,10 @@ import /Users/<user>/.config/lcd/Caddyfile
 ```
 
 The `http://` prefix keeps Caddy on port 80 with no automatic HTTPS (`caddy adapt` shows one server on `:80`
-and no TLS app). The upstream is the row's address and port, so apps listen on their project's address: Next
-binds every address by default, Vite needs `--host 127.0.1.1`, Docker ports bind `DOCKER_HOST_IP`. A file with
-no sites is a valid config, so Caddy idles when no row has a port, and rows without a port never need it.
+and no TLS app). The upstream is the row's address and port, so apps listen on their project's address:
+`next dev -H 127.0.1.1`, Vite `--host 127.0.1.1`, Docker ports on `DOCKER_HOST_IP`. An app on `*:3000` answers
+on every loopback address and shadows other projects' port 3000. A file with no sites is a valid config, so
+Caddy idles when no row has a port, and rows without a port never need it.
 
 ### What happens when a domain changes (`apply`)
 
@@ -234,7 +235,7 @@ A failure at any step shows in the status line. The saved file stays as written;
 ## The TUI
 
 ```text
- lcd  dnsmasq ● running :53535   loopback ● 50   resolvers ● ok   caddy ● :80
+ lcd   dnsmasq ●   loopback ●   resolvers ●   caddy ●
  ─────────────────────────────────────────────────────────────────────────────
   ● crm.lcd                127.0.1.1          own    dns ✓
   ●   dashboard.crm.lcd    127.0.1.1  :3000   own    dns ✓  http ✓
@@ -293,7 +294,7 @@ A failure at any step shows in the status line. The saved file stays as written;
 
 | #   | Check                                                                              | Fix it prints        |
 | --- | ---------------------------------------------------------------------------------- | -------------------- |
-| 1   | dnsmasq installed; `brew services info dnsmasq --json` says running as this user;  | `lcd setup`          |
+| 1   | dnsmasq installed; `brew services info dnsmasq --json` says running, as this user; | `lcd setup`          |
 |     | no system job under `homebrew.mxcl.dnsmasq` or `sh.brew.dnsmasq`                   |                      |
 | 2   | system conf has lcd's block, exactly one `conf-file=` line, pointing at lcd's file | `lcd setup`          |
 | 3   | `system/io.lcd.loopback` is loaded and `127.0.1.1` is on `lo0` (count reported)    | `lcd setup`          |
@@ -304,7 +305,7 @@ A failure at any step shows in the status line. The saved file stays as written;
 | 7   | each enabled domain resolves, from dnsmasq directly and through macOS; with a      | `lcd apply`, `l`     |
 |     | port, Caddy answers for it                                                         |                      |
 | 8   | only when an enabled row has a port: Caddy installed; `brew services info caddy    | `brew install        |
-|     | --json` running as this user; Homebrew's `Caddyfile` holds lcd's import line;      | caddy`, `lcd setup`  |
+|     | --json` running; Homebrew's `Caddyfile` holds lcd's import line;                   | caddy`, `lcd setup`  |
 |     | `caddy validate` passes on lcd's file; port 80 belongs to Caddy, else `lsof -nP    |                      |
 |     | -iTCP:80 -sTCP:LISTEN` names the listener                                          |                      |
 
@@ -316,7 +317,7 @@ bar red.
 
 | Found                                                                    | `setup` does                 |
 | ------------------------------------------------------------------------ | ---------------------------- |
-| dnsmasq runs as `nobody` from a root job in `/Library/LaunchDaemons`     | `sudo brew services stop`    |
+| dnsmasq runs as `nobody` from a root job in `/Library/LaunchDaemons`     | bootout, remove its plist    |
 | system conf: `conf-file=~/.config/localdns/dnsmasq.conf`                 | backup, rewrite              |
 | `/etc/resolver/` empty; `lo0` has only `127.0.0.1`                       | install script, plist, rule  |
 | Caddy 2.11.6 installed, not running; no `/opt/homebrew/etc/Caddyfile`    | write it, start Caddy        |
@@ -567,7 +568,7 @@ Commit: `feat: dnsmasq log view`.
 
 ## Troubleshooting (goes in the README)
 
-- `cannot assign requested address` from Docker: the loopback job didn't run. Run `lcd doctor`.
+- `can't assign requested address` from Docker: the loopback job didn't run. Run `lcd doctor`.
 - `sudo: a password is required` in the TUI: the sudoers rule is missing or the script changed. `lcd doctor`
   check 4, then `lcd setup`.
 - `dig flowy.lcd` finds nothing: expected. `dig` and `nslookup` skip `/etc/resolver`; Node, `psql` and
@@ -576,8 +577,8 @@ Commit: `feat: dnsmasq log view`.
   `lcd doctor` check 4.
 - `foo.crm.lcd` resolves although it isn't listed: expected. dnsmasq's `address=` and the resolver file both
   match subdomains. Add a row only to give it another address or a port.
-- `502 Bad Gateway` on `http://dashboard.crm.lcd`: Caddy is up but nothing listens on `127.0.1.1:3000`. Next
-  binds every address by default; Vite needs `--host 127.0.1.1`; Docker ports bind `DOCKER_HOST_IP`.
+- `502 Bad Gateway` on `http://dashboard.crm.lcd`: Caddy is up but nothing listens on `127.0.1.1:3000`. Start
+  the app on its address: `next dev -H 127.0.1.1`, Vite `--host 127.0.1.1`; Docker ports bind `DOCKER_HOST_IP`.
 - `http://dashboard.crm.lcd` refuses the connection: Caddy isn't running or port 80 is taken. `lcd doctor`
   check 8.
 - Names resolve for one app but not another: a VPN or WARP is capturing DNS.

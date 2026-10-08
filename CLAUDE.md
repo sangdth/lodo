@@ -1,7 +1,8 @@
 # CLAUDE.md
 
 `lcd` is a Go terminal app that manages `.lcd` names on macOS through dnsmasq, `/etc/resolver` files and
-Caddy. `docs/plan.md` holds the design, the settled decisions and the phases.
+Caddy. `docs/plan.md` holds the design, the settled decisions and the phases; `docs/setup-log.md` records
+the hand test on a real Mac.
 
 ## Commands
 
@@ -10,10 +11,13 @@ go test -race ./...                       # all tests
 go test ./internal/store -run TestAdd     # one test
 go test ./internal/dnsmasq -update        # rewrite that package's golden files after an intended change
 go vet ./... && golangci-lint run ./...   # lint (config in .golangci.yml)
-go run ./cmd/lcd doctor                   # run the CLI from source
+go run ./cmd/lcd doctor                   # run the CLI from source; read-only
+go build -o lcd ./cmd/lcd && ./lcd        # the TUI; it opens only after lcd setup on this Mac
 ```
 
-`-update` works per package: only packages with golden files define the flag.
+`-update` works per package: only packages with golden files define the flag. A commit needs `gofmt -l .`
+empty, `go vet`, `golangci-lint run` and `go test -race ./...` clean; chain them with `set -e` so a failure
+stops the commit.
 
 ## Layout
 
@@ -37,6 +41,8 @@ go run ./cmd/lcd doctor                   # run the CLI from source
   and nothing runs `sudo` or starts a service. Tests build paths with `paths.ForTest(t.TempDir())` and run lcd's
   commands through `run.Fake`. A few run `dnsmasq --test`, `caddy validate`, `visudo -c` and `plutil -lint`
   read-only on generated files, and skip when the tool is missing.
+- `lcd apply`, `lcd setup`, `lcd uninstall` and the TUI's keys change this Mac's DNS and services: run them only
+  when the task asks for it. `lcd doctor`, `lcd version` and the tests are safe.
 - Every external command goes through `run.Runner`, with the absolute tool path from `paths.Paths` and each
   argument passed separately. Nothing builds a shell command line from data.
 - The root script only creates `/etc/resolver` files named by lines matching `store.NamePattern`, with fixed
