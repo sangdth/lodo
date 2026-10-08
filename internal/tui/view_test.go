@@ -69,19 +69,81 @@ func TestModel_StatusLine(t *testing.T) {
 	}
 }
 
-func TestModel_KeysFitTheNarrowestBox(t *testing.T) {
+func TestModel_StatusLineSkipsWhatAServiceTurnedOffBreaks(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		backend *fakeBackend
+		keys    []string
+		want    string
+	}{
+		{name: "dnsmasq off", backend: &fakeBackend{off: map[string]bool{"dnsmasq": true}}, want: ""},
+		{
+			name:    "caddy off, a name on a port",
+			backend: &fakeBackend{off: map[string]bool{"caddy": true}},
+			keys:    []string{"down"}, // dashboard.crm.oo, on port 3000
+			want:    "",
+		},
+		{
+			name:    "caddy off, a name failing dns anyway",
+			backend: &fakeBackend{off: map[string]bool{"caddy": true}, failing: map[string]string{"crm.oo": "macOS: no address"}},
+			want:    "crm.oo: macOS: no address",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m := ready(tt.backend, sample)
+			for _, k := range tt.keys {
+				m = send(m, k)
+			}
+			if d, _ := m.selected(); m.results[d.Name].OK() {
+				t.Fatalf("%s resolves; the case needs it failing", d.Name)
+			}
+			if got := strings.TrimSpace(ansi.Strip(m.statusLine())); got != tt.want {
+				t.Errorf("status line = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestModel_OneHighlightAtATime(t *testing.T) {
 	t.Parallel()
 
 	m := ready(&fakeBackend{}, sample)
-	next, _ := m.Update(tea.WindowSizeMsg{Width: minBoxWidth, Height: 24})
+	highlighted := func(m Model) bool { return strings.Contains(m.table.View(), "\x1b[1;38;5;212m") }
+	if !highlighted(m) {
+		t.Fatal("the selected row is not highlighted in the list")
+	}
+	m = send(m, "tab")
+	if highlighted(m) {
+		t.Error("the selected row keeps its highlight while the keys act on the services")
+	}
+	if !strings.Contains(m.statusBar(), m.styles.table.Selected.Render("caddy")) {
+		t.Error("the picked service is not highlighted")
+	}
+	m = send(m, "tab")
+	if !highlighted(m) {
+		t.Error("the row highlight did not come back after tab")
+	}
+}
+
+func TestModel_KeysFitAnEightyColumnTerminal(t *testing.T) {
+	t.Parallel()
+
+	m := ready(&fakeBackend{}, sample)
+	next, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24}) // narrower than minBoxWidth: the box takes it all
 	m = next.(Model)
 	for md, keys := range help {
 		if w := ansi.StringWidth(keys); w > m.innerWidth() {
-			t.Errorf("mode %v keys are %d wide, the narrowest box %d inside", md, w, m.innerWidth())
+			t.Errorf("mode %v keys are %d wide, the box %d inside", md, w, m.innerWidth())
 		}
 	}
-	if w := ansi.StringWidth(servicesHelp); w > m.innerWidth() {
-		t.Errorf("services keys are %d wide, the narrowest box %d inside", w, m.innerWidth())
+	for name, keys := range map[string]string{"services": servicesHelp, "add row": addRowHelp} {
+		if w := ansi.StringWidth(keys); w > m.innerWidth() {
+			t.Errorf("%s keys are %d wide, the box %d inside", name, w, m.innerWidth())
+		}
 	}
 }
 

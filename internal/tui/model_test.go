@@ -106,9 +106,10 @@ func TestModel_SpinnerOnTheChangedRow(t *testing.T) {
 			next, _ := m.Update(press(tt.keys[last])) // the change has started, not landed
 			m = next.(Model)
 			spinner := m.spinner.View()
-			for i, row := range m.table.Rows() {
-				spinning := strings.HasPrefix(row[0], spinner)
-				want := i == tt.row || (tt.row < 0 && m.domains[i].Enabled)
+			for i, d := range m.domains {
+				row := m.table.Rows()[i]
+				spinning := strings.HasPrefix(strings.TrimLeft(row[0], " "), spinner)
+				want := i == tt.row || (tt.row < 0 && d.Enabled)
 				if spinning != want {
 					t.Errorf("row %d %q spins: %v, want %v", i, row[0], spinning, want)
 				}
@@ -136,20 +137,28 @@ func TestModel_Services(t *testing.T) {
 	m = send(m, "right")
 	m = send(m, "right") // already on the last
 	m = send(m, "space")
-	if want := []string{"dnsmasq off", "caddy off"}; !slices.Equal(b.setServices, want) {
+	if want := []string{"caddy off", "dnsmasq off"}; !slices.Equal(b.setServices, want) {
 		t.Errorf("SetService calls = %q, want %q", b.setServices, want)
 	}
 	bar := ansi.Strip(m.statusBar())
-	if !strings.Contains(bar, "dnsmasq off") || !strings.Contains(bar, "caddy off") {
+	if !strings.HasPrefix(bar, " oo   caddy ○   dnsmasq ○   loopback ●   resolvers ●") {
 		t.Errorf("status bar = %q, want both services off", bar)
 	}
 	if got := strings.TrimSpace(ansi.Strip(m.statusLine())); got != "" {
 		t.Errorf("status line = %q; a service turned off is not a problem", got)
 	}
 
-	m = send(m, "space") // caddy back on
-	if got := b.setServices[len(b.setServices)-1]; got != "caddy on" {
-		t.Errorf("last SetService = %q, want caddy on", got)
+	m = send(m, "space") // dnsmasq back on
+	if got := b.setServices[len(b.setServices)-1]; got != "dnsmasq on" {
+		t.Errorf("last SetService = %q, want dnsmasq on", got)
+	}
+	m = send(m, "h")
+	if m.service != 0 || m.mode != modeList {
+		t.Errorf("after h: service %d, mode %v; want the first service, still the list", m.service, m.mode)
+	}
+	m = send(m, "l")
+	if m.service != 1 || m.mode != modeList {
+		t.Errorf("after l: service %d, mode %v; want the second service and no log", m.service, m.mode)
 	}
 	m = send(m, "down") // moves nothing while the keys act on the services
 	m = send(m, "tab")
@@ -168,8 +177,8 @@ func TestModel_ServiceSpinsWhileItChanges(t *testing.T) {
 	next, _ := m.Update(press("space")) // the change has started, not landed
 	m = next.(Model)
 	bar := ansi.Strip(m.statusBar())
-	if !strings.Contains(bar, "dnsmasq "+m.spinner.View()) {
-		t.Errorf("status bar = %q, want the spinner after dnsmasq", bar)
+	if !strings.Contains(bar, "caddy "+m.spinner.View()) {
+		t.Errorf("status bar = %q, want the spinner after caddy, the first service", bar)
 	}
 	for _, row := range m.table.Rows() {
 		if strings.HasPrefix(row[0], m.spinner.View()) {
@@ -181,13 +190,135 @@ func TestModel_ServiceSpinsWhileItChanges(t *testing.T) {
 func TestModel_ServiceFails(t *testing.T) {
 	t.Parallel()
 
-	b := &fakeBackend{serviceErr: errors.New("stop dnsmasq: exit status 1")}
+	b := &fakeBackend{serviceErr: errors.New("stop caddy: exit status 1")}
 	m := send(send(ready(b, sample), "tab"), "space")
 	if m.busy || m.err == nil {
 		t.Fatalf("busy %v, err %v; want idle with the error", m.busy, m.err)
 	}
-	if got := ansi.Strip(m.statusBar()); !strings.Contains(got, "dnsmasq ●") {
-		t.Errorf("status bar = %q, want dnsmasq still on", got)
+	if got := ansi.Strip(m.statusBar()); !strings.Contains(got, "caddy ●") {
+		t.Errorf("status bar = %q, want caddy still on", got)
+	}
+}
+
+func TestModel_StatusBarMarks(t *testing.T) {
+	t.Parallel()
+
+	b := &fakeBackend{failingChecks: map[int]string{3: "job not loaded"}, off: map[string]bool{"dnsmasq": true}}
+	m := ready(b, sample)
+	if bar, want := ansi.Strip(m.statusBar()), " oo   caddy ●   dnsmasq ○   loopback ○   resolvers ●"; bar != want {
+		t.Errorf("status bar = %q, want %q", bar, want)
+	}
+	for _, tt := range []struct {
+		label string
+		id    int
+		want  string
+	}{
+		{"caddy", 8, m.styles.ok.Render("●")},
+		{"dnsmasq", 1, m.styles.dim.Render("○")},
+		{"loopback", 3, m.styles.bad.Render("○")},
+	} {
+		if got := m.state(tt.label, tt.id); got != tt.want {
+			t.Errorf("%s mark = %q, want %q", tt.label, got, tt.want)
+		}
+	}
+}
+
+func TestModel_AddRow(t *testing.T) {
+	t.Parallel()
+
+	toAddRow := func(m Model) Model {
+		for range sample {
+			m = send(m, "down")
+		}
+		return m
+	}
+	m := ready(&fakeBackend{}, sample)
+	last := func(m Model) string { return m.table.Rows()[len(sample)][0] }
+	if got := last(m); got != m.styles.dim.Render(addRowText) {
+		t.Errorf("add row away from the cursor = %q, want it dim", got)
+	}
+	m = toAddRow(m)
+	if !m.onAddRow() || last(m) != addRowText {
+		t.Fatalf("on the add row %v, row %q; want the cursor there and the row plain, so it takes the highlight", m.onAddRow(), last(m))
+	}
+	if _, ok := m.selected(); ok {
+		t.Error("the add row selects a name")
+	}
+	if got := m.keys(); got != addRowHelp {
+		t.Errorf("keys = %q, want the add row's", got)
+	}
+	for _, k := range []string{"e", "d", "c"} {
+		if got := send(m, k); got.mode != modeList || got.note != "" {
+			t.Errorf("%s on the add row: mode %v, note %q; want nothing", k, got.mode, got.note)
+		}
+	}
+	for _, k := range []string{"space", "enter", "a"} {
+		got := send(m, k)
+		if got.mode != modeForm || got.form.parent != "" || got.form.suffix != ".oo" {
+			t.Errorf("%s on the add row: mode %v, parent %q; want the plain add form", k, got.mode, got.form.parent)
+		}
+	}
+}
+
+func TestModel_AddKeys(t *testing.T) {
+	t.Parallel()
+
+	for _, k := range []tea.KeyPressMsg{
+		{Code: 'A', Text: "A"},
+		{Code: 'a', ShiftedCode: 'A', Text: "A", Mod: tea.ModShift},
+		{Code: 'a', Mod: tea.ModShift}, // a terminal that reports keys without their text
+	} {
+		next, _ := ready(&fakeBackend{}, sample).Update(k) // the cursor is on crm.oo
+		if m := next.(Model); m.mode != modeForm || m.form.parent != "" {
+			t.Errorf("%s: mode %v, parent %q; want the plain add form", k, m.mode, m.form.parent)
+		}
+	}
+	m := send(ready(&fakeBackend{}, sample), "a")
+	if m.mode != modeForm || m.form.parent != "crm.oo" {
+		t.Errorf("a on crm.oo: mode %v, parent %q; want a subdomain of crm.oo", m.mode, m.form.parent)
+	}
+}
+
+func TestModel_RowsIndentTheMark(t *testing.T) {
+	t.Parallel()
+
+	m := ready(&fakeBackend{}, sample)
+	for i, want := range []string{"● crm.oo", "  ● dashboard.crm.oo", "● flowy.oo", "○ old.oo"} {
+		if got := m.table.Rows()[i][0]; got != want {
+			t.Errorf("row %d = %q, want %q", i, got, want)
+		}
+	}
+}
+
+func TestModel_DeleteMovesToANeighbor(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		domains []store.Domain
+		downs   int
+		want    string // the name under the cursor after the delete; empty for the add row
+	}{
+		{name: "a middle name", domains: sample, downs: 1, want: "flowy.oo"},
+		{name: "the last name", domains: sample, downs: 3, want: "flowy.oo"},
+		{name: "the only name", domains: sample[2:3], want: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m := ready(&fakeBackend{}, tt.domains)
+			for range tt.downs {
+				m = send(m, "down")
+			}
+			m = send(send(m, "d"), "y")
+			got := ""
+			if d, ok := m.selected(); ok {
+				got = d.Name
+			}
+			if got != tt.want {
+				t.Errorf("cursor on %q (add row %v), want %q", got, m.onAddRow(), tt.want)
+			}
+		})
 	}
 }
 
@@ -311,10 +442,10 @@ func TestModel_BoxFitsTheNames(t *testing.T) {
 	tests := []struct {
 		name    string
 		domains []store.Domain
-		want    int // rows the table shows, without its header
+		want    int // rows the table shows, without its header: the names and the add row
 	}{
 		{name: "no names", domains: nil, want: 1},
-		{name: "a few names", domains: sample, want: len(sample)},
+		{name: "a few names", domains: sample, want: len(sample) + 1},
 		{name: "more names than fit", domains: many, want: defaultHeight*boxHeightPercent/100 - 7},
 	}
 	for _, tt := range tests {

@@ -3,6 +3,7 @@ package tui
 import (
 	"cmp"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -45,11 +46,26 @@ var statusParts = []struct {
 	id    int
 	label string
 }{
+	{8, "caddy"},
 	{1, "dnsmasq"},
 	{3, "loopback"},
 	{4, "resolvers"},
-	{8, "caddy"},
 }
+
+// services are the status bar's parts that space turns on and off, in the
+// bar's order.
+var services = func() []string {
+	var s []string
+	for _, p := range statusParts {
+		if slices.Contains(system.Services, p.label) {
+			s = append(s, p.label)
+		}
+	}
+	return s
+}()
+
+// addRowText is the last row of the list, which opens the add form.
+const addRowText = "  Add new domain"
 
 // serviceCheck returns the ID of the doctor check that reports on service.
 func serviceCheck(service string) int {
@@ -62,14 +78,14 @@ func serviceCheck(service string) int {
 }
 
 // servicesHelp is the keys while they act on the services.
-const servicesHelp = " ←/→ pick  space on/off  tab back to the names  l log  q quit"
+const servicesHelp = " ←/→ or h/l pick  space on/off  tab back to the names  g log  q quit"
 
 // The keys each mode takes, shown on the last line.
 var help = map[mode]string{
-	modeList:    " a add  e edit  d del  space on/off  c env  l log  r apply  tab services  q quit",
+	modeList:    " a sub  e edit  d del  space on/off  c env  g log  r apply  tab top  q quit",
 	modeForm:    " enter save  tab next field  esc cancel",
 	modeConfirm: " y delete  any other key keeps it",
-	modeLog:     " l or esc back to the list  up/down scroll  q quit",
+	modeLog:     " g or esc back to the list  up/down scroll  q quit",
 }
 
 // View draws the status bar, a rule, the table or the form, the status line
@@ -95,11 +111,17 @@ func (m Model) View() tea.View {
 	return v
 }
 
-// keys is the help line for the mode, and for the services when tab moved
-// the keys there.
+// addRowHelp is the keys while the cursor is on the add row.
+const addRowHelp = " enter add  g log  r apply  tab top  q quit"
+
+// keys is the help line for the mode, for the services when tab moved the
+// keys there, and for the add row when the cursor is on it.
 func (m Model) keys() string {
-	if m.mode == modeList && m.onServices {
+	switch {
+	case m.mode == modeList && m.onServices:
 		return servicesHelp
+	case m.mode == modeList && m.onAddRow():
+		return addRowHelp
 	}
 	return help[m.mode]
 }
@@ -132,10 +154,10 @@ func (m Model) innerWidth() int {
 	return max(m.boxWidth()-2, 1)
 }
 
-// bodyHeight is the lines the table gets: its header and one per name, at
-// least one row, at most the log's lines.
+// bodyHeight is the lines the table gets: its header, one per name and the
+// add row, at most the log's lines.
 func (m Model) bodyHeight() int {
-	return min(max(len(m.domains), 1)+1, m.logHeight())
+	return min(len(m.domains)+2, m.logHeight())
 }
 
 // logHeight is the most lines the body gets: the border takes two, and the
@@ -144,9 +166,10 @@ func (m Model) logHeight() int {
 	return max(m.height*boxHeightPercent/100-6, 3)
 }
 
-// rows renders one table row per domain.
+// rows renders one table row per domain, its mark indented with its name,
+// and the add row last: dim, unless the cursor is on it.
 func (m Model) rows() []table.Row {
-	rows := make([]table.Row, len(m.domains))
+	rows := make([]table.Row, len(m.domains), len(m.domains)+1)
 	for i, d := range m.domains {
 		mark := "○"
 		switch {
@@ -164,9 +187,13 @@ func (m Model) rows() []table.Row {
 		if store.IsOwn(d.Address) {
 			own = "own"
 		}
-		rows[i] = table.Row{mark + " " + indent + d.Name, d.Address, port, own, m.checkCell(d)}
+		rows[i] = table.Row{indent + mark + " " + d.Name, d.Address, port, own, m.checkCell(d)}
 	}
-	return rows
+	add := addRowText
+	if !m.onAddRow() {
+		add = m.styles.dim.Render(add)
+	}
+	return append(rows, table.Row{add, "", "", "", ""})
 }
 
 // spins says whether d's row shows the spinner: the name a change is for,
@@ -211,7 +238,7 @@ func (m Model) statusBar() string {
 	parts := []string{m.styles.title.Render("oo")}
 	for _, p := range statusParts {
 		label := p.label
-		if m.onServices && label == system.Services[m.service] {
+		if m.onServices && label == services[m.service] {
 			label = m.styles.table.Selected.Render(label)
 		}
 		parts = append(parts, label+" "+m.state(p.label, p.id))
@@ -219,8 +246,9 @@ func (m Model) statusBar() string {
 	return " " + strings.Join(parts, "   ")
 }
 
-// state is a part's mark: the spinner while it is turned on or off, a dot
-// for passed or failed, "off" when turned off, and "–" when not needed.
+// state is a part's mark, like a name's: a green ● when it is on and works,
+// ○ when it is off, red when it fails, and the spinner while it is turned on
+// or off.
 func (m Model) state(label string, id int) string {
 	c, ok := m.check(id)
 	switch {
@@ -230,12 +258,10 @@ func (m Model) state(label string, id int) string {
 		return m.styles.dim.Render("…")
 	case c.OK:
 		return m.styles.ok.Render("●")
-	case c.Off:
-		return m.styles.dim.Render("off")
 	case c.Skipped:
-		return m.styles.dim.Render("–")
+		return m.styles.dim.Render("○")
 	}
-	return m.styles.bad.Render("●")
+	return m.styles.bad.Render("○")
 }
 
 func (m Model) check(id int) (check.Check, bool) {
@@ -267,7 +293,7 @@ func (m Model) statusLine() string {
 
 func (m Model) problem() string {
 	if d, ok := m.selected(); ok && d.Enabled {
-		if r, ok := m.results[d.Name]; ok && !r.OK() {
+		if r, ok := m.results[d.Name]; ok && !r.OK() && !m.expected(r) {
 			return m.styles.bad.Render(d.Name + ": " + r.Detail)
 		}
 	}
@@ -288,8 +314,11 @@ func (m Model) problem() string {
 func (m Model) formView() string {
 	f := m.form
 	title := "Add a name"
-	if f.editing != "" {
+	switch {
+	case f.editing != "":
 		title = "Edit " + f.editing
+	case f.parent != "":
+		title = "Add a subdomain of " + f.parent
 	}
 	lines := []string{"", " " + m.styles.title.Render(title), ""}
 	labels := [fieldCount]string{"name", "address", "port"}
@@ -328,7 +357,7 @@ func (m Model) logView() string {
 }
 
 // nameInput draws the name field as wide as its text, or its placeholder, and
-// the dimmed suffix after it, which can't be edited.
+// the form's dimmed suffix after it, which can't be edited.
 func (m Model) nameInput() string {
 	in := m.form.inputs[fieldName]
 	width := ansi.StringWidth(in.Value())
@@ -336,7 +365,17 @@ func (m Model) nameInput() string {
 		width = ansi.StringWidth(in.Placeholder)
 	}
 	in.SetWidth(width)
-	return in.View() + m.styles.dim.Render(nameSuffix)
+	return in.View() + m.styles.dim.Render(m.form.suffix)
+}
+
+// expected reports whether r fails only because of a service turned off:
+// dnsmasq off fails every name, Caddy off fails the http probes.
+func (m Model) expected(r check.Result) bool {
+	if c, ok := m.check(serviceCheck("dnsmasq")); ok && c.Off {
+		return true
+	}
+	c, ok := m.check(serviceCheck("caddy"))
+	return ok && c.Off && r.Direct && r.System
 }
 
 // portHint says what a port does for the name being typed.

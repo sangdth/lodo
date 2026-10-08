@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"cmp"
 	"errors"
 	"strconv"
 	"strings"
@@ -19,9 +20,9 @@ const (
 	fieldCount
 )
 
-// nameSuffix ends every name. The form shows it after the name field, dimmed,
-// so only the labels before it are typed.
-const nameSuffix = "." + store.TLD
+// tldSuffix ends every name. A form shows its suffix after the name field,
+// dimmed, so only the labels before it are typed.
+const tldSuffix = "." + store.TLD
 
 // fieldIndex maps store's field names to the form's fields.
 var fieldIndex = map[string]int{
@@ -30,9 +31,12 @@ var fieldIndex = map[string]int{
 	store.FieldPort:    fieldPort,
 }
 
-// form adds a domain, or edits one when editing names it.
+// form adds a domain, a subdomain of parent when it is set, or edits one when
+// editing names it.
 type form struct {
 	editing        string
+	parent         string       // the name a new subdomain goes under
+	suffix         string       // what the typed labels end in: .oo, or .<parent>
 	original       store.Domain // the domain being edited
 	inputs         [fieldCount]textinput.Model
 	focus          int
@@ -41,9 +45,14 @@ type form struct {
 	errs           [fieldCount]string
 }
 
-// newAddForm opens an empty form whose address follows the name.
-func newAddForm(domains []store.Domain) form {
-	f := form{inputs: newInputs()}
+// newAddForm opens an empty form whose address follows the name. With a
+// parent, the name ends in .<parent> and only the labels before it are typed.
+func newAddForm(domains []store.Domain, parent string) form {
+	f := form{parent: parent, suffix: tldSuffix}
+	if parent != "" {
+		f.suffix = "." + parent
+	}
+	f.inputs = newInputs(f.suffix)
 	f.prefill(domains)
 	f.focusField(fieldName)
 	return f
@@ -51,8 +60,8 @@ func newAddForm(domains []store.Domain) form {
 
 // newEditForm opens a form holding d. Its address stays as typed.
 func newEditForm(domains []store.Domain, d store.Domain) form {
-	f := form{editing: d.Name, original: d, inputs: newInputs(), addressTouched: true}
-	f.inputs[fieldName].SetValue(strings.TrimSuffix(d.Name, nameSuffix))
+	f := form{editing: d.Name, original: d, suffix: tldSuffix, inputs: newInputs(tldSuffix), addressTouched: true}
+	f.inputs[fieldName].SetValue(strings.TrimSuffix(d.Name, tldSuffix))
 	f.inputs[fieldAddress].SetValue(d.Address)
 	if d.Port > 0 {
 		f.inputs[fieldPort].SetValue(strconv.Itoa(d.Port))
@@ -64,11 +73,11 @@ func newEditForm(domains []store.Domain, d store.Domain) form {
 	return f
 }
 
-func newInputs() [fieldCount]textinput.Model {
+func newInputs(suffix string) [fieldCount]textinput.Model {
 	styles := textinput.DefaultDarkStyles()
 	styles.Cursor.Blink = false
 	var inputs [fieldCount]textinput.Model
-	for i, limit := range [fieldCount]int{store.MaxNameLen - len(nameSuffix), len("127.255.255.255"), len("65535")} {
+	for i, limit := range [fieldCount]int{store.MaxNameLen - len(suffix), len("127.255.255.255"), len("65535")} {
 		inputs[i] = textinput.New()
 		inputs[i].Prompt = ""
 		inputs[i].CharLimit = limit
@@ -76,6 +85,9 @@ func newInputs() [fieldCount]textinput.Model {
 	}
 	inputs[fieldName].SetWidth(store.MaxNameLen) // never scrolls; formView draws it at the text's width
 	inputs[fieldName].Placeholder = "app.flowy"
+	if suffix != tldSuffix {
+		inputs[fieldName].Placeholder = "api"
+	}
 	inputs[fieldAddress].SetWidth(16)
 	inputs[fieldPort].SetWidth(6)
 	inputs[fieldPort].Placeholder = "none"
@@ -88,7 +100,7 @@ func (f *form) prefill(domains []store.Domain) {
 	if f.addressTouched {
 		return
 	}
-	name := f.name()
+	name := cmp.Or(f.name(), f.suffix) // before typing, a subdomain form already sits under its parent
 	free, freeErr := store.NextFree(domains)
 	parent, isSub := store.Parent(domains, name)
 	switch {
@@ -139,11 +151,11 @@ func (f form) domain() (store.Domain, error) {
 // name is the typed labels with the suffix, or empty when none are typed. A
 // suffix typed out of habit is not doubled.
 func (f form) name() string {
-	labels := strings.TrimSuffix(strings.TrimSpace(f.inputs[fieldName].Value()), nameSuffix)
+	labels := strings.TrimSuffix(strings.TrimSpace(f.inputs[fieldName].Value()), f.suffix)
 	if labels == "" {
 		return ""
 	}
-	return labels + nameSuffix
+	return labels + f.suffix
 }
 
 // setError shows err under the field it concerns and moves the cursor there.

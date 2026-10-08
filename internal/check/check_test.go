@@ -507,12 +507,20 @@ func TestEnv_Run_Caddy(t *testing.T) {
 	)
 	runCases(t, []runCase{
 		{
-			name: "no enabled domain has a port",
+			name: "no enabled domain has a port, caddy running",
 			domains: []store.Domain{
 				{Name: "crm.oo", Address: "127.0.1.1", Enabled: true},
 				{Name: "dashboard.crm.oo", Address: "127.0.0.1", Port: 3000},
 			},
-			want: caddyCheck.skip("no enabled domain has a port"),
+			want: caddyCheck.pass("running, no enabled domain has a port"),
+		},
+		{
+			name: "no enabled domain has a port, caddy not running",
+			domains: []store.Domain{
+				{Name: "crm.oo", Address: "127.0.1.1", Enabled: true},
+			},
+			change: func(_ *testing.T, m *mac) { m.fake.Set(brewInfo(m.p, "caddy"), brewJSON("caddy", false, "")) },
+			want:   caddyCheck.skip("no enabled domain has a port"),
 		},
 		{
 			name: "turned off, no port needs it",

@@ -236,15 +236,16 @@ A failure at any step shows in the status line. The saved file stays as written;
 ## The TUI
 
 ```text
- oo   dnsmasq ●   loopback ●   resolvers ●   caddy ●
+ oo   caddy ●   dnsmasq ●   loopback ●   resolvers ●
  ─────────────────────────────────────────────────────────────────────────────
   ● crm.oo                127.0.1.1          own    dns ✓
-  ●   dashboard.crm.oo    127.0.1.1  :3000   own    dns ✓  http ✓
-  ●   service.crm.oo      127.0.1.1  :3002   own    dns ✓  http ✗ 502, app down
+    ● dashboard.crm.oo    127.0.1.1  :3000   own    dns ✓  http ✓
+    ● service.crm.oo      127.0.1.1  :3002   own    dns ✓  http ✗ 502, app down
   ● flowy.oo              127.0.1.3          own    dns ✓
   ○ old.oo                127.0.0.1                 –
+    Add new domain
  ─────────────────────────────────────────────────────────────────────────────
- a add  e edit  d del  space on/off  c env  l log  r apply  tab services  q quit
+ a sub  e edit  d del  space on/off  c env  g log  r apply  tab top  q quit
 ```
 
 ```text
@@ -256,9 +257,12 @@ A failure at any step shows in the status line. The saved file stays as written;
 ```
 
 - **List:** a `bubbles/table` with name, address, port, own, on/off and the checks (dns, http). Up to 50
-  rows, no filtering.
-- **Form:** three `textinput`s. The name field takes the labels only; a dimmed `.oo` that can't be edited
-  follows it, and a `.oo` typed anyway is not doubled. Add prefills the address while you type the name: the parent's address when
+  rows, no filtering. A subdomain's mark is indented with its name. The last row, `Add new domain`, is dim and
+  has no mark; `enter`, `space` or `a` on it opens the add form, and the keys line there lists only what works.
+  `A` opens the add form from anywhere; `a` on a name opens it for a subdomain of that name.
+- **Form:** three `textinput`s. The name field takes the labels only; a dimmed suffix that can't be edited
+  follows it: `.oo`, or `.demo.oo` for a subdomain of `demo.oo`. A suffix typed anyway is not doubled. Edit
+  keeps `.oo` as the suffix, so a subdomain can move to another parent. Add prefills the address while you type the name: the parent's address when
   the name is a subdomain of a listed name, else the lowest free own address (`127.0.0.1`, with a note, when
   all 50 are taken). The hint names the next free own address so a subdomain can get its own. Typing in the
   address field stops the prefill. Port is optional; a port when `caddy` isn't installed says
@@ -268,14 +272,16 @@ A failure at any step shows in the status line. The saved file stays as written;
   check and `r` spin every enabled row.
 - **Delete:** `d` asks `delete flowy.oo? y/n` in the status line.
 - **Copy env** puts `DOCKER_HOST_IP=127.0.1.3` on the clipboard (`pbcopy`).
-- **Log:** a `viewport` tailing `dnsmasq.log`, polled every 500 ms; `l` or `esc` returns.
-- **Status bar:** checks 1, 3, 4 and 8. `off` is a service turned off; `caddy` shows `–` when no row has a
-  port. Any red one says "run `oo doctor`".
-- **Services:** `tab` moves the keys to the status bar; `←` `→` pick dnsmasq or Caddy, `space` turns it on or
+- **Log:** a `viewport` tailing `dnsmasq.log`, polled every 500 ms; `g` or `esc` returns.
+- **Status bar:** checks 8, 1, 3 and 4, in that order. A green `●` is on and works, a dim `○` is off: turned off, or Caddy
+  not running while no row has a port. A red `○` fails. Any red one says "run `oo doctor`".
+- **Services:** `tab` moves the keys to the status bar; `←` `→` (or `h` `l`) pick Caddy or dnsmasq, `space` turns it on or
   off, with the spinner on its mark. Loopback and resolvers need root, so they only show their state. Off is
   brew's own state: `brew services stop` unregisters the job, so `Apply` leaves an unregistered service
   stopped, while one that crashed stays registered and is restarted. A dnsmasq turned off is check 1 skipped,
-  so the TUI still opens to turn it back on.
+  so the TUI still opens to turn it back on. The status line leaves out failures a service turned off
+  explains: every name with dnsmasq off, the http probe with Caddy off. Only one place is highlighted at a
+  time: the picked service, or the selected row.
 - **Layout:** everything sits in one bordered box at the middle of the terminal: 70% of the width, at least
   84 columns (the whole width on a narrower terminal). Its height fits the names, up to 80% of the
   terminal; the log takes the full 80%.
@@ -314,7 +320,7 @@ A failure at any step shows in the status line. The saved file stays as written;
 |     | every enabled domain has its `/etc/resolver` file with the marker and port         | `oo apply`          |
 | 5   | no `/etc/resolver/local` (it takes every `.local` name away from Bonjour)          | `sudo rm` it         |
 | 6   | `dnsmasq.conf`, `resolvers` and `Caddyfile` equal what `domains.json` generates    | `oo apply`          |
-| 7   | each enabled domain resolves, from dnsmasq directly and through macOS; with a      | `oo apply`, `l`     |
+| 7   | each enabled domain resolves, from dnsmasq directly and through macOS; with a      | `oo apply`, `g`     |
 |     | port, Caddy answers for it                                                         |                      |
 | 8   | only when an enabled row has a port: Caddy installed; `brew services info caddy    | `brew install        |
 |     | --json` running; Homebrew's `Caddyfile` holds oo's import line;                   | caddy`, `oo setup`  |

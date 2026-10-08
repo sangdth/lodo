@@ -3,12 +3,13 @@ package tui
 import (
 	"cmp"
 	"errors"
+	"slices"
 
 	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/sangdth/oo/internal/store"
-	"github.com/sangdth/oo/internal/system"
 )
 
 // Update handles one message.
@@ -83,16 +84,19 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case modeLog:
 		return m.logKey(msg)
 	}
-	if k == "l" {
+	if k == "g" {
 		return m.openLog() // reading the log is safe while a change runs
 	}
 	if k == "tab" {
 		m.onServices = !m.onServices
+		styles := m.styles.table
 		if m.onServices {
 			m.table.Blur()
+			styles.Selected = lipgloss.NewStyle() // one highlight at a time: the service's
 		} else {
 			m.table.Focus()
 		}
+		m.table.SetStyles(styles)
 		return m, nil
 	}
 	if m.onServices {
@@ -104,8 +108,18 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	var cmd tea.Cmd
+	wasOnAddRow := m.onAddRow()
 	m.table, cmd = m.table.Update(msg)
+	if m.onAddRow() != wasOnAddRow {
+		m.table.SetRows(m.rows()) // the add row is dim only while the cursor is elsewhere
+	}
 	return m, cmd
+}
+
+// openAdd opens the add form, for a subdomain of parent when it is set.
+func (m Model) openAdd(parent string) Model {
+	m.mode, m.err, m.form = modeForm, nil, newAddForm(m.domains, parent)
+	return m
 }
 
 // listKey handles the list's action keys, and reports whether k was one.
@@ -116,12 +130,14 @@ func (m Model) listKey(k string) (Model, tea.Cmd, bool) {
 	case "r":
 		next, cmd := m.start("", m.reload())
 		return next, cmd, true
-	case "a":
-		m.mode, m.err, m.form = modeForm, nil, newAddForm(m.domains)
-		return m, nil, true
+	case "A", "shift+a": // terminals that report keys without their text send shift+a
+		return m.openAdd(""), nil, true
 	}
 	d, ok := m.selected()
 	if !ok {
+		if k == "a" || k == "space" || k == "enter" { // on the add row
+			return m.openAdd(""), nil, true
+		}
 		return m, nil, false
 	}
 	switch k {
@@ -134,6 +150,8 @@ func (m Model) listKey(k string) (Model, tea.Cmd, bool) {
 		m.selectName = d.Name
 		started, cmd := m.start(d.Name, m.change(next))
 		return started, cmd, true
+	case "a":
+		return m.openAdd(d.Name), nil, true
 	case "e":
 		m.mode, m.err, m.form = modeForm, nil, newEditForm(m.domains, d)
 		return m, nil, true
@@ -147,20 +165,20 @@ func (m Model) listKey(k string) (Model, tea.Cmd, bool) {
 }
 
 // serviceKey handles the keys while they act on the status bar's services:
-// left and right pick one, space turns it on or off.
+// left and right, or h and l, pick one; space turns it on or off.
 func (m Model) serviceKey(k string) (tea.Model, tea.Cmd) {
 	switch k {
 	case "q":
 		return m, tea.Quit
-	case "left":
+	case "left", "h":
 		m.service = max(m.service-1, 0)
-	case "right":
-		m.service = min(m.service+1, len(system.Services)-1)
+	case "right", "l":
+		m.service = min(m.service+1, len(services)-1)
 	case "space":
 		if m.busy {
 			return m, nil
 		}
-		service := system.Services[m.service]
+		service := services[m.service]
 		c, ok := m.check(serviceCheck(service))
 		if !ok {
 			return m, nil // no report yet, so on or off is unknown
@@ -212,10 +230,26 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 	return m.start(cmp.Or(m.form.editing, d.Name), m.change(next))
 }
 
-// logKey scrolls the log; l or esc goes back to the list.
+// neighbor returns the name the cursor goes to once name is deleted: the
+// next one, or the one before when name is last. It is empty when name is
+// the only one, so the cursor lands on the add row.
+func neighbor(domains []store.Domain, name string) string {
+	i := slices.IndexFunc(domains, func(d store.Domain) bool { return d.Name == name })
+	switch {
+	case i < 0:
+		return ""
+	case i+1 < len(domains):
+		return domains[i+1].Name
+	case i > 0:
+		return domains[i-1].Name
+	}
+	return ""
+}
+
+// logKey scrolls the log; g or esc goes back to the list.
 func (m Model) logKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "l", "esc":
+	case "g", "esc":
 		m.mode = modeList
 		return m, nil
 	case "q":
@@ -237,5 +271,6 @@ func (m Model) confirmKey(k string) (tea.Model, tea.Cmd) {
 		m.err = err
 		return m, nil
 	}
+	m.selectName = neighbor(m.domains, m.target)
 	return m.start(m.target, m.change(next))
 }

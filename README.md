@@ -55,34 +55,40 @@ a password, and neither does `oo apply`.
 
 ## Using oo
 
-`oo` opens the list of names. It refuses to open while `oo doctor` checks 1–5 fail, and prints them.
+`oo` opens the list of names. It refuses to open while `oo doctor` checks 1–5 fail, and prints them; a dnsmasq
+you turned off doesn't count.
 
 ```text
- oo   dnsmasq ●   loopback ●   resolvers ●   caddy ●
+ oo   caddy ●   dnsmasq ●   loopback ●   resolvers ●
+ ──────────────────────────────────────────────────────────────────
  name                      address          port   own  check
  ● crm.oo                 127.0.1.1               own  dns ✓
- ●   dashboard.crm.oo     127.0.1.1        3000   own  dns ✓  http ✓
+   ● dashboard.crm.oo     127.0.1.1        3000   own  dns ✓  http ✓
  ● flowy.oo               127.0.1.3               own  dns ✓
  ○ old.oo                 127.0.0.1                    –
+   Add new domain
 ```
 
-The top line shows doctor checks 1, 3, 4 and 8: a green dot passes, a red one needs `oo doctor`, `off` is a
-service you turned off, and Caddy shows `–` when no enabled name has a port. `tab` moves the keys to dnsmasq
-and Caddy: `←` `→` pick one, `space` turns it on or off, `tab` goes back to the names. A service turned off
-stays off through every change until you turn it on; with dnsmasq off no `.oo` name resolves. `●` marks a name that is on, `○` one that is off. Each change saves
-`domains.json`, applies it and checks every name. The status line at the bottom, above the key help, says what
-failed, or why the selected name fails.
+The top line shows Caddy, dnsmasq, loopback and resolvers (doctor checks 8, 1, 3 and 4): a green `●` is on and
+works, a dim `○` is off (turned off, or Caddy not running while no name has a port), and a red `○` needs
+`oo doctor`. `tab` moves the keys to Caddy and dnsmasq: `←` `→` (or `h` `l`) pick one, `space` turns it on or
+off, `tab` goes back to the names. A service turned off stays off through every change until you turn it on; with
+dnsmasq off no `.oo` name resolves.
+
+`●` marks a name that is on, `○` one that is off. Each change saves `domains.json`, applies it and checks every
+name. The status line at the bottom, above the key help, says what failed, or why the selected name fails.
 
 | Key         | What it does                                     |
 | ----------- | ------------------------------------------------ |
-| `a`         | add a name                                       |
+| `a`         | add a subdomain of the selected name             |
+| `A`         | add a name; also `enter` on `Add new domain`     |
 | `e`         | edit the selected name                           |
 | `d`         | delete it; `y` confirms, any other key keeps it  |
 | `space`     | turn it on or off                                |
 | `c`         | copy `DOCKER_HOST_IP=<address>` to the clipboard |
-| `l`         | show dnsmasq's query log; `l` or `esc` goes back |
+| `g`         | show dnsmasq's query log; `g` or `esc` goes back |
 | `r`         | read `domains.json` again and apply it           |
-| `tab`       | move the keys to dnsmasq and Caddy, and back     |
+| `tab`       | move the keys to Caddy and dnsmasq, and back     |
 | `q`         | quit; `ctrl+c` quits from anywhere               |
 | `up` `down` | move; `j` and `k` work too                       |
 

@@ -297,7 +297,8 @@ func (e Env) checkNames(_ context.Context, _ []store.Domain, results []Result) C
 }
 
 // checkCaddy: when an enabled domain has a port, Caddy is installed, set up,
-// running and valid, and it owns the HTTP port.
+// running and valid, and it owns the HTTP port. Without one, it passes when
+// Caddy runs anyway and is skipped when it doesn't.
 func (e Env) checkCaddy(ctx context.Context, domains []store.Domain, _ []Result) Check {
 	sites := 0
 	for _, d := range enabled(domains) {
@@ -308,8 +309,12 @@ func (e Env) checkCaddy(ctx context.Context, domains []store.Domain, _ []Result)
 	p := e.Paths
 	if sites == 0 {
 		if installed(p.Caddy) && system.CaddySetUp(p) {
-			if st, err := brew.Info(ctx, e.Runner, p.Brew, "caddy"); err == nil && st.Off() {
+			st, err := brew.Info(ctx, e.Runner, p.Brew, "caddy")
+			switch {
+			case err == nil && st.Off():
 				return off(caddyOff)
+			case err == nil && st.Running:
+				return pass("running, no enabled domain has a port")
 			}
 		}
 		return skip("no enabled domain has a port")

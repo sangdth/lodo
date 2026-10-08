@@ -64,7 +64,7 @@ type Model struct {
 	pending string // the name or service the running change is for; empty for every enabled name
 
 	onServices bool  // tab moved the keys to the status bar's services
-	service    int   // the service the keys act on, in system.Services
+	service    int   // the service the keys act on, in services
 	err        error // the last failure, shown until the next change starts
 
 	width, height int
@@ -266,12 +266,17 @@ func (m *Model) placeCursor() {
 		}
 	}
 	m.selectName = ""
-	if n := len(m.domains); n > 0 && m.table.Cursor() >= n {
-		m.table.SetCursor(n - 1)
+	if last := len(m.domains); m.table.Cursor() > last {
+		m.table.SetCursor(last) // the add row
 	}
 }
 
-// selected returns the domain under the cursor.
+// onAddRow reports whether the cursor is on the add row, after the names.
+func (m Model) onAddRow() bool {
+	return m.table.Cursor() >= len(m.domains)
+}
+
+// selected returns the domain under the cursor; none on the add row.
 func (m Model) selected() (store.Domain, bool) {
 	i := m.table.Cursor()
 	if i < 0 || i >= len(m.domains) {

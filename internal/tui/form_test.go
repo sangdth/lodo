@@ -17,7 +17,7 @@ import (
 func TestForm_Prefill(t *testing.T) {
 	t.Parallel()
 
-	m := send(ready(&fakeBackend{}, sample), "a")
+	m := send(ready(&fakeBackend{}, sample), "A")
 	if m.mode != modeForm {
 		t.Fatalf("mode = %v after a, want the form", m.mode)
 	}
@@ -40,7 +40,7 @@ func TestForm_PrefillWhenTheBlockIsFull(t *testing.T) {
 	for i := store.OwnFirst; i <= store.OwnLast; i++ {
 		full = append(full, store.Domain{Name: "p" + string(rune('a'+i%26)) + strings.Repeat("x", i/26) + ".oo", Address: store.OwnAddress(i)})
 	}
-	m := send(ready(&fakeBackend{}, full), "a")
+	m := send(ready(&fakeBackend{}, full), "A")
 	assertAddress(t, m, "127.0.0.1", "all own addresses are taken, so it shares 127.0.0.1")
 }
 
@@ -48,7 +48,7 @@ func TestForm_Add(t *testing.T) {
 	t.Parallel()
 
 	b := &fakeBackend{}
-	m := send(ready(b, sample), "a")
+	m := send(ready(b, sample), "A")
 	m = typeText(m, "api.crm")
 	m = send(m, "enter")
 
@@ -107,7 +107,7 @@ func TestForm_Errors(t *testing.T) {
 			if b == nil {
 				b = &fakeBackend{}
 			}
-			m := fill(send(ready(b, sample), "a"), tt.fields)
+			m := fill(send(ready(b, sample), "A"), tt.fields)
 			m = send(m, "enter")
 			if m.mode != modeForm {
 				t.Fatalf("the form closed on an invalid domain")
@@ -141,7 +141,7 @@ func TestForm_Allowed(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			b := &fakeBackend{}
-			m := send(fill(send(ready(b, sample), "a"), tt.fields), "enter")
+			m := send(fill(send(ready(b, sample), "A"), tt.fields), "enter")
 			if len(b.saved) != 1 || !slices.Contains(b.saved[0], tt.want) {
 				t.Errorf("saved %v, want it to hold %+v; form errors %q", b.saved, tt.want, m.form.errs)
 			}
@@ -200,7 +200,7 @@ func TestForm_NameSuffix(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			m := typeText(send(ready(&fakeBackend{}, sample), "a"), tt.typed)
+			m := typeText(send(ready(&fakeBackend{}, sample), "A"), tt.typed)
 			if got := ansi.Strip(m.nameInput()); got != tt.want {
 				t.Errorf("name field = %q, want %q", got, tt.want)
 			}
@@ -212,10 +212,42 @@ func TestForm_SuffixTypedOutOfHabit(t *testing.T) {
 	t.Parallel()
 
 	b := &fakeBackend{}
-	m := send(typeText(send(ready(b, sample), "a"), "web.oo"), "enter")
+	m := send(typeText(send(ready(b, sample), "A"), "web.oo"), "enter")
 	want := store.Domain{Name: "web.oo", Address: "127.0.1.2", Enabled: true}
 	if len(b.saved) != 1 || !slices.Contains(b.saved[0], want) {
 		t.Errorf("saved %v, want it to hold %+v, not web.oo.oo; form errors %q", b.saved, want, m.form.errs)
+	}
+}
+
+func TestForm_Subdomain(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		typed string
+		want  string
+	}{
+		{name: "labels", typed: "api", want: "api.crm.oo"},
+		{name: "the parent typed out of habit", typed: "api.crm.oo", want: "api.crm.oo"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			b := &fakeBackend{}
+			m := send(ready(b, sample), "a") // on crm.oo
+			assertAddress(t, m, "127.0.1.1", "crm.oo's address; next free: 127.0.1.2")
+			if got := ansi.Strip(m.nameInput()); got != "api .crm.oo" {
+				t.Errorf("empty name field = %q, want the placeholder and the parent", got)
+			}
+			if !strings.Contains(ansi.Strip(m.formView()), "Add a subdomain of crm.oo") {
+				t.Error("the title does not name the parent")
+			}
+			m = send(typeText(m, tt.typed), "enter")
+			want := store.Domain{Name: tt.want, Address: "127.0.1.1", Enabled: true}
+			if len(b.saved) != 1 || !slices.Contains(b.saved[0], want) {
+				t.Errorf("saved %v, want it to hold %+v; form errors %q", b.saved, want, m.form.errs)
+			}
+		})
 	}
 }
 
@@ -223,7 +255,7 @@ func TestForm_EscCancels(t *testing.T) {
 	t.Parallel()
 
 	b := &fakeBackend{}
-	m := typeText(send(ready(b, sample), "a"), "web")
+	m := typeText(send(ready(b, sample), "A"), "web")
 	m = send(m, "esc")
 	if m.mode != modeList || len(b.saved) != 0 {
 		t.Errorf("mode %v, saved %v after esc", m.mode, b.saved)
@@ -233,7 +265,7 @@ func TestForm_EscCancels(t *testing.T) {
 func TestForm_Tab(t *testing.T) {
 	t.Parallel()
 
-	m := send(ready(&fakeBackend{}, sample), "a")
+	m := send(ready(&fakeBackend{}, sample), "A")
 	for _, step := range []struct {
 		key  string
 		want int
@@ -248,7 +280,7 @@ func TestForm_Tab(t *testing.T) {
 func TestForm_TypingQDoesNotQuit(t *testing.T) {
 	t.Parallel()
 
-	m := send(ready(&fakeBackend{}, sample), "a")
+	m := send(ready(&fakeBackend{}, sample), "A")
 	next, cmd := m.Update(press("q"))
 	if cmd != nil && isQuit(cmd()) {
 		t.Fatal("q quit while typing in the form")
@@ -261,7 +293,7 @@ func TestForm_TypingQDoesNotQuit(t *testing.T) {
 func TestForm_View(t *testing.T) {
 	t.Parallel()
 
-	m := typeText(send(ready(&fakeBackend{}, sample), "a"), "test.crm")
+	m := typeText(send(ready(&fakeBackend{}, sample), "A"), "test.crm")
 	m = typeText(send(send(m, "tab"), "tab"), "3001")
 	golden.RequireEqual(t, m.View().Content)
 	if h := strings.Count(m.View().Content, "\n") + 1; h != defaultHeight {
