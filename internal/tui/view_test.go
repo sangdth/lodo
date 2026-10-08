@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
+
 	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/exp/golden"
 )
@@ -64,6 +66,22 @@ func TestModel_StatusLine(t *testing.T) {
 				t.Errorf("status line = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestModel_KeysFitTheNarrowestBox(t *testing.T) {
+	t.Parallel()
+
+	m := ready(&fakeBackend{}, sample)
+	next, _ := m.Update(tea.WindowSizeMsg{Width: minBoxWidth, Height: 24})
+	m = next.(Model)
+	for md, keys := range help {
+		if w := ansi.StringWidth(keys); w > m.innerWidth() {
+			t.Errorf("mode %v keys are %d wide, the narrowest box %d inside", md, w, m.innerWidth())
+		}
+	}
+	if w := ansi.StringWidth(servicesHelp); w > m.innerWidth() {
+		t.Errorf("services keys are %d wide, the narrowest box %d inside", w, m.innerWidth())
 	}
 }
 

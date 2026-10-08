@@ -61,8 +61,11 @@ type Model struct {
 	table   table.Model
 	spinner spinner.Model
 	busy    bool   // a check or a change runs
-	pending string // the name the running change is for; empty for every enabled name
-	err     error  // the last failure, shown until the next change starts
+	pending string // the name or service the running change is for; empty for every enabled name
+
+	onServices bool  // tab moved the keys to the status bar's services
+	service    int   // the service the keys act on, in system.Services
+	err        error // the last failure, shown until the next change starts
 
 	width, height int
 	styles        styles
@@ -106,10 +109,12 @@ func (m Model) Init() tea.Cmd {
 	return tea.Batch(m.report(m.domains), m.spinner.Tick)
 }
 
-// reportMsg is a finished doctor run.
+// reportMsg is a finished doctor run, after a service change when err is
+// that change's failure.
 type reportMsg struct {
 	checks  []check.Check
 	results []check.Result
+	err     error
 }
 
 // logTickMsg asks the open log to read what dnsmasq added.
@@ -144,6 +149,16 @@ func (m Model) report(domains []store.Domain) tea.Cmd {
 	return func() tea.Msg {
 		checks, results := b.Report(ctx, domains)
 		return reportMsg{checks: checks, results: results}
+	}
+}
+
+// setService turns service on or off, then checks the result.
+func (m Model) setService(service string, on bool) tea.Cmd {
+	ctx, b, domains := m.ctx, m.backend, m.domains
+	return func() tea.Msg {
+		err := b.SetService(ctx, service, on)
+		checks, results := b.Report(ctx, domains)
+		return reportMsg{checks: checks, results: results, err: err}
 	}
 }
 

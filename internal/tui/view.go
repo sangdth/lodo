@@ -13,6 +13,7 @@ import (
 
 	"github.com/sangdth/oo/internal/check"
 	"github.com/sangdth/oo/internal/store"
+	"github.com/sangdth/oo/internal/system"
 )
 
 // Column widths, without the one-space padding the table adds on each side.
@@ -50,9 +51,22 @@ var statusParts = []struct {
 	{8, "caddy"},
 }
 
+// serviceCheck returns the ID of the doctor check that reports on service.
+func serviceCheck(service string) int {
+	for _, p := range statusParts {
+		if p.label == service {
+			return p.id
+		}
+	}
+	return 0
+}
+
+// servicesHelp is the keys while they act on the services.
+const servicesHelp = " ←/→ pick  space on/off  tab back to the names  l log  q quit"
+
 // The keys each mode takes, shown on the last line.
 var help = map[mode]string{
-	modeList:    " a add  e edit  d delete  space on/off  c copy env  l log  r apply  q quit",
+	modeList:    " a add  e edit  d del  space on/off  c env  l log  r apply  tab services  q quit",
 	modeForm:    " enter save  tab next field  esc cancel",
 	modeConfirm: " y delete  any other key keeps it",
 	modeLog:     " l or esc back to the list  up/down scroll  q quit",
@@ -73,12 +87,21 @@ func (m Model) View() tea.View {
 		m.styles.dim.Render(strings.Repeat("─", m.innerWidth())),
 		body,
 		m.statusLine(),
-		m.styles.dim.Render(help[m.mode]),
+		m.styles.dim.Render(ansi.Truncate(m.keys(), m.innerWidth(), "…")),
 	}
 	box := m.styles.box.Width(m.boxWidth()).Render(strings.Join(lines, "\n"))
 	v := tea.NewView(lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box))
 	v.AltScreen = true
 	return v
+}
+
+// keys is the help line for the mode, and for the services when tab moved
+// the keys there.
+func (m Model) keys() string {
+	if m.mode == modeList && m.onServices {
+		return servicesHelp
+	}
+	return help[m.mode]
 }
 
 // layout sizes the table to the box: the name column takes what the fixed
@@ -182,24 +205,35 @@ func mark(ok bool) string {
 	return "✗"
 }
 
-// statusBar shows the system parts doctor checks, each with a dot.
+// statusBar shows the system parts doctor checks, each with its state. The
+// service the keys act on is highlighted.
 func (m Model) statusBar() string {
 	parts := []string{m.styles.title.Render("oo")}
 	for _, p := range statusParts {
-		parts = append(parts, p.label+" "+m.dot(p.id))
+		label := p.label
+		if m.onServices && label == system.Services[m.service] {
+			label = m.styles.table.Selected.Render(label)
+		}
+		parts = append(parts, label+" "+m.state(p.label, p.id))
 	}
 	return " " + strings.Join(parts, "   ")
 }
 
-func (m Model) dot(id int) string {
+// state is a part's mark: the spinner while it is turned on or off, a dot
+// for passed or failed, "off" when turned off, and "–" when not needed.
+func (m Model) state(label string, id int) string {
 	c, ok := m.check(id)
 	switch {
+	case m.busy && m.pending == label:
+		return m.spinner.View()
 	case !ok:
 		return m.styles.dim.Render("…")
 	case c.OK:
 		return m.styles.ok.Render("●")
+	case c.Off:
+		return m.styles.dim.Render("off")
 	case c.Skipped:
-		return m.styles.dim.Render("○")
+		return m.styles.dim.Render("–")
 	}
 	return m.styles.bad.Render("●")
 }

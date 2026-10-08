@@ -8,6 +8,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/sangdth/oo/internal/store"
+	"github.com/sangdth/oo/internal/system"
 )
 
 // Update handles one message.
@@ -18,7 +19,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.layout()
 		return m, nil
 	case reportMsg:
-		m.busy = false
+		m.busy, m.err = false, msg.err
 		m.setReport(msg.checks, msg.results)
 		return m, nil
 	case changedMsg:
@@ -85,6 +86,18 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if k == "l" {
 		return m.openLog() // reading the log is safe while a change runs
 	}
+	if k == "tab" {
+		m.onServices = !m.onServices
+		if m.onServices {
+			m.table.Blur()
+		} else {
+			m.table.Focus()
+		}
+		return m, nil
+	}
+	if m.onServices {
+		return m.serviceKey(k)
+	}
 	if !m.busy {
 		if next, cmd, ok := m.listKey(k); ok {
 			return next, cmd
@@ -131,6 +144,30 @@ func (m Model) listKey(k string) (Model, tea.Cmd, bool) {
 		return m, m.copyText("DOCKER_HOST_IP=" + d.Address), true
 	}
 	return m, nil, false
+}
+
+// serviceKey handles the keys while they act on the status bar's services:
+// left and right pick one, space turns it on or off.
+func (m Model) serviceKey(k string) (tea.Model, tea.Cmd) {
+	switch k {
+	case "q":
+		return m, tea.Quit
+	case "left":
+		m.service = max(m.service-1, 0)
+	case "right":
+		m.service = min(m.service+1, len(system.Services)-1)
+	case "space":
+		if m.busy {
+			return m, nil
+		}
+		service := system.Services[m.service]
+		c, ok := m.check(serviceCheck(service))
+		if !ok {
+			return m, nil // no report yet, so on or off is unknown
+		}
+		return m.start(service, m.setService(service, c.Off))
+	}
+	return m, nil
 }
 
 // formKey types into the form, saves it on enter and drops it on esc.

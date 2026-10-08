@@ -28,6 +28,8 @@ type Backend interface {
 	Report(ctx context.Context, domains []store.Domain) ([]check.Check, []check.Result)
 	// PortsReady says why a domain with a port can't work yet, or returns nil.
 	PortsReady() error
+	// SetService turns dnsmasq or Caddy on or off.
+	SetService(ctx context.Context, service string, on bool) error
 	// Copy puts text on the clipboard.
 	Copy(ctx context.Context, text string) error
 	// Tail returns what dnsmasq logged since offset, and the next offset.
@@ -51,6 +53,10 @@ func (b backend) Save(domains []store.Domain) error { return store.Save(b.paths.
 
 func (b backend) Apply(ctx context.Context, domains []store.Domain) error {
 	return system.Apply(ctx, b.paths, b.runner, domains)
+}
+
+func (b backend) SetService(ctx context.Context, service string, on bool) error {
+	return system.SetService(ctx, b.paths, b.runner, service, on)
 }
 
 func (b backend) Report(ctx context.Context, domains []store.Domain) ([]check.Check, []check.Result) {

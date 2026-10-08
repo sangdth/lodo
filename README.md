@@ -66,8 +66,10 @@ a password, and neither does `oo apply`.
  ○ old.oo                 127.0.0.1                    –
 ```
 
-The top line shows doctor checks 1, 3, 4 and 8: a green dot passes, a red one needs `oo doctor`, and Caddy's
-dot is dim when no enabled name has a port. `●` marks a name that is on, `○` one that is off. Each change saves
+The top line shows doctor checks 1, 3, 4 and 8: a green dot passes, a red one needs `oo doctor`, `off` is a
+service you turned off, and Caddy shows `–` when no enabled name has a port. `tab` moves the keys to dnsmasq
+and Caddy: `←` `→` pick one, `space` turns it on or off, `tab` goes back to the names. A service turned off
+stays off through every change until you turn it on; with dnsmasq off no `.oo` name resolves. `●` marks a name that is on, `○` one that is off. Each change saves
 `domains.json`, applies it and checks every name. The status line at the bottom, above the key help, says what
 failed, or why the selected name fails.
 
@@ -80,6 +82,7 @@ failed, or why the selected name fails.
 | `c`         | copy `DOCKER_HOST_IP=<address>` to the clipboard |
 | `l`         | show dnsmasq's query log; `l` or `esc` goes back |
 | `r`         | read `domains.json` again and apply it           |
+| `tab`       | move the keys to dnsmasq and Caddy, and back     |
 | `q`         | quit; `ctrl+c` quits from anywhere               |
 | `up` `down` | move; `j` and `k` work too                       |
 

@@ -244,7 +244,7 @@ A failure at any step shows in the status line. The saved file stays as written;
   ● flowy.oo              127.0.1.3          own    dns ✓
   ○ old.oo                127.0.0.1                 –
  ─────────────────────────────────────────────────────────────────────────────
- a add  e edit  d delete  space on/off  c copy env  l log  r apply  q quit
+ a add  e edit  d del  space on/off  c env  l log  r apply  tab services  q quit
 ```
 
 ```text
@@ -269,8 +269,13 @@ A failure at any step shows in the status line. The saved file stays as written;
 - **Delete:** `d` asks `delete flowy.oo? y/n` in the status line.
 - **Copy env** puts `DOCKER_HOST_IP=127.0.1.3` on the clipboard (`pbcopy`).
 - **Log:** a `viewport` tailing `dnsmasq.log`, polled every 500 ms; `l` or `esc` returns.
-- **Status bar:** checks 1, 3, 4 and 8. `caddy` shows `off` when no row has a port. Any red one says "run
-  `oo doctor`".
+- **Status bar:** checks 1, 3, 4 and 8. `off` is a service turned off; `caddy` shows `–` when no row has a
+  port. Any red one says "run `oo doctor`".
+- **Services:** `tab` moves the keys to the status bar; `←` `→` pick dnsmasq or Caddy, `space` turns it on or
+  off, with the spinner on its mark. Loopback and resolvers need root, so they only show their state. Off is
+  brew's own state: `brew services stop` unregisters the job, so `Apply` leaves an unregistered service
+  stopped, while one that crashed stays registered and is restarted. A dnsmasq turned off is check 1 skipped,
+  so the TUI still opens to turn it back on.
 - **Layout:** everything sits in one bordered box at the middle of the terminal: 70% of the width, at least
   84 columns (the whole width on a narrower terminal). Its height fits the names, up to 80% of the
   terminal; the log takes the full 80%.

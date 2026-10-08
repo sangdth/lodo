@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -9,6 +10,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/sangdth/oo/internal/store"
 )
@@ -115,6 +117,77 @@ func TestModel_SpinnerOnTheChangedRow(t *testing.T) {
 				t.Errorf("row %d = %q, want %s", tt.row, m.table.Rows()[tt.row][0], tt.label)
 			}
 		})
+	}
+}
+
+func TestModel_Services(t *testing.T) {
+	t.Parallel()
+
+	b := &fakeBackend{}
+	m := send(ready(b, sample), "tab")
+	if !m.onServices || m.table.Focused() {
+		t.Fatalf("after tab: onServices %v, table focused %v", m.onServices, m.table.Focused())
+	}
+	if got := ansi.Strip(m.keys()); got != servicesHelp {
+		t.Errorf("keys = %q, want the services' keys", got)
+	}
+	m = send(m, "left") // already on the first
+	m = send(m, "space")
+	m = send(m, "right")
+	m = send(m, "right") // already on the last
+	m = send(m, "space")
+	if want := []string{"dnsmasq off", "caddy off"}; !slices.Equal(b.setServices, want) {
+		t.Errorf("SetService calls = %q, want %q", b.setServices, want)
+	}
+	bar := ansi.Strip(m.statusBar())
+	if !strings.Contains(bar, "dnsmasq off") || !strings.Contains(bar, "caddy off") {
+		t.Errorf("status bar = %q, want both services off", bar)
+	}
+	if got := strings.TrimSpace(ansi.Strip(m.statusLine())); got != "" {
+		t.Errorf("status line = %q; a service turned off is not a problem", got)
+	}
+
+	m = send(m, "space") // caddy back on
+	if got := b.setServices[len(b.setServices)-1]; got != "caddy on" {
+		t.Errorf("last SetService = %q, want caddy on", got)
+	}
+	m = send(m, "down") // moves nothing while the keys act on the services
+	m = send(m, "tab")
+	if m.onServices || !m.table.Focused() {
+		t.Fatalf("after the second tab: onServices %v, table focused %v", m.onServices, m.table.Focused())
+	}
+	if d, _ := m.selected(); d.Name != sample[0].Name {
+		t.Errorf("cursor on %q, want it where it was", d.Name)
+	}
+}
+
+func TestModel_ServiceSpinsWhileItChanges(t *testing.T) {
+	t.Parallel()
+
+	m := send(ready(&fakeBackend{}, sample), "tab")
+	next, _ := m.Update(press("space")) // the change has started, not landed
+	m = next.(Model)
+	bar := ansi.Strip(m.statusBar())
+	if !strings.Contains(bar, "dnsmasq "+m.spinner.View()) {
+		t.Errorf("status bar = %q, want the spinner after dnsmasq", bar)
+	}
+	for _, row := range m.table.Rows() {
+		if strings.HasPrefix(row[0], m.spinner.View()) {
+			t.Errorf("row %q spins; only the service changes", row[0])
+		}
+	}
+}
+
+func TestModel_ServiceFails(t *testing.T) {
+	t.Parallel()
+
+	b := &fakeBackend{serviceErr: errors.New("stop dnsmasq: exit status 1")}
+	m := send(send(ready(b, sample), "tab"), "space")
+	if m.busy || m.err == nil {
+		t.Fatalf("busy %v, err %v; want idle with the error", m.busy, m.err)
+	}
+	if got := ansi.Strip(m.statusBar()); !strings.Contains(got, "dnsmasq ●") {
+		t.Errorf("status bar = %q, want dnsmasq still on", got)
 	}
 }
 

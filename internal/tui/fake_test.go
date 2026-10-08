@@ -24,6 +24,9 @@ type fakeBackend struct {
 	failing       map[string]string // a name's probe detail when it fails
 	failingChecks map[int]string    // a check's detail when it fails
 	portsErr      error
+	serviceErr    error
+	off           map[string]bool // services turned off
+	setServices   []string        // each SetService call, such as "caddy off"
 	copyErr       error
 	log           string // dnsmasq's log
 	tailErr       error
@@ -34,6 +37,24 @@ type fakeBackend struct {
 }
 
 func (f *fakeBackend) PortsReady() error { return f.portsErr }
+
+func (f *fakeBackend) SetService(_ context.Context, service string, on bool) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	state := " off"
+	if on {
+		state = " on"
+	}
+	f.setServices = append(f.setServices, service+state)
+	if f.serviceErr != nil {
+		return f.serviceErr
+	}
+	if f.off == nil {
+		f.off = map[string]bool{}
+	}
+	f.off[service] = !on
+	return nil
+}
 
 func (f *fakeBackend) Tail(offset int64) (string, int64, error) {
 	f.mu.Lock()
@@ -115,6 +136,12 @@ func (f *fakeBackend) Report(_ context.Context, domains []store.Domain) ([]check
 	}
 	if !ports {
 		checks[7] = check.Check{ID: 8, Skipped: true}
+	}
+	if f.off["dnsmasq"] {
+		checks[0] = check.Check{ID: 1, Skipped: true, Off: true}
+	}
+	if f.off["caddy"] {
+		checks[7] = check.Check{ID: 8, Skipped: true, Off: true}
 	}
 	return checks, results
 }
