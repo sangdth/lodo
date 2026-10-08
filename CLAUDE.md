@@ -30,6 +30,8 @@ stops the commit.
   resolver list, the generated Caddyfile.
 - `internal/system`: setup, apply and uninstall; the root script, sudoers rule and loopback plist templates;
   oo's blocks in Homebrew's dnsmasq.conf and Caddyfile. `Apply` refuses to run until setup has.
+- `internal/compose`: finds a project's compose file and rewrites its ports and `localhost` URLs for oo, for
+  the TUI's preview. It reads files and never writes them.
 - `internal/check`: the eight doctor checks and the per-domain probes: dnsmasq directly, macOS, and HTTP through
   Caddy. `Report` returns both from one probe; `Prerequisites` runs checks 1 to 5 without probing.
 - `internal/tui`: the Bubble Tea v2 model. It talks to the system only through its `Backend` interface; tests

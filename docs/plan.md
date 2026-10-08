@@ -260,29 +260,34 @@ A failure at any step shows in the status line. The saved file stays as written;
   rows, no filtering. A subdomain's mark is indented with its name. The last row, `Add new domain`, is dim and
   has no mark; `enter`, `space` or `a` on it opens the add form, and the keys line there lists only what works.
   `A` opens the add form from anywhere; `a` on a name opens it for a subdomain of that name.
-- **Form:** three `textinput`s. The name field takes the labels only; a dimmed suffix that can't be edited
-  follows it: `.oo`, or `.demo.oo` for a subdomain of `demo.oo`. A suffix typed anyway is not doubled. Edit
-  locks a subdomain's parent the same way; moving it to another parent means delete and add. Add prefills the address while you type the name: the parent's address when
-  the name is a subdomain of a listed name, else the lowest free own address (`127.0.0.1`, with a note, when
-  all 50 are taken). The hint names the next free own address so a subdomain can get its own. Typing in the
-  address field stops the prefill. Port is optional; a port when `caddy` isn't installed says
-  `brew install caddy`, then `oo setup`. Edit prefills the stored values. Validation errors show under the
-  field.
+- **Form:** four `textinput`s: name, address, port and compose. The name field takes the labels only; a dimmed
+  suffix that can't be edited follows it: `.oo`, or `.demo.oo` for a subdomain of `demo.oo`. A suffix typed
+  anyway is not doubled. Edit locks a subdomain's parent the same way; moving it to another parent means delete
+  and add. Add prefills the address while you type the name: the parent's address when the name is a subdomain of
+  a listed name, else the lowest free own address (`127.0.0.1`, with a note, when all 50 are taken). The hint
+  names the next free own address so a subdomain can get its own. Typing in the address field stops the prefill.
+  Port is optional; a port when `caddy` isn't installed says `brew install caddy`, then `oo setup`. Edit prefills
+  the stored values. Validation errors show under the field.
 - **Spinner:** while a change runs, the changed row's mark spins, whether the name is on or off; the first
   check and `r` spin every enabled row. A name being added is listed at once with the spinner, and goes away
   if the save fails.
 - **Delete:** `d` asks `delete flowy.oo? y/N` in the status line; only `y` deletes.
 - **Copy env** puts `DOCKER_HOST_IP=127.0.1.3` on the clipboard (`pbcopy`).
 - **Log:** a `viewport` tailing `dnsmasq.log`, polled every 500 ms; `g` or `esc` returns.
-- **Status bar:** checks 8, 1, 3 and 4, in that order. A green `●` is on and works, a dim `○` is off: turned off, or Caddy
-  not running while no row has a port. A red `○` fails. Any red one says "run `oo doctor`".
-- **Services:** `tab` moves the keys to the status bar; `←` `→` (or `h` `l`) pick Caddy or dnsmasq, `space` turns it on or
-  off, with the spinner on its mark. Loopback and resolvers need root, so they only show their state. Off is
-  brew's own state: `brew services stop` unregisters the job, so `Apply` leaves an unregistered service
-  stopped, while one that crashed stays registered and is restarted. A dnsmasq turned off is check 1 skipped,
-  so the TUI still opens to turn it back on. The status line leaves out failures a service turned off
-  explains: every name with dnsmasq off, the http probe with Caddy off. Only one place is highlighted at a
-  time: the picked service, or the selected row.
+- **Compose:** started in a project, oo asks once, after the first check, about the best compose file for the
+  name the project's folder suggests: `y` saves it, `e` edits it first, anything else saves `none`; an unlisted
+  name gets the add form. A compose path is saved without an apply: it changes no generated file. `p` previews
+  the file rewritten by `compose.Rewrite` in a `viewport`, the changed lines marked, with the `.env` line; `c`
+  copies that line. oo never writes a project file.
+- **Status bar:** checks 8, 1, 3 and 4, in that order. A green `●` is on and works, a dim `○` is off: turned off,
+  or Caddy not running while no row has a port. A red `○` fails. Any red one says "run `oo doctor`".
+- **Services:** `tab` moves the keys to the status bar; `←` `→` (or `h` `l`) pick Caddy or dnsmasq, `space` turns
+  it on or off, with the spinner on its mark. Loopback and resolvers need root, so they only show their state.
+  Off is brew's own state: `brew services stop` unregisters the job, so `Apply` leaves an unregistered service
+  stopped, while one that crashed stays registered and is restarted. A dnsmasq turned off is check 1 skipped, so
+  the TUI still opens to turn it back on. The status line leaves out failures a service turned off explains:
+  every name with dnsmasq off, the http probe with Caddy off. Only one place is highlighted at a time: the picked
+  service, or the selected row.
 - **Layout:** everything sits in one bordered box at the middle of the terminal: 70% of the width, at least
   84 columns (the whole width on a narrower terminal). Its height fits the names, up to 80% of the
   terminal; the log takes the full 80%.
@@ -365,6 +370,7 @@ internal/dnsmasq/       dnsmasq.conf and resolver-list generation, log tail
 internal/caddy/         Caddyfile generation and caddy validate
 internal/system/        setup, apply, uninstall; templates for the script, plist, sudoers, conf blocks
 internal/check/         the eight doctor checks and the per-domain dns, macOS and http probes
+internal/compose/       find a project's compose file; rewrite its ports and localhost URLs for the preview
 internal/tui/           Bubble Tea model, views, key map
 ```
 
@@ -564,6 +570,32 @@ Commit: `feat: dnsmasq log view`.
 |      | `.env.example` hosts from `flowy.local` to `flowy.oo`. Own commit                                    |
 |      | `docs: point local network setup at oo`. Search the flowy Linear project for a matching ticket first |
 
+### Phase 7: compose files
+
+| Step | Work                                                                                                       |
+| ---- | ---------------------------------------------------------------------------------------------------------- |
+| 7.1  | `store`: `Domain.Compose`: an absolute `.yml`/`.yaml` path, `none` after a no, or empty before oo asked    |
+| 7.2  | `compose.ProjectRoot`: walk up to the git root, which needs a lock file: `*.lock`, `*.lockb`,              |
+|      | `*-lock.json`, `*-lock.yaml` or `go.sum`                                                                   |
+| 7.3  | `compose.Find`: `(docker[-.])compose[.variant].y(a)ml` up to 3 folders deep, skipping hidden folders,      |
+|      | `node_modules` and `vendor`; dev variants first, then the plain file, the rest, prod last; shallower first |
+| 7.4  | `compose.Rewrite` reads the YAML with `go.yaml.in/yaml/v3` and edits the original text: a port with no     |
+|      | address or `127.0.0.1` binds `${DOCKER_HOST_IP:-127.0.0.1}`; a `localhost` URL in `environment` takes the  |
+|      | project's name, or the name Caddy serves on that port; healthchecks, commands and comments stay            |
+| 7.5  | columns: name fits its longest row, then address, port, compose, own, check; the compose path is cut       |
+|      | from the left so the file name stays                                                                       |
+| 7.6  | form: a `compose` field; `~/` and relative paths resolve from where oo started; the file must exist        |
+| 7.7  | startup in a project: the git root's folder names the domain; `use <file> for <name>? y/N`, `e` edits;     |
+|      | no saves `none`; a name that isn't listed gets the add form, filled in                                     |
+| 7.8  | `p` previews the rewritten file: changed lines marked, the `.env` line for `DOCKER_HOST_IP`                |
+| 7.9  | keys on two lines; README, CLAUDE.md layout                                                                |
+
+Tests: project root with and without a lock file; ranking and depth; every rewrite rule on its own, and a
+snapshot of a file built from the shapes in `~/Projects` (ports with and without an address, variables,
+healthchecks, `${VAR:-http://localhost:3000}` defaults, comments); the prompt's yes, no and edit; the
+preview; the form's compose field. oo never writes a project file: the preview only shows the result.
+
+Commits: one per step group.
 ## Tests
 
 - `go test -race ./...`, table-driven, `t.TempDir()` for every path, `run.Fake` for every command.

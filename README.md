@@ -60,12 +60,12 @@ you turned off doesn't count.
 
 ```text
  oo   caddy ●   dnsmasq ●   loopback ●   resolvers ●
- ──────────────────────────────────────────────────────────────────
- name                      address          port   own  check
- ● crm.oo                 127.0.1.1               own  dns ✓
-   ● dashboard.crm.oo     127.0.1.1        3000   own  dns ✓  http ✓
- ● flowy.oo               127.0.1.3               own  dns ✓
- ○ old.oo                 127.0.0.1                    –
+ ────────────────────────────────────────────────────────────────────────────────────────────
+ name                   address          port   compose                          own  check
+ ● crm.oo               127.0.1.1               ~/Projects/crm/compose.dev.yaml  own  dns ✓
+   ● dashboard.crm.oo   127.0.1.1        3000                                    own  dns ✓  http ✓
+ ● flowy.oo             127.0.1.3               –                                own  dns ✓
+ ○ old.oo               127.0.0.1                                                     –
    Add new domain
 ```
 
@@ -86,6 +86,7 @@ name. The status line at the bottom, above the key help, says what failed, or wh
 | `d`         | delete it; `y` confirms, any other key keeps it  |
 | `space`     | turn it on or off                                |
 | `c`         | copy `DOCKER_HOST_IP=<address>` to the clipboard |
+| `p`         | preview the compose file, as oo would change it  |
 | `g`         | show dnsmasq's query log; `g` or `esc` goes back |
 | `r`         | read `domains.json` again and apply it           |
 | `tab`       | move the keys to Caddy and dnsmasq, and back     |
@@ -96,6 +97,25 @@ In the add or edit form, `enter` saves, `tab` goes to the next field (`shift+tab
 you type a new name, the form fills in the address: the parent's address for a subdomain of a listed name, else
 the lowest free own address. Typing in the address field stops that. A port needs Caddy installed and set up;
 until then the form says what to run.
+
+### Compose files
+
+When `oo` starts inside a project, a git repository with a lock file, it looks up to 3 folders deep for
+`compose.yml`, `docker-compose.yaml` and their variants, `.dev` first, and asks once:
+`use ./compose.dev.yaml for flowy.oo? y/N`. The project's folder names the domain. `y` saves the path, `e`
+lets you fix it first, and any other key saves `none`, so oo stops asking. A name that isn't listed gets the
+add form, filled in. The form's `compose` field sets or changes the path at any time: `~/…`, a path from where
+oo started, or `none`.
+
+`p` shows the file as oo would change it, and changes nothing:
+
+- A port with no address, or with `127.0.0.1`, binds `${DOCKER_HOST_IP:-127.0.0.1}`. Compose takes only an IP
+  there, not a name, and a port with no address takes the port on every address, so projects collide.
+- A `localhost` URL in `environment` takes the project's name, or the subdomain Caddy serves on that port:
+  `http://localhost:3000` becomes `http://dashboard.crm.oo`.
+- Healthchecks, commands and comments keep `localhost`: inside a container it is the container itself.
+
+`c` in the preview copies the `.env` line the ports need.
 
 ### Rules
 
@@ -111,6 +131,7 @@ until then the form says what to run.
 - **Apps listen on their project's address**, for example `next dev -H 127.0.1.3` or `vite --host 127.0.1.3`.
 - **Docker:** `c` copies `DOCKER_HOST_IP=127.0.1.3`. Put it in the project's `.env` and publish ports as
   `"${DOCKER_HOST_IP:-127.0.0.1}:5432:5432"`, so each project's Postgres gets port 5432 on its own address.
+  `p` shows those changes on the project's compose file.
 
 ## Commands
 
