@@ -278,12 +278,13 @@ A failure at any step shows in the status line. The saved file stays as written;
   refused; the compose path is still saved. The question's `y`, `c` in the preview, and a form save that changes
   a linked name's compose file or address link too. Linking saves without an apply.
 - **Log:** a `viewport` tailing `dnsmasq.log`, polled every 500 ms; `g` or `esc` returns.
-- **Compose:** started in a project, oo asks once, after the first check, about the best compose file for the
-  name the project's folder suggests, defaulting to yes: `y` or `enter` links it, `e` edits it first, `n` or
-  `esc` saves `none`, and any other key waits; an unlisted name gets the add form. A compose path is saved
-  without an apply: it changes no generated file. `p` previews the file rewritten by `compose.Rewrite` in a
-  `viewport`, the changed lines marked, with the `.env` line; `c` links. oo writes one project file: the linked
-  `.env`, and only its `DOCKER_HOST_IP` lines.
+- **Compose:** started in a project that no listed name links yet (any name whose compose file sits inside the
+  project counts), oo asks once, after the first check, about the best compose file for the name the project's
+  folder suggests, defaulting to yes: `y` or `enter` links it, `e` edits it first, `n` or `esc` saves `none`, and
+  any other key waits; an unlisted name gets the add form. A compose path is saved without an apply: it changes
+  no generated file. `p` previews the file rewritten by `compose.Rewrite` in a `viewport`, the changed lines
+  marked, with the `.env` line; `c` links. oo writes one project file: the linked `.env`, and only its
+  `DOCKER_HOST_IP` lines.
 - **Status bar:** checks 8, 1, 3 and 4, in that order. A green `●` is on and works, a dim `○` is off: turned off,
   or Caddy not running while no row has a port. A red `○` fails. Any red one says "run `oo doctor`".
 - **Services:** `tab` moves the keys to the status bar; `←` `→` (or `h` `l`) pick Caddy or dnsmasq, `space` turns

@@ -190,6 +190,8 @@ func TestQuestion_NotAsked(t *testing.T) {
 	answered[2].Compose = flowyProd
 	declined := slices.Clone(sample)
 	declined[2].Compose = store.NoCompose
+	otherName := slices.Clone(sample)
+	otherName[0].Compose = flowyDev // crm.oo links flowy's file
 	tests := []struct {
 		name    string
 		backend *fakeBackend
@@ -198,6 +200,7 @@ func TestQuestion_NotAsked(t *testing.T) {
 	}{
 		{name: "the name has a compose file", backend: inFlowy(), domains: answered, origin: flowyOrigin},
 		{name: "the name said no", backend: inFlowy(), domains: declined, origin: flowyOrigin},
+		{name: "another name links a file in the project", backend: inFlowy(), domains: otherName, origin: flowyOrigin},
 		{name: "no compose file in the project", backend: &fakeBackend{projectRoot: flowyRoot}, domains: sample, origin: flowyOrigin},
 		{name: "not in a project", backend: &fakeBackend{}, domains: sample, origin: flowyOrigin},
 		{name: "no folder to look in", backend: inFlowy(), domains: sample, origin: Start{Home: home}},
@@ -210,6 +213,16 @@ func TestQuestion_NotAsked(t *testing.T) {
 				t.Errorf("mode = %v, want the list without a question", m.mode)
 			}
 		})
+	}
+}
+
+func TestQuestion_AskedWhenOnlyAFolderBesideItIsLinked(t *testing.T) {
+	t.Parallel()
+
+	domains := slices.Clone(sample)
+	domains[0].Compose = flowyRoot + "-old/compose.dev.yaml" // a sibling folder whose name starts like flowy's
+	if m := readyIn(inFlowy(), domains, flowyOrigin); m.mode != modeAsk {
+		t.Errorf("mode = %v, want the question: flowy itself has no linked file", m.mode)
 	}
 }
 

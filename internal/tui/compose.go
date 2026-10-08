@@ -138,7 +138,8 @@ func (m Model) checkCompose(path string) error {
 }
 
 // maybeAsk opens the compose question once the first check is done, when oo
-// started in a project whose name has no answer yet. It asks once.
+// started in a project that no listed name links yet and whose folder's name
+// has no answer. It asks once.
 func (m *Model) maybeAsk() {
 	if m.asked || m.busy || m.mode != modeList || len(m.project.files) == 0 {
 		return
@@ -146,7 +147,7 @@ func (m *Model) maybeAsk() {
 	m.asked = true
 	root, path := m.project.root, m.project.files[0]
 	name := projectName(root)
-	if name == "" {
+	if name == "" || m.projectLinked(root) {
 		return
 	}
 	d, listed := m.find(name)
@@ -159,6 +160,15 @@ func (m *Model) maybeAsk() {
 	}
 	m.mode, m.question = modeAsk, question{name: name, path: path, rel: rel, listed: listed}
 	m.point(name)
+}
+
+// projectLinked reports whether a listed name, whatever it is called, links a
+// compose file inside the project at root: oo asks about the project, and the
+// folder's name only suggests a name for it.
+func (m Model) projectLinked(root string) bool {
+	return slices.ContainsFunc(m.domains, func(d store.Domain) bool {
+		return linked(d) && strings.HasPrefix(d.Compose, root+string(filepath.Separator))
+	})
 }
 
 // point puts the cursor on name's row, or on the add row when name isn't
