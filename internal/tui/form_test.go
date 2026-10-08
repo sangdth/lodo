@@ -354,41 +354,6 @@ func TestConfirm(t *testing.T) {
 	}
 }
 
-func TestCopyEnv(t *testing.T) {
-	t.Parallel()
-
-	b := &fakeBackend{}
-	m := send(ready(b, sample), "c")
-	if !slices.Equal(b.copied, []string{"DOCKER_HOST_IP=127.0.1.1"}) {
-		t.Errorf("copied %q", b.copied)
-	}
-	if got := strings.TrimSpace(ansi.Strip(m.statusLine())); got != "copied DOCKER_HOST_IP=127.0.1.1" {
-		t.Errorf("status line = %q", got)
-	}
-	m = send(m, "down")
-	if got := strings.TrimSpace(ansi.Strip(m.statusLine())); got != "" {
-		t.Errorf("status line = %q after the next key, want the note gone", got)
-	}
-
-	failing := send(ready(&fakeBackend{copyErr: errors.New("pbcopy: exit status 1")}, sample), "c")
-	if failing.err == nil {
-		t.Error("a failed copy shows no error")
-	}
-}
-
-func TestBackend_Copy(t *testing.T) {
-	t.Parallel()
-
-	p := paths.ForTest(t.TempDir())
-	r := run.NewFake()
-	if err := NewBackend(p, r).Copy(t.Context(), "DOCKER_HOST_IP=127.0.1.3"); err != nil {
-		t.Fatal(err)
-	}
-	if in, ok := r.Input(run.Line(p.Pbcopy)); !ok || in != "DOCKER_HOST_IP=127.0.1.3" {
-		t.Errorf("pbcopy got %q, %v", in, ok)
-	}
-}
-
 func TestBackend_PortsReady(t *testing.T) {
 	t.Parallel()
 

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"strings"
 	"time"
@@ -13,6 +14,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/sangdth/oo/internal/check"
+	"github.com/sangdth/oo/internal/compose"
 	"github.com/sangdth/oo/internal/store"
 )
 
@@ -53,13 +55,14 @@ type Model struct {
 	backend Backend
 	origin  Start // where oo started
 
-	project  projectMsg // the project oo started in, until the question about it opens
+	project  projectMsg // the project oo started in; empty outside one
+	asked    bool       // the compose question has run, or had nothing to ask
 	question question   // what the compose question offers, while it is open
 
 	mode       mode
 	form       form
 	target     string       // the name a delete waits on
-	note       string       // a short message, such as what copy env copied
+	note       string       // a short message, such as what linking wrote
 	selectName string       // the name to put the cursor on once a change lands
 	startedOn  string       // the name under the cursor when the change started; empty on the add row
 	adding     store.Domain // the name being added, listed with the spinner until it is saved; Name is empty otherwise
@@ -77,6 +80,7 @@ type Model struct {
 	preview      viewport.Model
 	previewTitle string // the file, its name and how many changes, such as compose.dev.yaml for flowy.oo · 3 changes
 	previewEnv   string // the .env line the file's ports need, such as DOCKER_HOST_IP=127.0.1.3; empty when none binds it
+	previewOwner string // the name whose compose file the preview shows
 
 	table   table.Model
 	spinner spinner.Model
@@ -155,18 +159,13 @@ type logMsg struct {
 	err     error
 }
 
-// copiedMsg is a finished copy to the clipboard.
-type copiedMsg struct {
-	text string
-	err  error
-}
-
 // changedMsg is a finished change. When stored is false nothing was saved and
 // the list stays as it was; checks is nil when the change ran no check.
 type changedMsg struct {
 	domains []store.Domain
 	stored  bool
 	err     error
+	note    string // what to say once it is done, such as what linking wrote
 	checks  []check.Check
 	results []check.Result
 }
@@ -229,10 +228,22 @@ func (m Model) reload() tea.Cmd {
 	}
 }
 
-func (m Model) copyText(text string) tea.Cmd {
-	ctx, b := m.ctx, m.backend
+// thenLink runs cmd, then, once it saved the list, writes d's address into the
+// .env that d's compose file runs with.
+func (m Model) thenLink(cmd tea.Cmd, d store.Domain) tea.Cmd {
+	ctx, b, home := m.ctx, m.backend, m.origin.Home
 	return func() tea.Msg {
-		return copiedMsg{text: text, err: b.Copy(ctx, text)}
+		msg, ok := cmd().(changedMsg)
+		if !ok || !msg.stored {
+			return msg
+		}
+		env, err := b.LinkEnv(ctx, d.Compose, d.Address)
+		if err != nil {
+			msg.err = errors.Join(msg.err, err)
+			return msg
+		}
+		msg.note = "linked " + d.Name + " · " + compose.EnvVar + "=" + d.Address + " in " + shortPath(env, home)
+		return msg
 	}
 }
 

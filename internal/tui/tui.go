@@ -5,11 +5,15 @@ package tui
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io/fs"
 	"os"
+	"path/filepath"
 
 	"github.com/sangdth/oo/internal/check"
 	"github.com/sangdth/oo/internal/compose"
 	"github.com/sangdth/oo/internal/dnsmasq"
+	"github.com/sangdth/oo/internal/fsutil"
 	"github.com/sangdth/oo/internal/paths"
 	"github.com/sangdth/oo/internal/run"
 	"github.com/sangdth/oo/internal/store"
@@ -36,8 +40,9 @@ type Backend interface {
 	Project(dir string) (root string, files []string)
 	// ReadCompose returns the compose file at path.
 	ReadCompose(path string) ([]byte, error)
-	// Copy puts text on the clipboard.
-	Copy(ctx context.Context, text string) error
+	// LinkEnv writes DOCKER_HOST_IP=address into the .env the compose file at
+	// composePath runs with, and returns that file.
+	LinkEnv(ctx context.Context, composePath, address string) (string, error)
 	// Tail returns what dnsmasq logged since offset, and the next offset.
 	Tail(offset int64) (string, int64, error)
 }
@@ -98,9 +103,31 @@ func (b backend) ReadCompose(path string) ([]byte, error) {
 	return os.ReadFile(path) //nolint:gosec // G304: the user named this compose file
 }
 
-func (b backend) Copy(ctx context.Context, text string) error {
-	_, err := b.runner.RunInput(ctx, text, b.paths.Pbcopy)
-	return err
+// LinkEnv refuses a .env that git tracks: the address belongs to this Mac,
+// and a teammate's Mac may not have it. It writes the file a symlink points
+// at, and keeps the file's mode.
+func (b backend) LinkEnv(ctx context.Context, composePath, address string) (string, error) {
+	env := compose.EnvFile(composePath)
+	if real, err := filepath.EvalSymlinks(env); err == nil {
+		env = real
+	}
+	if _, err := b.runner.Run(ctx, b.paths.Git, "-C", filepath.Dir(env), "ls-files", "--error-unmatch", "--", filepath.Base(env)); err == nil {
+		return env, fmt.Errorf("git tracks %s, so oo leaves it: this Mac's address doesn't belong in a shared file", env)
+	}
+	content, err := os.ReadFile(env) //nolint:gosec // G304: the project's own .env
+	mode := fs.FileMode(0o644)
+	switch {
+	case err == nil:
+		if info, statErr := os.Stat(env); statErr == nil {
+			mode = info.Mode().Perm()
+		}
+	case !errors.Is(err, fs.ErrNotExist):
+		return env, fmt.Errorf("read %s: %w", env, err)
+	}
+	if _, err := fsutil.WriteFile(env, compose.SetEnv(content, compose.EnvVar, address), mode); err != nil {
+		return env, fmt.Errorf("write %s: %w", env, err)
+	}
+	return env, nil
 }
 
 func (b backend) Tail(offset int64) (string, int64, error) { return dnsmasq.Tail(b.paths.Log, offset) }

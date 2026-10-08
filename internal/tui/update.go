@@ -9,7 +9,6 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
-	"github.com/sangdth/oo/internal/compose"
 	"github.com/sangdth/oo/internal/store"
 )
 
@@ -32,6 +31,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.busy, m.err = false, msg.err
 		here := m.cursorName()    // before the rows change under the cursor
 		m.adding = store.Domain{} // saved, or gone when the save failed
+		if msg.note != "" {
+			m.note = msg.note
+		}
 		if msg.stored {
 			m.domains = store.Sort(msg.domains)
 		}
@@ -67,13 +69,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m, m.tailLog()
-	case copiedMsg:
-		if msg.err != nil {
-			m.err = msg.err
-		} else {
-			m.note = "copied " + msg.text
-		}
-		return m, nil
 	case spinner.TickMsg:
 		if !m.busy {
 			return m, nil // stop animating once idle
@@ -192,7 +187,8 @@ func (m Model) listKey(k string) (Model, tea.Cmd, bool) {
 		m.mode, m.err, m.target = modeConfirm, nil, d.Name
 		return m, nil, true
 	case "c":
-		return m, m.copyText(compose.EnvVar + "=" + d.Address), true
+		next, cmd := m.link(d)
+		return next, cmd, true
 	}
 	return m, nil, false
 }
@@ -266,9 +262,13 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 	if m.form.editing == "" {
 		m.adding = d
 	}
+	o := m.form.original
 	cmd := m.change(next)
-	if o := m.form.original; m.form.editing != "" && d.Name == o.Name && d.Address == o.Address && d.Port == o.Port {
+	if m.form.editing != "" && d.Name == o.Name && d.Address == o.Address && d.Port == o.Port {
 		cmd = m.save(next) // only the compose file changed, which nothing applies
+	}
+	if linked(d) && (d.Compose != o.Compose || d.Address != o.Address) {
+		cmd = m.thenLink(cmd, d) // the .env follows the file and the address
 	}
 	return m.start(cmp.Or(m.form.editing, d.Name), cmd)
 }

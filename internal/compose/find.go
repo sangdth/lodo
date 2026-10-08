@@ -27,15 +27,24 @@ var fileNameRE = regexp.MustCompile(`(?i)^(?:docker[-.])?compose(?:\.([a-z0-9][a
 // ProjectRoot returns the git root dir is in when it holds a lock file, so oo
 // knows it started in a project. ok is false otherwise.
 func ProjectRoot(dir string) (root string, ok bool) {
+	root, ok = gitRoot(dir)
+	if !ok || !hasLockFile(root) {
+		return "", false
+	}
+	return root, true
+}
+
+// gitRoot returns dir, or the nearest folder above it, that holds an entry
+// named .git: a worktree's is a file.
+func gitRoot(dir string) (string, bool) {
 	dir, err := filepath.Abs(dir)
 	if err != nil {
 		return "", false
 	}
-	// Any entry named .git marks the root: a worktree's is a file.
 	for {
 		_, err = os.Lstat(filepath.Join(dir, ".git"))
 		if err == nil {
-			break
+			return dir, true
 		}
 		parent := filepath.Dir(dir)
 		if !errors.Is(err, fs.ErrNotExist) || parent == dir {
@@ -43,10 +52,6 @@ func ProjectRoot(dir string) (root string, ok bool) {
 		}
 		dir = parent
 	}
-	if !hasLockFile(dir) {
-		return "", false
-	}
-	return dir, true
 }
 
 // hasLockFile reports whether dir directly holds a lock file.

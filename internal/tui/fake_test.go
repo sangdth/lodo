@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io/fs"
+	"path/filepath"
 	"slices"
 	"sync"
 	"time"
@@ -31,12 +32,12 @@ type fakeBackend struct {
 	composeFiles  map[string]string // ReadCompose's files, by path
 	off           map[string]bool   // services turned off
 	setServices   []string          // each SetService call, such as "caddy off"
-	copyErr       error
+	linkErr       error
 	log           string // dnsmasq's log
 	tailErr       error
 	saved         [][]store.Domain
 	applied       [][]store.Domain
-	copied        []string
+	linked        []string // each LinkEnv, as "<compose file> <address>"
 	reports       int
 }
 
@@ -89,14 +90,12 @@ func (f *fakeBackend) appendLog(s string) {
 	f.log += s
 }
 
-func (f *fakeBackend) Copy(_ context.Context, text string) error {
+// LinkEnv records the link and names the .env next to the compose file.
+func (f *fakeBackend) LinkEnv(_ context.Context, composePath, address string) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if f.copyErr != nil {
-		return f.copyErr
-	}
-	f.copied = append(f.copied, text)
-	return nil
+	f.linked = append(f.linked, composePath+" "+address)
+	return filepath.Join(filepath.Dir(composePath), ".env"), f.linkErr
 }
 
 func (f *fakeBackend) Load() ([]store.Domain, error) {

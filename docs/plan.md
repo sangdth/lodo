@@ -78,8 +78,7 @@ Settled 2026-10-08. The steps below follow them.
 - **TUI snapshots golden `View().Content`,** not teatest's byte stream, which holds spinner frames and timing;
   one teatest test drives the real program loop.
 - **The form refuses a port until Caddy is ready** (installed, and Homebrew's Caddyfile imports oo's), checked
-  only when the port is new or changed. Copy env pipes into `pbcopy` through `run.Runner.RunInput`. The form's
-  cursor doesn't blink, so it starts no timers.
+  only when the port is new or changed. The form's cursor doesn't blink, so it starts no timers.
 - **Golden files** use `github.com/charmbracelet/x/exp/golden`: `testdata/<TestName>.golden`, `-update` per package.
 - **`apply` refuses before setup:** until the script is installed and Homebrew's dnsmasq.conf includes oo's,
   `system.Apply` returns `ErrNotSetUp` and changes nothing. Without it, `oo apply` before setup started a user
@@ -95,8 +94,9 @@ Settled 2026-10-08. The steps below follow them.
 - `charm.land/bubbletea/v2` v2.0.10 (app loop), `charm.land/bubbles/v2` v2.2.1 (`table`, `textinput`, `spinner`,
   `viewport`, `key`), `charm.land/lipgloss/v2` v2.0.6 (styling).
 - Tests only: `github.com/charmbracelet/x/exp/teatest/v2` with its `x/exp/golden` helper.
-- No other dependencies. Direct DNS checks use `net.Resolver` dialing `127.0.0.1:53535`. `brew`, `sudo`,
-  `launchctl`, `dscacheutil` and `pbcopy` run through `os/exec` with absolute paths.
+- `go.yaml.in/yaml/v3` v3.0.5 reads compose files. No other dependencies. Direct DNS checks use `net.Resolver`
+  dialing `127.0.0.1:53535`. `brew`, `sudo`, `launchctl`, `dscacheutil` and `git` run through `os/exec` with
+  absolute paths.
 - dnsmasq 2.93 from Homebrew (`/opt/homebrew`, Apple Silicon).
 - Caddy 2.11 from Homebrew, optional: only rows with a port need it. It binds port 80 as the user; macOS allows
   that without root, and localdns's Caddy did it on this Mac.
@@ -272,13 +272,17 @@ A failure at any step shows in the status line. The saved file stays as written;
   check and `r` spin every enabled row. A name being added is listed at once with the spinner, and goes away
   if the save fails.
 - **Delete:** `d` asks `delete flowy.oo? y/N` in the status line; only `y` deletes.
-- **Copy env** puts `DOCKER_HOST_IP=127.0.1.3` on the clipboard (`pbcopy`).
+- **Link** (`c`): the name gets the compose file of the project oo started in, or keeps its own outside one, and
+  `DOCKER_HOST_IP=<address>` goes into the `.env` that file runs with: the one a `package.json` script passes
+  with `--env-file`, else the project root's (`compose.EnvFile`, `compose.SetEnv`). A `.env` git tracks is
+  refused; the compose path is still saved. The question's `y`, `c` in the preview, and a form save that changes
+  a linked name's compose file or address link too. Linking saves without an apply.
 - **Log:** a `viewport` tailing `dnsmasq.log`, polled every 500 ms; `g` or `esc` returns.
 - **Compose:** started in a project, oo asks once, after the first check, about the best compose file for the
-  name the project's folder suggests: `y` saves it, `e` edits it first, anything else saves `none`; an unlisted
+  name the project's folder suggests: `y` links it, `e` edits it first, anything else saves `none`; an unlisted
   name gets the add form. A compose path is saved without an apply: it changes no generated file. `p` previews
   the file rewritten by `compose.Rewrite` in a `viewport`, the changed lines marked, with the `.env` line; `c`
-  copies that line. oo never writes a project file.
+  links. oo writes one project file: the linked `.env`, and only its `DOCKER_HOST_IP` lines.
 - **Status bar:** checks 8, 1, 3 and 4, in that order. A green `●` is on and works, a dim `○` is off: turned off,
   or Caddy not running while no row has a port. A red `○` fails. Any red one says "run `oo doctor`".
 - **Services:** `tab` moves the keys to the status bar; `←` `→` (or `h` `l`) pick Caddy or dnsmasq, `space` turns

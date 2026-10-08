@@ -85,7 +85,7 @@ name. The status line at the bottom, above the key help, says what failed, or wh
 | `e`         | edit the selected name                           |
 | `d`         | delete it; `y` confirms, any other key keeps it  |
 | `space`     | turn it on or off                                |
-| `c`         | copy `DOCKER_HOST_IP=<address>` to the clipboard |
+| `c`         | link it to the project's compose file and `.env` |
 | `p`         | preview the compose file, as oo would change it  |
 | `g`         | show dnsmasq's query log; `g` or `esc` goes back |
 | `r`         | read `domains.json` again and apply it           |
@@ -115,7 +115,11 @@ oo started, or `none`.
   `http://localhost:3000` becomes `http://dashboard.crm.oo`.
 - Healthchecks, commands and comments keep `localhost`: inside a container it is the container itself.
 
-`c` in the preview copies the `.env` line the ports need.
+`c` links the selected name: the compose file of the project oo started in, or outside one the name's own,
+becomes the name's, and `DOCKER_HOST_IP=<address>` goes into the `.env` that file runs with. That is the file a
+`package.json` script passes with `--env-file`, else the project root's `.env`. oo leaves a `.env` that git
+tracks alone: this Mac's address doesn't belong in a shared file. The question's `y`, `c` in the preview, and a
+form save that changes a linked name's compose file or address do the same.
 
 ### Rules
 
@@ -129,9 +133,9 @@ oo started, or `none`.
 - **A port makes `http://<name>` reach `<address>:<port>`** through Caddy on port 80. HTTP only. Port 80 itself
   is refused, because Caddy listens there.
 - **Apps listen on their project's address**, for example `next dev -H 127.0.1.3` or `vite --host 127.0.1.3`.
-- **Docker:** `c` copies `DOCKER_HOST_IP=127.0.1.3`. Put it in the project's `.env` and publish ports as
-  `"${DOCKER_HOST_IP:-127.0.0.1}:5432:5432"`, so each project's Postgres gets port 5432 on its own address.
-  `p` shows those changes on the project's compose file.
+- **Docker:** publish ports as `"${DOCKER_HOST_IP:-127.0.0.1}:5432:5432"`, which `p` shows on the project's
+  compose file, and `c` writes `DOCKER_HOST_IP=127.0.1.3` into the project's `.env`, so each project's Postgres
+  gets port 5432 on its own address.
 
 ## Commands
 

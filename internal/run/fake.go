@@ -13,7 +13,6 @@ type Fake struct {
 	mu      sync.Mutex
 	answers map[string]answer
 	calls   []string
-	inputs  map[string]string
 }
 
 type answer struct {
@@ -23,7 +22,7 @@ type answer struct {
 
 // NewFake returns a Fake with no answers.
 func NewFake() *Fake {
-	return &Fake{answers: map[string]answer{}, inputs: map[string]string{}}
+	return &Fake{answers: map[string]answer{}}
 }
 
 // Set makes the command line, as built by Line, succeed with out.
@@ -55,22 +54,6 @@ func (f *Fake) Run(_ context.Context, name string, args ...string) (string, erro
 	f.calls = append(f.calls, line)
 	a := f.answers[line]
 	return a.out, a.err
-}
-
-// RunInput implements Runner. Input returns what it was given.
-func (f *Fake) RunInput(ctx context.Context, input, name string, args ...string) (string, error) {
-	f.mu.Lock()
-	f.inputs[Line(name, args...)] = input
-	f.mu.Unlock()
-	return f.Run(ctx, name, args...)
-}
-
-// Input returns the standard input the last RunInput of line was given.
-func (f *Fake) Input(line string) (string, bool) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	in, ok := f.inputs[line]
-	return in, ok
 }
 
 // RunTTY implements Runner.

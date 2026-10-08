@@ -55,7 +55,7 @@ type Paths struct {
 	Rmdir       string
 	Dscacheutil string
 	Lsof        string
-	Pbcopy      string
+	Git         string
 
 	// Leftovers are LocalDNS files that setup reports and leaves alone.
 	Leftovers []string
@@ -117,7 +117,7 @@ func build(root, home, user string) Paths {
 		Rmdir:       sys("/bin/rmdir"),
 		Dscacheutil: sys("/usr/bin/dscacheutil"),
 		Lsof:        sys("/usr/sbin/lsof"),
-		Pbcopy:      sys("/usr/bin/pbcopy"),
+		Git:         sys("/usr/bin/git"),
 
 		Leftovers: []string{
 			filepath.Join(home, ".config", "localdns"),

@@ -104,7 +104,7 @@ func (m *Model) showPreview(msg previewMsg) {
 	}
 	m.mode = modePreview
 	m.previewTitle = filepath.Base(msg.owner.Compose) + " for " + msg.owner.Name + " · " + count
-	m.previewEnv = ""
+	m.previewOwner, m.previewEnv = msg.owner.Name, ""
 	if strings.Contains(string(msg.out), "${"+compose.EnvVar) {
 		m.previewEnv = compose.EnvVar + "=" + msg.owner.Address
 	}
@@ -140,11 +140,11 @@ func (m Model) checkCompose(path string) error {
 // maybeAsk opens the compose question once the first check is done, when oo
 // started in a project whose name has no answer yet. It asks once.
 func (m *Model) maybeAsk() {
-	if m.busy || m.mode != modeList || len(m.project.files) == 0 {
+	if m.asked || m.busy || m.mode != modeList || len(m.project.files) == 0 {
 		return
 	}
+	m.asked = true
 	root, path := m.project.root, m.project.files[0]
-	m.project = projectMsg{}
 	name := projectName(root)
 	if name == "" {
 		return
@@ -205,16 +205,48 @@ func (m Model) askKey(k string) (tea.Model, tea.Cmd) {
 		m.form.focusField(fieldCompose)
 		return m, nil
 	}
-	d.Compose = store.NoCompose
 	if k == "y" {
-		d.Compose = q.path
+		return m.linkTo(d, q.path)
 	}
+	d.Compose = store.NoCompose
 	next, err := store.Update(m.domains, d.Name, d)
 	if err != nil {
 		m.err = err
 		return m, nil
 	}
 	return m.start(d.Name, m.save(next))
+}
+
+// link links d to the compose file of the project oo started in, or, outside
+// one, to its own: d's compose path is saved and d's address is written into
+// the .env that file runs with.
+func (m Model) link(d store.Domain) (Model, tea.Cmd) {
+	path := d.Compose
+	if len(m.project.files) > 0 {
+		path = m.project.files[0]
+	}
+	if path == "" || path == store.NoCompose {
+		m.err = errors.New("no compose file to link: start oo in the project, or e to set one")
+		return m, nil
+	}
+	return m.linkTo(d, path)
+}
+
+// linkTo saves path as d's compose file and writes d's address into the .env
+// that file runs with. Nothing is applied: neither changes a generated file.
+func (m Model) linkTo(d store.Domain, path string) (Model, tea.Cmd) {
+	d.Compose = path
+	next, err := store.Update(m.domains, d.Name, d)
+	if err != nil {
+		m.err = err
+		return m, nil
+	}
+	return m.start(d.Name, m.thenLink(m.save(next), d))
+}
+
+// linked reports whether d has a compose file to write a .env for.
+func linked(d store.Domain) bool {
+	return d.Compose != "" && d.Compose != store.NoCompose
 }
 
 // openPreview shows the selected name's compose file, its own or its
@@ -232,7 +264,7 @@ func (m Model) openPreview() (tea.Model, tea.Cmd) {
 	return m, m.readPreview(owner)
 }
 
-// previewKey scrolls the preview; c copies the .env line, p or esc goes back.
+// previewKey scrolls the preview; c writes the .env line, p or esc goes back.
 func (m Model) previewKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "p", "esc":
@@ -241,10 +273,11 @@ func (m Model) previewKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "q":
 		return m, tea.Quit
 	case "c":
-		if m.previewEnv == "" {
+		owner, ok := m.find(m.previewOwner)
+		if m.busy || !ok || !linked(owner) {
 			return m, nil
 		}
-		return m, m.copyText(m.previewEnv)
+		return m.linkTo(owner, owner.Compose)
 	}
 	var cmd tea.Cmd
 	m.preview, cmd = m.preview.Update(msg)
@@ -277,7 +310,7 @@ func (m Model) shortPath(path string) string {
 func (m Model) previewView() string {
 	env := "no port binds " + compose.EnvVar + ", so the project's .env needs nothing from oo"
 	if m.previewEnv != "" {
-		env = "the ports need " + m.previewEnv + " in the project's .env"
+		env = "the ports need " + m.previewEnv + " in the project's .env: c writes it"
 	}
 	title := " " + m.styles.title.Render(m.previewTitle)
 	return title + "\n " + ansi.Truncate(m.styles.dim.Render(env), m.innerWidth()-1, "…") + "\n" + m.preview.View()

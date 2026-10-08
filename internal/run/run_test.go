@@ -63,15 +63,6 @@ func TestExec_Run(t *testing.T) {
 	}
 }
 
-func TestExec_RunInput(t *testing.T) {
-	t.Parallel()
-
-	out, err := run.Exec{}.RunInput(context.Background(), "DOCKER_HOST_IP=127.0.1.3", "/bin/cat")
-	if err != nil || out != "DOCKER_HOST_IP=127.0.1.3" {
-		t.Errorf("RunInput through cat = %q, %v", out, err)
-	}
-}
-
 func TestExec_RunTimeoutUnwraps(t *testing.T) {
 	t.Parallel()
 
@@ -111,13 +102,7 @@ func TestFake(t *testing.T) {
 	if err := f.RunTTY(ctx, "sudo", "-v"); err != nil {
 		t.Errorf("RunTTY: %v", err)
 	}
-	if _, err := f.RunInput(ctx, "a=b", "pbcopy"); err != nil {
-		t.Errorf("RunInput: %v", err)
-	}
-	if in, ok := f.Input("pbcopy"); !ok || in != "a=b" {
-		t.Errorf("Input(pbcopy) = %q, %v", in, ok)
-	}
-	want := []string{"brew services info dnsmasq --json", "sudo -n script", "unknown", "sudo -v", "pbcopy"}
+	want := []string{"brew services info dnsmasq --json", "sudo -n script", "unknown", "sudo -v"}
 	got := f.Calls()
 	if len(got) != len(want) {
 		t.Fatalf("calls = %q, want %q", got, want)

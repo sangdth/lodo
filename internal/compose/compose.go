@@ -3,8 +3,8 @@
 // its .oo name. It reads files and never writes them.
 package compose
 
-// EnvVar is the variable a rewritten port binds to. oo's copy env puts it on
-// the clipboard for the project's .env.
+// EnvVar is the variable a rewritten port binds to. Linking a name writes it,
+// set to the name's address, into the project's .env.
 const EnvVar = "DOCKER_HOST_IP"
 
 // HostIP is the host address Rewrite gives a port: the project's address

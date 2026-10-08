@@ -1,6 +1,9 @@
 package tui
 
 import (
+	"errors"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -10,6 +13,8 @@ import (
 	"github.com/charmbracelet/x/exp/golden"
 
 	"github.com/sangdth/oo/internal/check"
+	"github.com/sangdth/oo/internal/paths"
+	"github.com/sangdth/oo/internal/run"
 	"github.com/sangdth/oo/internal/store"
 )
 
@@ -275,8 +280,11 @@ func TestPreview(t *testing.T) {
 	golden.RequireEqual(t, m.View().Content)
 
 	m = send(m, "c")
-	if len(b.copied) != 1 || b.copied[0] != "DOCKER_HOST_IP=127.0.1.3" {
-		t.Errorf("copied %q, want the .env line", b.copied)
+	if want := []string{flowyDev + " 127.0.1.3"}; !slices.Equal(b.linked, want) {
+		t.Errorf("linked %q, want %q", b.linked, want)
+	}
+	if m.mode != modePreview {
+		t.Errorf("mode = %v after c, want the preview still open", m.mode)
 	}
 	if m = send(m, "esc"); m.mode != modeList {
 		t.Errorf("mode = %v after esc, want the list", m.mode)
@@ -382,6 +390,181 @@ func TestComposeCell_CutsFromTheLeft(t *testing.T) {
 		if got := m.composeCell(d, width); got != want {
 			t.Errorf("composeCell at %d = %q, want %q", width, got, want)
 		}
+	}
+}
+
+func TestLink(t *testing.T) {
+	t.Parallel()
+
+	withFile := slices.Clone(sample)
+	withFile[2].Compose = flowyProd
+	tests := []struct {
+		name        string
+		backend     *fakeBackend
+		domains     []store.Domain
+		origin      Start
+		wantCompose string // flowy.oo's compose once linked; empty when nothing is saved
+		wantErr     string
+		wantNote    string
+	}{
+		{
+			name: "in a project: the project's best file", backend: inFlowy(), domains: withFile, origin: flowyOrigin,
+			wantCompose: flowyDev, wantNote: "linked flowy.oo · DOCKER_HOST_IP=127.0.1.3 in ~/Projects/flowy/.env",
+		},
+		{
+			name: "outside a project: its own file", backend: &fakeBackend{}, domains: withFile, origin: Start{Home: home},
+			wantCompose: flowyProd, wantNote: "linked flowy.oo · DOCKER_HOST_IP=127.0.1.3 in ~/Projects/flowy/.env",
+		},
+		{
+			name: "no file at all", backend: &fakeBackend{}, domains: sample, origin: Start{Home: home},
+			wantErr: "no compose file to link: start oo in the project, or e to set one",
+		},
+		{
+			name: "the .env can't be written: the link stays", domains: withFile, origin: flowyOrigin,
+			backend:     &fakeBackend{projectRoot: flowyRoot, projectFiles: []string{flowyDev}, linkErr: errors.New("git tracks .env")},
+			wantCompose: flowyDev, wantErr: "git tracks .env",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m := readyIn(tt.backend, tt.domains, tt.origin)
+			m = send(send(send(m, "down"), "down"), "c") // flowy.oo
+			if tt.wantCompose == "" {
+				if len(tt.backend.saved) != 0 || len(tt.backend.linked) != 0 {
+					t.Errorf("saved %v, linked %v; want neither", tt.backend.saved, tt.backend.linked)
+				}
+			} else {
+				if got := composeOf(t, tt.backend, "flowy.oo"); got != tt.wantCompose {
+					t.Errorf("flowy.oo's compose = %q, want %q", got, tt.wantCompose)
+				}
+				if want := []string{tt.wantCompose + " 127.0.1.3"}; !slices.Equal(tt.backend.linked, want) {
+					t.Errorf("linked %q, want %q", tt.backend.linked, want)
+				}
+			}
+			if len(tt.backend.applied) != 0 {
+				t.Errorf("applied %v; linking changes no generated file", tt.backend.applied)
+			}
+			gotErr := ""
+			if m.err != nil {
+				gotErr = m.err.Error()
+			}
+			if gotErr != tt.wantErr || m.note != tt.wantNote {
+				t.Errorf("err %q, note %q; want %q, %q", gotErr, m.note, tt.wantErr, tt.wantNote)
+			}
+		})
+	}
+}
+
+func TestLink_FollowsFormChanges(t *testing.T) {
+	t.Parallel()
+
+	linked := slices.Clone(sample)
+	linked[2].Compose = flowyDev
+	tests := []struct {
+		name    string
+		domains []store.Domain
+		field   int
+		typed   string
+		want    []string // LinkEnv calls
+	}{
+		{name: "a compose file set", domains: sample, field: fieldCompose, typed: flowyDev, want: []string{flowyDev + " 127.0.1.3"}},
+		{name: "a linked name's address changed", domains: linked, field: fieldAddress, typed: "127.0.1.9", want: []string{flowyDev + " 127.0.1.9"}},
+		{name: "none", domains: sample, field: fieldCompose, typed: "none"},
+		{name: "a port changed", domains: linked, field: fieldPort, typed: "3000"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			b := &fakeBackend{composeFiles: inFlowy().composeFiles}
+			m := send(send(send(ready(b, tt.domains), "down"), "down"), "e") // flowy.oo
+			for m.form.focus != tt.field {
+				m = send(m, "tab")
+			}
+			m = send(typeText(clearField(m), tt.typed), "enter")
+			if m.mode != modeList || !slices.Equal(b.linked, tt.want) {
+				t.Errorf("mode %v, linked %q; want the list and %q; form errors %q", m.mode, b.linked, tt.want, m.form.errs)
+			}
+		})
+	}
+}
+
+func TestBackend_LinkEnv(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		existing string // the .env before; empty for none
+		mode     os.FileMode
+		tracked  bool
+		symlink  bool // .env links to env.real
+		want     string
+		wantMode os.FileMode
+		wantErr  string
+	}{
+		{name: "a new .env", want: "DOCKER_HOST_IP=127.0.1.3\n", wantMode: 0o644},
+		{name: "a line added, mode kept", existing: "SECRET=x\n", mode: 0o600, want: "SECRET=x\nDOCKER_HOST_IP=127.0.1.3\n", wantMode: 0o600},
+		{name: "a line replaced", existing: "DOCKER_HOST_IP=127.0.0.1\n", mode: 0o644, want: "DOCKER_HOST_IP=127.0.1.3\n", wantMode: 0o644},
+		{name: "through a symlink", existing: "A=1\n", mode: 0o644, symlink: true, want: "A=1\nDOCKER_HOST_IP=127.0.1.3\n", wantMode: 0o644},
+		{name: "tracked by git", existing: "A=1\n", mode: 0o644, tracked: true, want: "A=1\n", wantMode: 0o644, wantErr: "git tracks "},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			p := paths.ForTest(t.TempDir())
+			tmp, err := filepath.EvalSymlinks(t.TempDir()) // macOS keeps temp folders under the /var link
+			if err != nil {
+				t.Fatal(err)
+			}
+			root := filepath.Join(tmp, "app")
+			composePath := filepath.Join(root, "compose.yml")
+			writeTestFile(t, filepath.Join(root, ".git", "HEAD"), "ref: refs/heads/main\n")
+			writeTestFile(t, composePath, "services: {}\n")
+			env := filepath.Join(root, ".env")
+			if tt.existing != "" {
+				target := env
+				if tt.symlink {
+					target = filepath.Join(root, "env.real")
+				}
+				writeTestFile(t, target, tt.existing)
+				if err := os.Chmod(target, tt.mode); err != nil {
+					t.Fatal(err)
+				}
+				if tt.symlink {
+					if err := os.Symlink(target, env); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			r := run.NewFake() // an unknown command succeeds, which would read as tracked
+			for _, name := range []string{".env", "env.real"} {
+				r.Fail(run.Line(p.Git, "-C", root, "ls-files", "--error-unmatch", "--", name), "error: pathspec did not match any file(s) known to git")
+			}
+			if tt.tracked {
+				r.Set(run.Line(p.Git, "-C", root, "ls-files", "--error-unmatch", "--", ".env"), ".env\n")
+			}
+			_, err = NewBackend(p, r).LinkEnv(t.Context(), composePath, "127.0.1.3")
+			if tt.wantErr == "" && err != nil || tt.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tt.wantErr)) {
+				t.Fatalf("err = %v, want %q", err, tt.wantErr)
+			}
+			real := env
+			if tt.symlink {
+				real = filepath.Join(root, "env.real")
+				if fi, err := os.Lstat(env); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+					t.Errorf(".env is no longer a symlink: %v", err)
+				}
+			}
+			got, err := os.ReadFile(real)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(got) != tt.want {
+				t.Errorf(".env = %q, want %q", got, tt.want)
+			}
+			if fi, err := os.Stat(real); err != nil || fi.Mode().Perm() != tt.wantMode {
+				t.Errorf("mode = %v, want %v", fi.Mode().Perm(), tt.wantMode)
+			}
+		})
 	}
 }
 
