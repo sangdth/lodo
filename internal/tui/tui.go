@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"github.com/sangdth/lcd/internal/check"
+	"github.com/sangdth/lcd/internal/dnsmasq"
 	"github.com/sangdth/lcd/internal/paths"
 	"github.com/sangdth/lcd/internal/run"
 	"github.com/sangdth/lcd/internal/store"
@@ -29,6 +30,8 @@ type Backend interface {
 	PortsReady() error
 	// Copy puts text on the clipboard.
 	Copy(ctx context.Context, text string) error
+	// Tail returns what dnsmasq logged since offset, and the next offset.
+	Tail(offset int64) (string, int64, error)
 }
 
 type backend struct {
@@ -69,3 +72,5 @@ func (b backend) Copy(ctx context.Context, text string) error {
 	_, err := b.runner.RunInput(ctx, text, b.paths.Pbcopy)
 	return err
 }
+
+func (b backend) Tail(offset int64) (string, int64, error) { return dnsmasq.Tail(b.paths.Log, offset) }

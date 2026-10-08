@@ -5,6 +5,7 @@ import (
 	"errors"
 	"slices"
 	"sync"
+	"time"
 
 	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
@@ -24,6 +25,8 @@ type fakeBackend struct {
 	failingChecks map[int]string    // a check's detail when it fails
 	portsErr      error
 	copyErr       error
+	log           string // dnsmasq's log
+	tailErr       error
 	saved         [][]store.Domain
 	applied       [][]store.Domain
 	copied        []string
@@ -31,6 +34,25 @@ type fakeBackend struct {
 }
 
 func (f *fakeBackend) PortsReady() error { return f.portsErr }
+
+func (f *fakeBackend) Tail(offset int64) (string, int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.tailErr != nil {
+		return "", offset, f.tailErr
+	}
+	size := int64(len(f.log))
+	if size < offset {
+		offset = 0
+	}
+	return f.log[offset:], size, nil
+}
+
+func (f *fakeBackend) appendLog(s string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.log += s
+}
 
 func (f *fakeBackend) Copy(_ context.Context, text string) error {
 	f.mu.Lock()
@@ -126,7 +148,7 @@ func settle(m Model, cmd tea.Cmd) Model {
 		switch msg := c().(type) {
 		case tea.BatchMsg:
 			queue = append(queue, msg...)
-		case spinner.TickMsg, tea.QuitMsg:
+		case spinner.TickMsg, tea.QuitMsg, logTickMsg:
 		default:
 			next, more := m.Update(msg)
 			m = next.(Model)
@@ -136,9 +158,11 @@ func settle(m Model, cmd tea.Cmd) Model {
 	return m
 }
 
-// ready returns a model for domains after its first report.
+// ready returns a model for domains after its first report. Its log timer
+// fires at once, and settle drops the tick, so tests drive reads themselves.
 func ready(b *fakeBackend, domains []store.Domain) Model {
 	m := New(context.Background(), b, domains)
+	m.logEvery = time.Millisecond
 	return settle(m, m.Init())
 }
 

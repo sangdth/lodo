@@ -27,6 +27,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.setReport(msg.checks, msg.results)
 		}
 		return m, nil
+	case logMsg:
+		if msg.session != m.logSession || m.mode != modeLog {
+			return m, nil // the log closed or reopened since this read started
+		}
+		if msg.err != nil {
+			m.err = msg.err
+		} else {
+			m.appendLog(msg.text, msg.offset)
+		}
+		return m, m.logTick()
+	case logTickMsg:
+		if msg.session != m.logSession || m.mode != modeLog {
+			return m, nil
+		}
+		return m, m.tailLog()
 	case copiedMsg:
 		if msg.err != nil {
 			m.err = msg.err
@@ -61,6 +76,11 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.formKey(msg)
 	case modeConfirm:
 		return m.confirmKey(k)
+	case modeLog:
+		return m.logKey(msg)
+	}
+	if k == "l" {
+		return m.openLog() // reading the log is safe while a change runs
 	}
 	if m.busy == "" {
 		if next, cmd, ok := m.listKey(k); ok {
@@ -150,6 +170,20 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 	}
 	m.mode, m.selectName = modeList, d.Name
 	return m.start("applying", m.change(next))
+}
+
+// logKey scrolls the log; l or esc goes back to the list.
+func (m Model) logKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "l", "esc":
+		m.mode = modeList
+		return m, nil
+	case "q":
+		return m, tea.Quit
+	}
+	var cmd tea.Cmd
+	m.log, cmd = m.log.Update(msg)
+	return m, cmd
 }
 
 // confirmKey deletes the waiting name on y; any other key keeps it.

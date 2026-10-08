@@ -37,17 +37,21 @@ var statusParts = []struct {
 
 // The keys each mode takes, shown on the last line.
 var help = map[mode]string{
-	modeList:    " a add  e edit  d delete  space on/off  c copy env  r apply  q quit",
+	modeList:    " a add  e edit  d delete  space on/off  c copy env  l log  r apply  q quit",
 	modeForm:    " enter save  tab next field  esc cancel",
 	modeConfirm: " y delete  any other key keeps it",
+	modeLog:     " l or esc back to the list  up/down scroll  q quit",
 }
 
 // View draws the status bar, the table or the form, the status line and the
 // keys.
 func (m Model) View() tea.View {
 	body := m.table.View()
-	if m.mode == modeForm {
+	switch m.mode {
+	case modeForm:
 		body = m.formView()
+	case modeLog:
+		body = m.logView()
 	}
 	lines := []string{
 		m.statusBar(),
@@ -74,6 +78,8 @@ func (m *Model) layout() {
 	m.table.SetWidth(m.width)
 	m.table.SetHeight(m.bodyHeight())
 	m.table.SetRows(m.rows())
+	m.log.SetWidth(m.width)
+	m.log.SetHeight(m.bodyHeight() - 1) // the log's title takes a line
 }
 
 // bodyHeight is the lines the table or the form gets: the status bar, the
@@ -221,6 +227,19 @@ func (m Model) formView() string {
 		lines = append(lines, "")
 	}
 	return strings.Join(lines, "\n")
+}
+
+// logView draws dnsmasq's query log under a title line.
+func (m Model) logView() string {
+	title := " " + m.styles.title.Render("dnsmasq query log")
+	if len(m.logLines) == 0 {
+		lines := []string{title, " " + m.styles.dim.Render("no log yet: dnsmasq writes a line for every query it answers")}
+		for len(lines) < m.bodyHeight() {
+			lines = append(lines, "")
+		}
+		return strings.Join(lines, "\n")
+	}
+	return title + "\n" + m.log.View()
 }
 
 // portHint says what a port does for the name being typed.

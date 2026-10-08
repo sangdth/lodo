@@ -1,9 +1,9 @@
  [1mlcd[m   dnsmasq [32m●[m   loopback [32m●[m   resolvers [32m●[m   caddy [32m●[m
- [1;90mname                              [m  [1;90maddress        [m  [1;90mport [m  [1;90mown[m  [1;90mcheck        [m 
-[1;38;5;212m ● crm.lcd                           127.0.1.1               own  dns ✓         [m
- ●   dashboard.crm.lcd               127.0.1.1        3000   own  dns ✗  http ✗ 
- ● flowy.lcd                         127.0.1.3               own  dns ✓         
- ○ old.lcd                           127.0.0.1                    –             
+ [1mdnsmasq query log[m
+Oct  8 18:27:22 dnsmasq[52611]: query[A] crm.lcd from 127.0.0.1                 
+Oct  8 18:27:22 dnsmasq[52611]: config crm.lcd is 127.0.1.1                     
+                                                                                
+                                                                                
                                                                                 
                                                                                 
                                                                                 
@@ -21,4 +21,4 @@
                                                                                 
                                                                                 
  
-[90m a add  e edit  d delete  space on/off  c copy env  l log  r apply  q quit[m
+[90m l or esc back to the list  up/down scroll  q quit[m

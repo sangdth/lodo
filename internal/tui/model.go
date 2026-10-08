@@ -2,10 +2,13 @@ package tui
 
 import (
 	"context"
+	"strings"
+	"time"
 
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/table"
+	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/sangdth/lcd/internal/check"
@@ -18,6 +21,12 @@ const (
 	defaultHeight = 24
 )
 
+// The log view reads dnsmasq's log this often and keeps this many lines.
+const (
+	logEvery    = 500 * time.Millisecond
+	maxLogLines = 2000
+)
+
 // mode is what the keys act on.
 type mode int
 
@@ -25,6 +34,7 @@ const (
 	modeList    mode = iota // the table
 	modeForm                // the add or edit form
 	modeConfirm             // a delete waiting for y
+	modeLog                 // dnsmasq's query log
 )
 
 // Model is the TUI's state. Build it with New.
@@ -42,6 +52,12 @@ type Model struct {
 	checks  []check.Check           // the last doctor run; nil until the first one finishes
 	results map[string]check.Result // the last probe of each enabled name, by name
 
+	log        viewport.Model
+	logLines   []string
+	logOffset  int64
+	logSession int           // counts openings of the log, so a timer from an earlier one stops
+	logEvery   time.Duration // how often the open log is read
+
 	table   table.Model
 	spinner spinner.Model
 	busy    string // what runs now, such as "applying"; empty when idle
@@ -55,14 +71,16 @@ type Model struct {
 // ctx bounds every command the TUI runs.
 func New(ctx context.Context, b Backend, domains []store.Domain) Model {
 	m := Model{
-		ctx:     ctx,
-		backend: b,
-		domains: store.Sort(domains),
-		spinner: spinner.New(spinner.WithSpinner(spinner.MiniDot)),
-		busy:    "checking",
-		width:   defaultWidth,
-		height:  defaultHeight,
-		styles:  newStyles(),
+		ctx:      ctx,
+		backend:  b,
+		domains:  store.Sort(domains),
+		spinner:  spinner.New(spinner.WithSpinner(spinner.MiniDot)),
+		log:      viewport.New(),
+		logEvery: logEvery,
+		busy:     "checking",
+		width:    defaultWidth,
+		height:   defaultHeight,
+		styles:   newStyles(),
 	}
 	m.table = table.New(table.WithFocused(true), table.WithStyles(m.styles.table), table.WithKeyMap(tableKeys()))
 	m.layout()
@@ -91,6 +109,17 @@ func (m Model) Init() tea.Cmd {
 type reportMsg struct {
 	checks  []check.Check
 	results []check.Result
+}
+
+// logTickMsg asks the open log to read what dnsmasq added.
+type logTickMsg struct{ session int }
+
+// logMsg is what dnsmasq added to its log since the last read.
+type logMsg struct {
+	session int
+	text    string
+	offset  int64
+	err     error
 }
 
 // copiedMsg is a finished copy to the clipboard.
@@ -149,6 +178,46 @@ func (m Model) copyText(text string) tea.Cmd {
 	ctx, b := m.ctx, m.backend
 	return func() tea.Msg {
 		return copiedMsg{text: text, err: b.Copy(ctx, text)}
+	}
+}
+
+func (m Model) tailLog() tea.Cmd {
+	b, session, offset := m.backend, m.logSession, m.logOffset
+	return func() tea.Msg {
+		text, next, err := b.Tail(offset)
+		return logMsg{session: session, text: text, offset: next, err: err}
+	}
+}
+
+func (m Model) logTick() tea.Cmd {
+	session := m.logSession
+	return tea.Tick(m.logEvery, func(time.Time) tea.Msg { return logTickMsg{session: session} })
+}
+
+// openLog shows dnsmasq's log, read again from its last lines.
+func (m Model) openLog() (Model, tea.Cmd) {
+	m.mode = modeLog
+	m.logSession++
+	m.logLines, m.logOffset = nil, 0
+	m.log.SetContentLines(nil)
+	return m, m.tailLog()
+}
+
+// appendLog adds what dnsmasq logged and follows the end unless the user
+// scrolled up.
+func (m *Model) appendLog(text string, offset int64) {
+	m.logOffset = offset
+	if text == "" {
+		return
+	}
+	follow := m.log.AtBottom()
+	m.logLines = append(m.logLines, strings.Split(strings.TrimRight(text, "\n"), "\n")...)
+	if extra := len(m.logLines) - maxLogLines; extra > 0 {
+		m.logLines = m.logLines[extra:]
+	}
+	m.log.SetContentLines(m.logLines)
+	if follow {
+		m.log.GotoBottom()
 	}
 }
 
