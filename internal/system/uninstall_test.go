@@ -44,7 +44,7 @@ func TestUninstall(t *testing.T) {
 	if err := system.Setup(ctx, p, r, &strings.Builder{}); err != nil {
 		t.Fatal(err)
 	}
-	domains := []store.Domain{{Name: "crm.local", Address: "127.0.1.1", Enabled: true}}
+	domains := []store.Domain{{Name: "crm.lcd", Address: "127.0.1.1", Enabled: true}}
 	if err := store.Save(p.DomainsJSON, domains); err != nil {
 		t.Fatal(err)
 	}

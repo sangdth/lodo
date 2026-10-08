@@ -1,4 +1,4 @@
-// Command lcd manages .local names on macOS through dnsmasq, /etc/resolver
+// Command lcd manages .lcd names on macOS through dnsmasq, /etc/resolver
 // files and Caddy.
 package main
 
@@ -17,7 +17,7 @@ import (
 // Version is set at build time with -ldflags "-X main.Version=v1.2.3".
 var Version = "dev"
 
-const usage = `lcd manages .local names on macOS through dnsmasq.
+const usage = `lcd manages .lcd names on macOS through dnsmasq.
 
 Usage:
   lcd setup      one-time system setup; asks for your password

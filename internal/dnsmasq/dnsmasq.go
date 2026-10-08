@@ -20,8 +20,7 @@ const Port = 53535
 // each enabled domain's name with its address, in store.Sort order. dnsmasq
 // answers a name from the most specific address= line that matches it, so a
 // subdomain with a line of its own gets its own address and an unlisted one
-// gets its parent's. There is no local=/local/ line, so .local names lcd does
-// not list stay with Bonjour.
+// gets its parent's. Only names under an /etc/resolver file reach dnsmasq.
 func Config(domains []store.Domain, logPath string) string {
 	var b strings.Builder
 	b.WriteString(store.GeneratedHeader)

@@ -113,10 +113,10 @@ func TestStripSystemCaddyfile(t *testing.T) {
 }
 
 var sample = []store.Domain{
-	{Name: "crm.local", Address: "127.0.1.1", Enabled: true},
-	{Name: "dashboard.crm.local", Address: "127.0.1.1", Port: 3000, Enabled: true},
-	{Name: "flowy.local", Address: "127.0.1.3", Enabled: true},
-	{Name: "old.local", Address: "127.0.0.1"},
+	{Name: "crm.lcd", Address: "127.0.1.1", Enabled: true},
+	{Name: "dashboard.crm.lcd", Address: "127.0.1.1", Port: 3000, Enabled: true},
+	{Name: "flowy.lcd", Address: "127.0.1.3", Enabled: true},
+	{Name: "old.lcd", Address: "127.0.0.1"},
 }
 
 func TestWriteFiles(t *testing.T) {
@@ -150,8 +150,8 @@ func TestWriteFiles(t *testing.T) {
 		want    system.Changes
 	}{
 		{name: "same list", domains: sample, want: system.Changes{}},
-		{name: "port change", domains: withPort(sample, "dashboard.crm.local", 3001), want: system.Changes{Caddy: true}},
-		{name: "toggle", domains: toggled(withPort(sample, "dashboard.crm.local", 3001), "crm.local"), want: system.Changes{Dnsmasq: true, Resolvers: true}},
+		{name: "port change", domains: withPort(sample, "dashboard.crm.lcd", 3001), want: system.Changes{Caddy: true}},
+		{name: "toggle", domains: toggled(withPort(sample, "dashboard.crm.lcd", 3001), "crm.lcd"), want: system.Changes{Dnsmasq: true, Resolvers: true}},
 	}
 	for _, s := range steps {
 		c, err := system.WriteFiles(p, s.domains)

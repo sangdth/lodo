@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-`lcd` is a Go terminal app that manages `.local` names on macOS through dnsmasq, `/etc/resolver` files and
+`lcd` is a Go terminal app that manages `.lcd` names on macOS through dnsmasq, `/etc/resolver` files and
 Caddy. `docs/plan.md` holds the design, the settled decisions and the phases.
 
 ## Commands
@@ -39,6 +39,8 @@ go run ./cmd/lcd doctor                   # run the CLI from source
   argument passed separately. Nothing builds a shell command line from data.
 - The root script only creates `/etc/resolver` files named by lines matching `store.NamePattern`, with fixed
   content, and only deletes files that start with lcd's marker line. Changes to it keep those three properties.
+- Names end in `.lcd`, from `store.TLD`. macOS sends a name with one label before `.local` to Bonjour only, so
+  `.local` can't serve project names like `flowy.local`.
 - Golden files live in each package's `testdata/` and use `github.com/charmbracelet/x/exp/golden`.
 - Charm v2 modules use the `charm.land/...` import paths, such as `charm.land/bubbletea/v2`.
 - Errors are wrapped with `fmt.Errorf("context: %w", err)`, lowercase, without trailing punctuation.

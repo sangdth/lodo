@@ -22,7 +22,7 @@ import (
 const caddyBin = "/opt/homebrew/bin/caddy"
 
 // lists are the domain lists the Config tests render. The sample is out of
-// order on purpose; only dashboard.crm.local and service.crm.local are enabled
+// order on purpose; only dashboard.crm.lcd and service.crm.lcd are enabled
 // with a port.
 var lists = []struct {
 	name    string
@@ -31,22 +31,22 @@ var lists = []struct {
 	{
 		name: "sample",
 		domains: []store.Domain{
-			{Name: "flowy.local", Address: "127.0.1.3", Enabled: true},
-			{Name: "service.crm.local", Address: "127.0.1.1", Port: 3002, Enabled: true},
-			{Name: "dashboard.crm.local", Address: "127.0.1.1", Port: 3000, Enabled: true},
-			{Name: "old.local", Address: "127.0.0.1"},
-			{Name: "docs.crm.local", Address: "127.0.1.1", Port: 3003},
-			{Name: "a.api.crm.local", Address: "127.0.1.1", Enabled: true},
-			{Name: "crm.local", Address: "127.0.1.1", Enabled: true},
-			{Name: "test.crm.local", Address: "127.0.1.4", Enabled: true},
-			{Name: "api.crm.local", Address: "127.0.1.1", Enabled: true},
+			{Name: "flowy.lcd", Address: "127.0.1.3", Enabled: true},
+			{Name: "service.crm.lcd", Address: "127.0.1.1", Port: 3002, Enabled: true},
+			{Name: "dashboard.crm.lcd", Address: "127.0.1.1", Port: 3000, Enabled: true},
+			{Name: "old.lcd", Address: "127.0.0.1"},
+			{Name: "docs.crm.lcd", Address: "127.0.1.1", Port: 3003},
+			{Name: "a.api.crm.lcd", Address: "127.0.1.1", Enabled: true},
+			{Name: "crm.lcd", Address: "127.0.1.1", Enabled: true},
+			{Name: "test.crm.lcd", Address: "127.0.1.4", Enabled: true},
+			{Name: "api.crm.lcd", Address: "127.0.1.1", Enabled: true},
 		},
 	},
 	{
 		name: "no ports",
 		domains: []store.Domain{
-			{Name: "crm.local", Address: "127.0.1.1", Enabled: true},
-			{Name: "flowy.local", Address: "127.0.1.3", Enabled: true},
+			{Name: "crm.lcd", Address: "127.0.1.1", Enabled: true},
+			{Name: "flowy.lcd", Address: "127.0.1.3", Enabled: true},
 		},
 	},
 }
@@ -115,8 +115,8 @@ func TestValidate(t *testing.T) {
 			stderr: `{"level":"info","ts":1791468324.516309,"msg":"using config from file",` +
 				`"file":"/Users/tester/.config/lcd/Caddyfile"}` + "\n" +
 				`{"level":"warn","ts":1791468324.516472,"msg":"no handler"}` + "\n" +
-				"Error: adapting config using caddyfile: ambiguous site definition: http://crm.local",
-			wantErr: "caddy validate: adapting config using caddyfile: ambiguous site definition: http://crm.local",
+				"Error: adapting config using caddyfile: ambiguous site definition: http://crm.lcd",
+			wantErr: "caddy validate: adapting config using caddyfile: ambiguous site definition: http://crm.lcd",
 		},
 		{
 			name: "no error message in stderr", fail: true,

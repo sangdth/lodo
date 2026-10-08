@@ -2,20 +2,20 @@
 
 ## Goal
 
-`lcd` is a small terminal app that manages local `.local` names on macOS through dnsmasq. Each project gets its
+`lcd` is a small terminal app that manages local `.lcd` names on macOS through dnsmasq. Each project gets its
 own loopback address (`127.0.1.x`), so many projects run at once on their standard ports, and each is
 reached by name:
 
 ```text
-flowy.local -> 127.0.1.3 -> 127.0.1.3:5432 (flowy's Postgres), 127.0.1.3:3000 (its Next app)
-crm.local   -> 127.0.1.1 -> 127.0.1.1:5432 (crm's Postgres)
+flowy.lcd -> 127.0.1.3 -> 127.0.1.3:5432 (flowy's Postgres), 127.0.1.3:3000 (its Next app)
+crm.lcd   -> 127.0.1.1 -> 127.0.1.1:5432 (crm's Postgres)
 ```
 
-A project may have subdomains, like `test.crm.local`. Each is a row of its own: it shares the project's address
+A project may have subdomains, like `test.crm.lcd`. Each is a row of its own: it shares the project's address
 by default, or gets its own when it needs its own ports. Subdomains that aren't listed resolve to the parent's
 address anyway, because dnsmasq's `address=` lines and the `/etc/resolver` files both match by suffix.
 
-A row may also carry a port. Then Caddy answers `http://dashboard.crm.local` on port 80 and forwards it to
+A row may also carry a port. Then Caddy answers `http://dashboard.crm.lcd` on port 80 and forwards it to
 `127.0.1.1:3000`, so a monorepo's apps get port-less URLs while every service keeps its own port.
 
 Admin rights are needed once, for `lcd setup`. Adding, editing and removing names never asks for a password.
@@ -33,7 +33,7 @@ Settled 2026-10-08. The steps below follow them.
   `127.0.1.1`–`127.0.1.50`. An own-block address belongs to one project; other addresses may be shared.
 - **Subdomains:** a subdomain is a normal row; the hierarchy is derived from the name, nothing is nested in
   `domains.json`. The form prefills a subdomain with its parent's address. A project is the last two labels
-  (`crm.local`), and any name in a project may share its own-block address. Editing or deleting a parent leaves
+  (`crm.lcd`), and any name in a project may share its own-block address. Editing or deleting a parent leaves
   its subdomains as they are.
 - **Ports:** a row has an optional port. With one, lcd writes a Caddy site
   `http://<name> { reverse_proxy <address>:<port> }` and restarts Caddy as the user. HTTP only; HTTPS stays out.
@@ -50,8 +50,8 @@ Settled 2026-10-08. The steps below follow them.
 ### Settled while building
 
 - **Branch:** `master` already held Sang's first commit, so Phase 0 is committed on `sang-dev`.
-- **Order:** rows sort by their labels read right to left: `crm.local`, `api.crm.local`, `a.api.crm.local`,
-  `test.crm.local`, `flowy.local`. A parent comes right before its subdomains, at any depth.
+- **Order:** rows sort by their labels read right to left: `crm.lcd`, `api.crm.lcd`, `a.api.crm.lcd`,
+  `test.crm.lcd`, `flowy.lcd`. A parent comes right before its subdomains, at any depth.
 - **Port 80 is refused:** Caddy listens there, so a route to it would loop back into Caddy.
 - **Probing is separate from applying:** `system.Apply` changes the system; `check.Env.Probe` checks the names.
   `lcd apply` and the TUI call both. `check` reads `system`'s templates, so `system` can't import `check`.
@@ -65,6 +65,10 @@ Settled 2026-10-08. The steps below follow them.
   `502` with `Server: Caddy` means the app is down; any other `Server: Caddy` answer means Caddy has no site for
   the name.
 - **Charm modules are added in Phase 3,** where the TUI first imports them; `go mod tidy` drops them earlier.
+- **Names end in `.lcd`** (`store.TLD`). The hand test showed macOS 27 sends a name with one label before
+  `.local`, like `flowy.local`, to Bonjour only and ignores its resolver file (`docs/setup-log.md`). `.dev` was
+  ruled out: browsers force HTTPS on all of it (HSTS preload) and `flowy.dev` is a registered domain. `.lcd` is in
+  no public zone today.
 - **Golden files** use `github.com/charmbracelet/x/exp/golden`: `testdata/<TestName>.golden`, `-update` per package.
 - **`apply` refuses before setup:** until the script is installed and Homebrew's dnsmasq.conf includes lcd's,
   `system.Apply` returns `ErrNotSetUp` and changes nothing. Without it, `lcd apply` before setup started a user
@@ -142,15 +146,15 @@ with `sudo brew services start` lives in the system domain, runs as `nobody`, an
 `brew services`; `setup` stops it first.
 
 The generated file holds `log-queries`, `log-facility=/Users/<user>/.config/lcd/dnsmasq.log`, and one
-`address=/<name>/<ip>` line per enabled domain, in the list's order. It has no `local=/local/`, so names lcd doesn't
-know stay with Bonjour.
+`address=/<name>/<ip>` line per enabled domain, in the list's order. Only names with a resolver file
+reach it.
 
 ### One resolver file per domain, written by one root script
 
 macOS sends a name to dnsmasq only when a file in `/etc/resolver/` matches it:
 
 ```text
-# /etc/resolver/flowy.local
+# /etc/resolver/flowy.lcd
 # lcd
 nameserver 127.0.0.1
 port 53535
@@ -187,7 +191,7 @@ A row with a port gets a Caddy site. Caddy listens on port 80 as the user and fo
 ```text
 # ~/.config/lcd/Caddyfile
 # Generated by lcd from domains.json. Edits are overwritten.
-http://dashboard.crm.local {
+http://dashboard.crm.lcd {
 	reverse_proxy 127.0.1.1:3000
 }
 ```
@@ -222,20 +226,20 @@ A failure at any step shows in the status line. The saved file stays as written;
 ```text
  lcd  dnsmasq ● running :53535   loopback ● 50   resolvers ● ok   caddy ● :80
  ─────────────────────────────────────────────────────────────────────────────
-  ● crm.local              127.0.1.1          own    dns ✓
-  ●   dashboard.crm.local  127.0.1.1  :3000   own    dns ✓  http ✓
-  ●   service.crm.local    127.0.1.1  :3002   own    dns ✓  http ✗ 502, app down
-  ● flowy.local            127.0.1.3          own    dns ✓
-  ○ old.local              127.0.0.1                 –
+  ● crm.lcd                127.0.1.1          own    dns ✓
+  ●   dashboard.crm.lcd    127.0.1.1  :3000   own    dns ✓  http ✓
+  ●   service.crm.lcd      127.0.1.1  :3002   own    dns ✓  http ✗ 502, app down
+  ● flowy.lcd              127.0.1.3          own    dns ✓
+  ○ old.lcd                127.0.0.1                 –
  ─────────────────────────────────────────────────────────────────────────────
  a add  e edit  d delete  space on/off  c copy env  l log  r apply  q quit
 ```
 
 ```text
  Add domain
- Name     dashboard.crm.local
- Address  127.0.1.1          crm.local's address; next free own address is 127.0.1.4
- Port     3000               optional; http://dashboard.crm.local then reaches 127.0.1.1:3000
+ Name     dashboard.crm.lcd
+ Address  127.0.1.1          crm.lcd's address; next free own address is 127.0.1.4
+ Port     3000               optional; http://dashboard.crm.lcd then reaches 127.0.1.1:3000
  enter save   esc cancel
 ```
 
@@ -247,7 +251,7 @@ A failure at any step shows in the status line. The saved file stays as written;
   address field stops the prefill. Port is optional; a port when `caddy` isn't installed says
   `brew install caddy`, then `lcd setup`. Edit prefills the stored values. Validation errors show under the
   field.
-- **Delete:** `d` asks `delete flowy.local? y/n` in the status line.
+- **Delete:** `d` asks `delete flowy.lcd? y/n` in the status line.
 - **Copy env** puts `DOCKER_HOST_IP=127.0.1.3` on the clipboard (`pbcopy`).
 - **Log:** a `viewport` tailing `dnsmasq.log`, polled every 500 ms; `l` or `esc` returns.
 - **Status bar:** checks 1, 3, 4 and 8. `caddy` shows `off` when no row has a port. Any red one says "run
@@ -257,11 +261,11 @@ A failure at any step shows in the status line. The saved file stays as written;
 
 ## Rules
 
-- Names: lowercase labels of `[a-z0-9-]`, 1–63 chars, no leading or trailing `-`, ending in `.local`, and not
-  `local` itself. Regex:
-  `^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*\.local$`
+- Names: lowercase labels of `[a-z0-9-]`, 1–63 chars, no leading or trailing `-`, ending in `.lcd`, and not
+  `lcd` itself. Regex:
+  `^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*\.lcd$`
 - Names are unique.
-- A project is the last two labels of a name: `crm.local`, `test.crm.local` and `api.crm.local` are one
+- A project is the last two labels of a name: `crm.lcd`, `test.crm.lcd` and `api.crm.lcd` are one
   project. Rows sort by their labels read right to left, so a parent comes right before its subdomains.
 - Addresses: IPv4 inside `127.0.0.0/8`. `127.0.1.1`–`127.0.1.50` is the own block. An own-block address belongs
   to one project; any name in that project may share it. Every other address may be shared by anyone.
@@ -271,7 +275,7 @@ A failure at any step shows in the status line. The saved file stays as written;
   needs Caddy installed and set up.
 - Turning a subdomain off removes its own lines only. While its parent is on, the parent's lines still answer
   for it.
-- Editing or deleting a row never changes other rows: moving `crm.local` leaves `test.crm.local` where it is.
+- Editing or deleting a row never changes other rows: moving `crm.lcd` leaves `test.crm.lcd` where it is.
 - Deleting a domain frees its address.
 - `lcd` refuses to start the TUI when checks 1–5 fail, and prints them.
 
@@ -380,14 +384,14 @@ Each step ends with `go test -race ./...`, `go vet ./...` and `gofmt -l .` clean
 
 Tests for Phase 1:
 
-- `store`: names accept `flowy.local`, `a-b.dev.local`; reject `local`, `.local`, `X.LOCAL`, `x.com`,
-  `../x.local`, `x.local\nfoo`, `-x.local`, a 64-char label. Addresses accept `127.0.0.1`, `127.0.1.3`;
+- `store`: names accept `flowy.lcd`, `a-b.dev.lcd`; reject `lcd`, `.lcd`, `X.LCD`, `x.com`, `flowy.local`,
+  `../x.lcd`, `x.lcd\nfoo`, `-x.lcd`, a 64-char label. Addresses accept `127.0.0.1`, `127.0.1.3`;
   reject `10.0.0.1`, `::1`, `127.0.1`, `abc`. Ports accept empty (none), `1`, `3000`, `65535`; reject `0`,
   `70000`, `abc`. `NextFree`: empty gives `.1`; `.1,.2` gives `.3`; a gap gives the
   gap; 50 taken gives `ErrBlockFull`. `Add` rejects a duplicate name and an own address held by another
-  project; it allows `test.crm.local` at `crm.local`'s address, at its own free address, and two `127.0.0.1`.
-  `Parent` of `a.test.crm.local` is `test.crm.local` when it and `crm.local` are listed, and none when neither
-  is. `Sort` puts `crm.local` before `test.crm.local` before `flowy.local`. `Remove` frees the address. `Save`
+  project; it allows `test.crm.lcd` at `crm.lcd`'s address, at its own free address, and two `127.0.0.1`.
+  `Parent` of `a.test.crm.lcd` is `test.crm.lcd` when it and `crm.lcd` are listed, and none when neither
+  is. `Sort` puts `crm.lcd` before `test.crm.lcd` before `flowy.lcd`. `Remove` frees the address. `Save`
   then `Load` round-trips and leaves no temp file.
 - `dnsmasq`: golden files `testdata/dnsmasq.conf.golden` and `testdata/resolvers.golden` (disabled domains
   left out, sorted, one subdomain sharing its parent's address and one with its own; dnsmasq answers from the
@@ -437,12 +441,12 @@ Commit: `feat: domain store, generated configs, caddyfile and resolver script`.
   `ifconfig lo0 -alias 127.0.1.$i` for 1–50, remove sudoers and the script. Keep `~/.config/lcd`. Print the
   `sudo brew services start dnsmasq` hint.
 - **2.5 `cmd/lcd`:** wire `setup`, `apply`, `doctor` (table, exit 1 on any failure) and `uninstall`.
-- **2.6 Hand test on this Mac, Sang present:** `go run ./cmd/lcd setup`; `doctor`; add `flowy.local` and
-  `test.flowy.local`, both `127.0.1.3`, to `domains.json` by hand; `apply`; `time dscacheutil -q host -a name`
-  for `flowy.local`, `test.flowy.local` and the unlisted `foo.flowy.local` (all `127.0.1.3`, which proves suffix
-  matching on both sides); `ifconfig lo0 | grep 127.0.1`. Then ports: add `dashboard.flowy.local`,
+- **2.6 Hand test on this Mac, Sang present:** `go run ./cmd/lcd setup`; `doctor`; add `flowy.lcd` and
+  `test.flowy.lcd`, both `127.0.1.3`, to `domains.json` by hand; `apply`; `time dscacheutil -q host -a name`
+  for `flowy.lcd`, `test.flowy.lcd` and the unlisted `foo.flowy.lcd` (all `127.0.1.3`, which proves suffix
+  matching on both sides); `ifconfig lo0 | grep 127.0.1`. Then ports: add `dashboard.flowy.lcd`,
   `127.0.1.3`, port 3000; `apply`; in another terminal `python3 -m http.server 3000 --bind 127.0.1.3`;
-  `curl -s http://dashboard.flowy.local/ | head -3` shows the listing; stop the server, `apply` reports
+  `curl -s http://dashboard.flowy.lcd/ | head -3` shows the listing; stop the server, `apply` reports
   `http ✗ 502`. Then `uninstall`; `doctor` (expect failures); `setup` again. Record the output in
   `docs/setup-log.md`.
 
@@ -521,8 +525,9 @@ Commit: `feat: dnsmasq log view`.
 | 6.2  | `CLAUDE.md` final pass, under 200 lines                                                                |
 | 6.3  | `.github/workflows/ci.yml` like randomport's, plus `go test -race ./...`, on `macos-latest`            |
 | 6.4  | `opscom/flowy`: branch `sang-dev`; shrink "Local services on their own address" to the address table, |
-|      | `lcd` install and `lcd setup`, "add `flowy.local` with `127.0.1.3`", and the `.env` note. Own commit   |
-|      | `docs: point local network setup at lcd`. Search the flowy Linear project for a matching ticket first  |
+|      | `lcd` install and `lcd setup`, "add `flowy.lcd` with `127.0.1.3`", and the `.env` note; move          |
+|      | `.env.example` hosts from `flowy.local` to `flowy.lcd`. Own commit                                    |
+|      | `docs: point local network setup at lcd`. Search the flowy Linear project for a matching ticket first |
 
 ## Tests
 
@@ -536,12 +541,11 @@ Commit: `feat: dnsmasq log view`.
 
 ## Risks
 
-- **Per-name resolver files under `.local` on macOS 27.** The flowy README recipe relied on it; the Phase 2
-  hand test is the proof. If macOS ignores them, the fallback is `/etc/resolver/local` plus `local=/local/`,
-  which takes every `.local` name from Bonjour.
+- **ICANN could create `.lcd`.** Its 2026 round of new top-level domains is open. Only the names lcd lists would
+  be shadowed, because each has its own resolver file.
 - **Someone runs `sudo brew services start dnsmasq` again.** The root job comes back and shadows lcd's.
   Doctor check 1 names it; `setup` fixes it.
-- **A VPN that captures DNS.** Cloudflare WARP and NordVPN helpers are installed here. When one is on, `.local`
+- **A VPN that captures DNS.** Cloudflare WARP and NordVPN helpers are installed here. When one is on, `.lcd`
   lookups may skip `/etc/resolver`. Troubleshooting line; nothing lcd can do.
 - **Bad sudoers file locks `sudo`.** `visudo -cf` runs on the temp file and install happens only when it passes.
 - **Docker Desktop binding to `127.0.1.x`.** The flowy compose file proves it after the hand test; lcd only
@@ -556,17 +560,18 @@ Commit: `feat: dnsmasq log view`.
 - `cannot assign requested address` from Docker: the loopback job didn't run. Run `lcd doctor`.
 - `sudo: a password is required` in the TUI: the sudoers rule is missing or the script changed. `lcd doctor`
   check 4, then `lcd setup`.
-- `dig flowy.local` finds nothing: expected. `dig` and `nslookup` skip `/etc/resolver`; Node, `psql` and
-  browsers use it. Test with `dscacheutil -q host -a name flowy.local`.
-- About 5 s per lookup: the resolver file is missing, so macOS asked Bonjour. `lcd doctor` check 4.
-- `foo.crm.local` resolves although it isn't listed: expected. dnsmasq's `address=` and the resolver file both
+- `dig flowy.lcd` finds nothing: expected. `dig` and `nslookup` skip `/etc/resolver`; Node, `psql` and
+  browsers use it. Test with `dscacheutil -q host -a name flowy.lcd`.
+- A name isn't found right after adding it: the resolver file is missing, so macOS asked the public DNS servers.
+  `lcd doctor` check 4.
+- `foo.crm.lcd` resolves although it isn't listed: expected. dnsmasq's `address=` and the resolver file both
   match subdomains. Add a row only to give it another address or a port.
-- `502 Bad Gateway` on `http://dashboard.crm.local`: Caddy is up but nothing listens on `127.0.1.1:3000`. Next
+- `502 Bad Gateway` on `http://dashboard.crm.lcd`: Caddy is up but nothing listens on `127.0.1.1:3000`. Next
   binds every address by default; Vite needs `--host 127.0.1.1`; Docker ports bind `DOCKER_HOST_IP`.
-- `http://dashboard.crm.local` refuses the connection: Caddy isn't running or port 80 is taken. `lcd doctor`
+- `http://dashboard.crm.lcd` refuses the connection: Caddy isn't running or port 80 is taken. `lcd doctor`
   check 8.
 - Names resolve for one app but not another: a VPN or WARP is capturing DNS.
-- Containers can't reach `flowy.local`: they don't need to. Inside Docker they use the service name.
+- Containers can't reach `flowy.lcd`: they don't need to. Inside Docker they use the service name.
 - The log view shows no queries: the lookup never reached dnsmasq. Check 4 (resolver file) or the VPN line.
 
 ## Out of scope for v1

@@ -24,8 +24,8 @@ import (
 // crm has no port; dashboard has one and the address the test's stand-in for
 // Caddy listens on.
 var (
-	crm       = store.Domain{Name: "crm.local", Address: "127.0.1.1", Enabled: true}
-	dashboard = store.Domain{Name: "dashboard.crm.local", Address: "127.0.0.1", Port: 3000, Enabled: true}
+	crm       = store.Domain{Name: "crm.lcd", Address: "127.0.1.1", Enabled: true}
+	dashboard = store.Domain{Name: "dashboard.crm.lcd", Address: "127.0.0.1", Port: 3000, Enabled: true}
 )
 
 func TestResult_OK(t *testing.T) {
@@ -70,97 +70,97 @@ func TestEnv_Probe(t *testing.T) {
 		{
 			name: "every probe passes, in store order, without disabled domains",
 			domains: []store.Domain{
-				{Name: "flowy.local", Address: "127.0.1.3", Enabled: true},
+				{Name: "flowy.lcd", Address: "127.0.1.3", Enabled: true},
 				dashboard,
-				{Name: "old.local", Address: "127.0.1.2"},
+				{Name: "old.lcd", Address: "127.0.1.2"},
 				crm,
 			},
 			want: []check.Result{
-				{Name: "crm.local", Address: "127.0.1.1", Direct: true, System: true},
-				{Name: "dashboard.crm.local", Address: "127.0.0.1", Port: 3000, Direct: true, System: true, HTTP: true},
-				{Name: "flowy.local", Address: "127.0.1.3", Direct: true, System: true},
+				{Name: "crm.lcd", Address: "127.0.1.1", Direct: true, System: true},
+				{Name: "dashboard.crm.lcd", Address: "127.0.0.1", Port: 3000, Direct: true, System: true, HTTP: true},
+				{Name: "flowy.lcd", Address: "127.0.1.3", Direct: true, System: true},
 			},
 		},
 		{
 			name:    "dnsmasq answers another address",
 			domains: []store.Domain{crm},
-			dns:     map[string]string{"crm.local": "127.0.1.9"},
+			dns:     map[string]string{"crm.lcd": "127.0.1.9"},
 			timeout: 300 * time.Millisecond,
 			want: []check.Result{
-				{Name: "crm.local", Address: "127.0.1.1", System: true, Detail: "dnsmasq: answered 127.0.1.9, want 127.0.1.1"},
+				{Name: "crm.lcd", Address: "127.0.1.1", System: true, Detail: "dnsmasq: answered 127.0.1.9, want 127.0.1.1"},
 			},
 		},
 		{
 			name:    "dnsmasq does not know the name",
 			domains: []store.Domain{crm},
-			dns:     map[string]string{"crm.local": ""},
+			dns:     map[string]string{"crm.lcd": ""},
 			timeout: 300 * time.Millisecond,
-			want:    []check.Result{{Name: "crm.local", Address: "127.0.1.1", System: true, Detail: "dnsmasq: no answer"}},
+			want:    []check.Result{{Name: "crm.lcd", Address: "127.0.1.1", System: true, Detail: "dnsmasq: no answer"}},
 		},
 		{
 			name:    "dnsmasq is down",
 			domains: []store.Domain{crm},
 			dnsDown: true,
 			timeout: 300 * time.Millisecond,
-			want:    []check.Result{{Name: "crm.local", Address: "127.0.1.1", System: true, Detail: "dnsmasq: no answer"}},
+			want:    []check.Result{{Name: "crm.lcd", Address: "127.0.1.1", System: true, Detail: "dnsmasq: no answer"}},
 		},
 		{
 			name:    "macOS has no address",
 			domains: []store.Domain{crm},
-			macOS:   map[string]string{"crm.local": ""},
-			want:    []check.Result{{Name: "crm.local", Address: "127.0.1.1", Direct: true, Detail: "macOS: no address"}},
+			macOS:   map[string]string{"crm.lcd": ""},
+			want:    []check.Result{{Name: "crm.lcd", Address: "127.0.1.1", Direct: true, Detail: "macOS: no address"}},
 		},
 		{
 			name:    "macOS resolves to other addresses",
 			domains: []store.Domain{crm},
-			macOS:   map[string]string{"crm.local": macOSOutput("crm.local", "127.0.1.9", "127.0.1.8")},
+			macOS:   map[string]string{"crm.lcd": macOSOutput("crm.lcd", "127.0.1.9", "127.0.1.8")},
 			want: []check.Result{
-				{Name: "crm.local", Address: "127.0.1.1", Direct: true, Detail: "macOS: 127.0.1.9, 127.0.1.8, want 127.0.1.1"},
+				{Name: "crm.lcd", Address: "127.0.1.1", Direct: true, Detail: "macOS: 127.0.1.9, 127.0.1.8, want 127.0.1.1"},
 			},
 		},
 		{
 			name:    "the hosts file maps the name elsewhere",
 			domains: []store.Domain{crm},
-			hosts:   "127.0.0.1\tlocalhost\n# old setup\n127.0.0.1 crm.local api.crm.local\n",
-			dns:     map[string]string{"crm.local": "127.0.0.1"},
-			macOS:   map[string]string{"crm.local": macOSOutput("crm.local", "127.0.0.1")},
+			hosts:   "127.0.0.1\tlocalhost\n# old setup\n127.0.0.1 crm.lcd api.crm.lcd\n",
+			dns:     map[string]string{"crm.lcd": "127.0.0.1"},
+			macOS:   map[string]string{"crm.lcd": macOSOutput("crm.lcd", "127.0.0.1")},
 			timeout: 300 * time.Millisecond,
 			want: []check.Result{
-				{Name: "crm.local", Address: "127.0.1.1", Detail: "{hosts} maps crm.local to 127.0.0.1: remove that line"},
+				{Name: "crm.lcd", Address: "127.0.1.1", Detail: "{hosts} maps crm.lcd to 127.0.0.1: remove that line"},
 			},
 		},
 		{
 			name:    "a hosts entry that agrees changes nothing",
 			domains: []store.Domain{crm},
-			hosts:   "127.0.1.1 crm.local\n",
-			macOS:   map[string]string{"crm.local": ""},
-			want:    []check.Result{{Name: "crm.local", Address: "127.0.1.1", Direct: true, Detail: "macOS: no address"}},
+			hosts:   "127.0.1.1 crm.lcd\n",
+			macOS:   map[string]string{"crm.lcd": ""},
+			want:    []check.Result{{Name: "crm.lcd", Address: "127.0.1.1", Direct: true, Detail: "macOS: no address"}},
 		},
 		{
 			name:    "a commented-out hosts entry is ignored",
 			domains: []store.Domain{crm},
-			hosts:   "# 127.0.0.1 crm.local\n",
-			macOS:   map[string]string{"crm.local": ""},
-			want:    []check.Result{{Name: "crm.local", Address: "127.0.1.1", Direct: true, Detail: "macOS: no address"}},
+			hosts:   "# 127.0.0.1 crm.lcd\n",
+			macOS:   map[string]string{"crm.lcd": ""},
+			want:    []check.Result{{Name: "crm.lcd", Address: "127.0.1.1", Direct: true, Detail: "macOS: no address"}},
 		},
 		{
 			name:    "macOS lists the address among others",
 			domains: []store.Domain{crm},
-			macOS:   map[string]string{"crm.local": "name: crm.local\nipv6_address: ::1\nip_address: 127.0.1.9\nip_address: 127.0.1.1\n\n"},
-			want:    []check.Result{{Name: "crm.local", Address: "127.0.1.1", Direct: true, System: true}},
+			macOS:   map[string]string{"crm.lcd": "name: crm.lcd\nipv6_address: ::1\nip_address: 127.0.1.9\nip_address: 127.0.1.1\n\n"},
+			want:    []check.Result{{Name: "crm.lcd", Address: "127.0.1.1", Direct: true, System: true}},
 		},
 		{
 			name:    "caddy reached an app that answered 500",
 			domains: []store.Domain{dashboard},
 			caddy:   respond(http.StatusInternalServerError, "Server", "Caddy", "Via", "1.1 Caddy"),
-			want:    []check.Result{{Name: "dashboard.crm.local", Address: "127.0.0.1", Port: 3000, Direct: true, System: true, HTTP: true}},
+			want:    []check.Result{{Name: "dashboard.crm.lcd", Address: "127.0.0.1", Port: 3000, Direct: true, System: true, HTTP: true}},
 		},
 		{
 			name:    "app down",
 			domains: []store.Domain{dashboard},
 			caddy:   respond(http.StatusBadGateway, "Server", "Caddy"),
 			want: []check.Result{{
-				Name: "dashboard.crm.local", Address: "127.0.0.1", Port: 3000, Direct: true, System: true,
+				Name: "dashboard.crm.lcd", Address: "127.0.0.1", Port: 3000, Direct: true, System: true,
 				Detail: "app down: nothing answers on 127.0.0.1:3000",
 			}},
 		},
@@ -169,17 +169,17 @@ func TestEnv_Probe(t *testing.T) {
 			domains: []store.Domain{dashboard},
 			caddy:   respond(http.StatusOK, "Server", "Caddy"),
 			want: []check.Result{{
-				Name: "dashboard.crm.local", Address: "127.0.0.1", Port: 3000, Direct: true, System: true,
-				Detail: "caddy has no site for dashboard.crm.local: run lcd apply",
+				Name: "dashboard.crm.lcd", Address: "127.0.0.1", Port: 3000, Direct: true, System: true,
+				Detail: "caddy has no site for dashboard.crm.lcd: run lcd apply",
 			}},
 		},
 		{
 			name:    "a redirect to https is not followed",
 			domains: []store.Domain{dashboard},
-			caddy:   respond(http.StatusPermanentRedirect, "Server", "Caddy", "Location", "https://dashboard.crm.local/"),
+			caddy:   respond(http.StatusPermanentRedirect, "Server", "Caddy", "Location", "https://dashboard.crm.lcd/"),
 			want: []check.Result{{
-				Name: "dashboard.crm.local", Address: "127.0.0.1", Port: 3000, Direct: true, System: true,
-				Detail: "caddy has no site for dashboard.crm.local: run lcd apply",
+				Name: "dashboard.crm.lcd", Address: "127.0.0.1", Port: 3000, Direct: true, System: true,
+				Detail: "caddy has no site for dashboard.crm.lcd: run lcd apply",
 			}},
 		},
 		{
@@ -187,7 +187,7 @@ func TestEnv_Probe(t *testing.T) {
 			domains: []store.Domain{dashboard},
 			caddy:   respond(http.StatusOK, "Server", "nginx/1.27.0"),
 			want: []check.Result{{
-				Name: "dashboard.crm.local", Address: "127.0.0.1", Port: 3000, Direct: true, System: true,
+				Name: "dashboard.crm.lcd", Address: "127.0.0.1", Port: 3000, Direct: true, System: true,
 				Detail: "port {port} on 127.0.0.1 answered by nginx/1.27.0, not Caddy",
 			}},
 		},
@@ -196,7 +196,7 @@ func TestEnv_Probe(t *testing.T) {
 			domains: []store.Domain{dashboard},
 			caddy:   respond(http.StatusNotFound),
 			want: []check.Result{{
-				Name: "dashboard.crm.local", Address: "127.0.0.1", Port: 3000, Direct: true, System: true,
+				Name: "dashboard.crm.lcd", Address: "127.0.0.1", Port: 3000, Direct: true, System: true,
 				Detail: "port {port} on 127.0.0.1 answered by something, not Caddy",
 			}},
 		},
@@ -206,19 +206,19 @@ func TestEnv_Probe(t *testing.T) {
 			caddyDown: true,
 			timeout:   300 * time.Millisecond,
 			want: []check.Result{{
-				Name: "dashboard.crm.local", Address: "127.0.0.1", Port: 3000, Direct: true, System: true,
+				Name: "dashboard.crm.lcd", Address: "127.0.0.1", Port: 3000, Direct: true, System: true,
 				Detail: "nothing answers on 127.0.0.1:{port}: is Caddy running?",
 			}},
 		},
 		{
 			name:      "every probe fails",
 			domains:   []store.Domain{dashboard},
-			dns:       map[string]string{"dashboard.crm.local": "127.0.1.9"},
-			macOS:     map[string]string{"dashboard.crm.local": ""},
+			dns:       map[string]string{"dashboard.crm.lcd": "127.0.1.9"},
+			macOS:     map[string]string{"dashboard.crm.lcd": ""},
 			caddyDown: true,
 			timeout:   300 * time.Millisecond,
 			want: []check.Result{{
-				Name: "dashboard.crm.local", Address: "127.0.0.1", Port: 3000,
+				Name: "dashboard.crm.lcd", Address: "127.0.0.1", Port: 3000,
 				Detail: "dnsmasq: answered 127.0.1.9, want 127.0.0.1; macOS: no address; nothing answers on 127.0.0.1:{port}: is Caddy running?",
 			}},
 		},
@@ -295,12 +295,12 @@ func TestEnv_Probe_HTTPRequest(t *testing.T) {
 	})
 
 	got := e.Probe(t.Context(), []store.Domain{dashboard})
-	if len(got) != 1 || got[0].Detail != "caddy has no site for dashboard.crm.local: run lcd apply" {
+	if len(got) != 1 || got[0].Detail != "caddy has no site for dashboard.crm.lcd: run lcd apply" {
 		t.Errorf("Probe = %+v, want caddy's own redirect read as no site", got)
 	}
 	mu.Lock()
 	defer mu.Unlock()
-	if want := []string{"GET dashboard.crm.local /"}; !slices.Equal(requests, want) {
+	if want := []string{"GET dashboard.crm.lcd /"}; !slices.Equal(requests, want) {
 		t.Errorf("requests = %q, want %q", requests, want)
 	}
 }
@@ -361,9 +361,9 @@ func TestEnv_Probe_DomainsAtOnce(t *testing.T) {
 	t.Parallel()
 
 	domains := []store.Domain{
-		{Name: "a.local", Address: "127.0.0.1", Port: 3000, Enabled: true},
-		{Name: "b.local", Address: "127.0.0.1", Port: 3001, Enabled: true},
-		{Name: "c.local", Address: "127.0.0.1", Port: 3002, Enabled: true},
+		{Name: "a.lcd", Address: "127.0.0.1", Port: 3000, Enabled: true},
+		{Name: "b.lcd", Address: "127.0.0.1", Port: 3001, Enabled: true},
+		{Name: "c.lcd", Address: "127.0.0.1", Port: 3002, Enabled: true},
 	}
 	const n = 3
 	e, fake := newProbeEnv(t)

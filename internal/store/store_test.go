@@ -20,26 +20,27 @@ func TestValidateName(t *testing.T) {
 		in      string
 		wantMsg string // empty means valid
 	}{
-		{name: "project", in: "flowy.local"},
-		{name: "hyphen and subdomain", in: "a-b.dev.local"},
-		{name: "deep subdomain", in: "a.test.crm.local"},
-		{name: "digits", in: "web2.local"},
-		{name: "63-char label", in: strings.Repeat("a", 63) + ".local"},
+		{name: "project", in: "flowy.lcd"},
+		{name: "hyphen and subdomain", in: "a-b.dev.lcd"},
+		{name: "deep subdomain", in: "a.test.crm.lcd"},
+		{name: "digits", in: "web2.lcd"},
+		{name: "63-char label", in: strings.Repeat("a", 63) + ".lcd"},
 		{name: "empty", in: "", wantMsg: "name is empty"},
-		{name: "bare tld", in: "local", wantMsg: "name must end in .local"},
-		{name: "dot local", in: ".local", wantMsg: "name needs a label before .local"},
-		{name: "uppercase", in: "X.LOCAL", wantMsg: "name must be lowercase"},
-		{name: "other tld", in: "x.com", wantMsg: "name must end in .local"},
-		{name: "path traversal", in: "../x.local", wantMsg: "name may use only a-z, 0-9 and '-' inside labels of 1-63 characters"},
-		{name: "embedded newline", in: "x.local\nfoo", wantMsg: "name must end in .local"},
-		{name: "newline before suffix", in: "x\n.local", wantMsg: "name may use only a-z, 0-9 and '-' inside labels of 1-63 characters"},
-		{name: "leading hyphen", in: "-x.local", wantMsg: "name may use only a-z, 0-9 and '-' inside labels of 1-63 characters"},
-		{name: "trailing hyphen", in: "x-.local", wantMsg: "name may use only a-z, 0-9 and '-' inside labels of 1-63 characters"},
-		{name: "empty label", in: "a..local", wantMsg: "name may use only a-z, 0-9 and '-' inside labels of 1-63 characters"},
-		{name: "64-char label", in: strings.Repeat("a", 64) + ".local", wantMsg: "name may use only a-z, 0-9 and '-' inside labels of 1-63 characters"},
-		{name: "space", in: "a b.local", wantMsg: "name may use only a-z, 0-9 and '-' inside labels of 1-63 characters"},
-		{name: "underscore", in: "a_b.local", wantMsg: "name may use only a-z, 0-9 and '-' inside labels of 1-63 characters"},
-		{name: "too long", in: strings.Repeat("abcdefgh.", 28) + "local", wantMsg: "name is longer than 253 characters"},
+		{name: "bare tld", in: "lcd", wantMsg: "name must end in .lcd"},
+		{name: "dot lcd", in: ".lcd", wantMsg: "name needs a label before .lcd"},
+		{name: "uppercase", in: "X.LCD", wantMsg: "name must be lowercase"},
+		{name: "other tld", in: "x.com", wantMsg: "name must end in .lcd"},
+		{name: "bonjour's tld", in: "flowy.local", wantMsg: "name must end in .lcd"},
+		{name: "path traversal", in: "../x.lcd", wantMsg: "name may use only a-z, 0-9 and '-' inside labels of 1-63 characters"},
+		{name: "embedded newline", in: "x.lcd\nfoo", wantMsg: "name must end in .lcd"},
+		{name: "newline before suffix", in: "x\n.lcd", wantMsg: "name may use only a-z, 0-9 and '-' inside labels of 1-63 characters"},
+		{name: "leading hyphen", in: "-x.lcd", wantMsg: "name may use only a-z, 0-9 and '-' inside labels of 1-63 characters"},
+		{name: "trailing hyphen", in: "x-.lcd", wantMsg: "name may use only a-z, 0-9 and '-' inside labels of 1-63 characters"},
+		{name: "empty label", in: "a..lcd", wantMsg: "name may use only a-z, 0-9 and '-' inside labels of 1-63 characters"},
+		{name: "64-char label", in: strings.Repeat("a", 64) + ".lcd", wantMsg: "name may use only a-z, 0-9 and '-' inside labels of 1-63 characters"},
+		{name: "space", in: "a b.lcd", wantMsg: "name may use only a-z, 0-9 and '-' inside labels of 1-63 characters"},
+		{name: "underscore", in: "a_b.lcd", wantMsg: "name may use only a-z, 0-9 and '-' inside labels of 1-63 characters"},
+		{name: "too long", in: strings.Repeat("abcdefgh.", 28) + "lcd", wantMsg: "name is longer than 253 characters"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -166,9 +167,9 @@ func TestProject(t *testing.T) {
 		in   string
 		want string
 	}{
-		{name: "project itself", in: "crm.local", want: "crm.local"},
-		{name: "subdomain", in: "test.crm.local", want: "crm.local"},
-		{name: "deep subdomain", in: "a.b.crm.local", want: "crm.local"},
+		{name: "project itself", in: "crm.lcd", want: "crm.lcd"},
+		{name: "subdomain", in: "test.crm.lcd", want: "crm.lcd"},
+		{name: "deep subdomain", in: "a.b.crm.lcd", want: "crm.lcd"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -190,11 +191,11 @@ func TestParent(t *testing.T) {
 		want     string
 		wantOkay bool
 	}{
-		{name: "nearest listed suffix", listed: []string{"crm.local", "test.crm.local"}, in: "a.test.crm.local", want: "test.crm.local", wantOkay: true},
-		{name: "skips a gap", listed: []string{"crm.local"}, in: "a.test.crm.local", want: "crm.local", wantOkay: true},
-		{name: "none listed", listed: []string{"flowy.local"}, in: "a.test.crm.local", wantOkay: false},
-		{name: "not a label boundary", listed: []string{"rm.local"}, in: "crm.local", wantOkay: false},
-		{name: "itself is not its parent", listed: []string{"crm.local"}, in: "crm.local", wantOkay: false},
+		{name: "nearest listed suffix", listed: []string{"crm.lcd", "test.crm.lcd"}, in: "a.test.crm.lcd", want: "test.crm.lcd", wantOkay: true},
+		{name: "skips a gap", listed: []string{"crm.lcd"}, in: "a.test.crm.lcd", want: "crm.lcd", wantOkay: true},
+		{name: "none listed", listed: []string{"flowy.lcd"}, in: "a.test.crm.lcd", wantOkay: false},
+		{name: "not a label boundary", listed: []string{"rm.lcd"}, in: "crm.lcd", wantOkay: false},
+		{name: "itself is not its parent", listed: []string{"crm.lcd"}, in: "crm.lcd", wantOkay: false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -216,7 +217,7 @@ func TestNextFree(t *testing.T) {
 
 	full := make([]store.Domain, 0, store.OwnLast)
 	for i := store.OwnFirst; i <= store.OwnLast; i++ {
-		full = append(full, store.Domain{Name: fmt.Sprintf("p%d.local", i), Address: store.OwnAddress(i)})
+		full = append(full, store.Domain{Name: fmt.Sprintf("p%d.lcd", i), Address: store.OwnAddress(i)})
 	}
 	tests := []struct {
 		name    string
@@ -236,7 +237,7 @@ func TestNextFree(t *testing.T) {
 			t.Parallel()
 			domains := tt.in
 			for i, a := range tt.used {
-				domains = append(domains, store.Domain{Name: fmt.Sprintf("d%d.local", i), Address: a})
+				domains = append(domains, store.Domain{Name: fmt.Sprintf("d%d.lcd", i), Address: a})
 			}
 			got, err := store.NextFree(domains)
 			if !errors.Is(err, tt.wantErr) {
@@ -252,13 +253,13 @@ func TestNextFree(t *testing.T) {
 func TestSort(t *testing.T) {
 	t.Parallel()
 
-	in := domains("flowy.local", "test.crm.local", "a.api.crm.local", "crm.local", "api.crm.local", "b.local")
-	want := []string{"b.local", "crm.local", "api.crm.local", "a.api.crm.local", "test.crm.local", "flowy.local"}
+	in := domains("flowy.lcd", "test.crm.lcd", "a.api.crm.lcd", "crm.lcd", "api.crm.lcd", "b.lcd")
+	want := []string{"b.lcd", "crm.lcd", "api.crm.lcd", "a.api.crm.lcd", "test.crm.lcd", "flowy.lcd"}
 	got := names(store.Sort(in))
 	if !slices.Equal(got, want) {
 		t.Errorf("Sort = %q, want %q", got, want)
 	}
-	if names(in)[0] != "flowy.local" {
+	if names(in)[0] != "flowy.lcd" {
 		t.Error("Sort changed its input")
 	}
 }
@@ -273,18 +274,18 @@ func TestValidate(t *testing.T) {
 	}{
 		{name: "empty", in: nil},
 		{name: "project and subdomains share", in: []store.Domain{
-			{Name: "crm.local", Address: "127.0.1.1"},
-			{Name: "dashboard.crm.local", Address: "127.0.1.1", Port: 3000},
+			{Name: "crm.lcd", Address: "127.0.1.1"},
+			{Name: "dashboard.crm.lcd", Address: "127.0.1.1", Port: 3000},
 		}},
-		{name: "bad entry named", in: []store.Domain{{Name: "X.local", Address: "127.0.0.1"}}, wantErr: `"X.local": name must be lowercase`},
+		{name: "bad entry named", in: []store.Domain{{Name: "X.lcd", Address: "127.0.0.1"}}, wantErr: `"X.lcd": name must be lowercase`},
 		{name: "duplicate", in: []store.Domain{
-			{Name: "crm.local", Address: "127.0.1.1"},
-			{Name: "crm.local", Address: "127.0.1.2"},
-		}, wantErr: `"crm.local": crm.local is already listed`},
+			{Name: "crm.lcd", Address: "127.0.1.1"},
+			{Name: "crm.lcd", Address: "127.0.1.2"},
+		}, wantErr: `"crm.lcd": crm.lcd is already listed`},
 		{name: "own address across projects", in: []store.Domain{
-			{Name: "crm.local", Address: "127.0.1.1"},
-			{Name: "flowy.local", Address: "127.0.1.1"},
-		}, wantErr: `"flowy.local": 127.0.1.1 belongs to crm.local`},
+			{Name: "crm.lcd", Address: "127.0.1.1"},
+			{Name: "flowy.lcd", Address: "127.0.1.1"},
+		}, wantErr: `"flowy.lcd": 127.0.1.1 belongs to crm.lcd`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -301,9 +302,9 @@ func TestAdd(t *testing.T) {
 	t.Parallel()
 
 	base := []store.Domain{
-		{Name: "crm.local", Address: "127.0.1.1", Enabled: true},
-		{Name: "flowy.local", Address: "127.0.1.3", Enabled: true},
-		{Name: "old.local", Address: "127.0.0.1"},
+		{Name: "crm.lcd", Address: "127.0.1.1", Enabled: true},
+		{Name: "flowy.lcd", Address: "127.0.1.3", Enabled: true},
+		{Name: "old.lcd", Address: "127.0.0.1"},
 	}
 	tests := []struct {
 		name      string
@@ -311,14 +312,14 @@ func TestAdd(t *testing.T) {
 		wantField string
 		wantMsg   string
 	}{
-		{name: "subdomain shares its project's address", add: store.Domain{Name: "test.crm.local", Address: "127.0.1.1"}},
-		{name: "subdomain takes its own address", add: store.Domain{Name: "test.crm.local", Address: "127.0.1.4"}},
-		{name: "two share localhost", add: store.Domain{Name: "new.local", Address: "127.0.0.1"}},
-		{name: "subdomain with a port", add: store.Domain{Name: "dashboard.crm.local", Address: "127.0.1.1", Port: 3000}},
-		{name: "duplicate name", add: store.Domain{Name: "crm.local", Address: "127.0.1.9"}, wantField: store.FieldName, wantMsg: "crm.local is already listed"},
-		{name: "another project's address", add: store.Domain{Name: "web.local", Address: "127.0.1.3"}, wantField: store.FieldAddress, wantMsg: "127.0.1.3 belongs to flowy.local"},
-		{name: "subdomain of another project", add: store.Domain{Name: "api.web.local", Address: "127.0.1.1"}, wantField: store.FieldAddress, wantMsg: "127.0.1.1 belongs to crm.local"},
-		{name: "bad port", add: store.Domain{Name: "api.crm.local", Address: "127.0.1.1", Port: 80}, wantField: store.FieldPort, wantMsg: "port 80 is where Caddy listens; use the app's own port"},
+		{name: "subdomain shares its project's address", add: store.Domain{Name: "test.crm.lcd", Address: "127.0.1.1"}},
+		{name: "subdomain takes its own address", add: store.Domain{Name: "test.crm.lcd", Address: "127.0.1.4"}},
+		{name: "two share localhost", add: store.Domain{Name: "new.lcd", Address: "127.0.0.1"}},
+		{name: "subdomain with a port", add: store.Domain{Name: "dashboard.crm.lcd", Address: "127.0.1.1", Port: 3000}},
+		{name: "duplicate name", add: store.Domain{Name: "crm.lcd", Address: "127.0.1.9"}, wantField: store.FieldName, wantMsg: "crm.lcd is already listed"},
+		{name: "another project's address", add: store.Domain{Name: "web.lcd", Address: "127.0.1.3"}, wantField: store.FieldAddress, wantMsg: "127.0.1.3 belongs to flowy.lcd"},
+		{name: "subdomain of another project", add: store.Domain{Name: "api.web.lcd", Address: "127.0.1.1"}, wantField: store.FieldAddress, wantMsg: "127.0.1.1 belongs to crm.lcd"},
+		{name: "bad port", add: store.Domain{Name: "api.crm.lcd", Address: "127.0.1.1", Port: 80}, wantField: store.FieldPort, wantMsg: "port 80 is where Caddy listens; use the app's own port"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -345,48 +346,48 @@ func TestUpdate(t *testing.T) {
 	t.Parallel()
 
 	base := []store.Domain{
-		{Name: "crm.local", Address: "127.0.1.1", Enabled: true},
-		{Name: "test.crm.local", Address: "127.0.1.1", Enabled: true},
-		{Name: "flowy.local", Address: "127.0.1.3", Enabled: true},
+		{Name: "crm.lcd", Address: "127.0.1.1", Enabled: true},
+		{Name: "test.crm.lcd", Address: "127.0.1.1", Enabled: true},
+		{Name: "flowy.lcd", Address: "127.0.1.3", Enabled: true},
 	}
 
 	t.Run("moving a parent leaves subdomains", func(t *testing.T) {
 		t.Parallel()
-		got, err := store.Update(base, "crm.local", store.Domain{Name: "crm.local", Address: "127.0.1.5", Enabled: true})
+		got, err := store.Update(base, "crm.lcd", store.Domain{Name: "crm.lcd", Address: "127.0.1.5", Enabled: true})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if a := find(got, "test.crm.local").Address; a != "127.0.1.1" {
-			t.Errorf("test.crm.local moved to %s, want it left at 127.0.1.1", a)
+		if a := find(got, "test.crm.lcd").Address; a != "127.0.1.1" {
+			t.Errorf("test.crm.lcd moved to %s, want it left at 127.0.1.1", a)
 		}
-		if a := find(got, "crm.local").Address; a != "127.0.1.5" {
-			t.Errorf("crm.local at %s, want 127.0.1.5", a)
+		if a := find(got, "crm.lcd").Address; a != "127.0.1.5" {
+			t.Errorf("crm.lcd at %s, want 127.0.1.5", a)
 		}
 	})
 	t.Run("rename keeps the row count", func(t *testing.T) {
 		t.Parallel()
-		got, err := store.Update(base, "flowy.local", store.Domain{Name: "flow.local", Address: "127.0.1.3"})
+		got, err := store.Update(base, "flowy.lcd", store.Domain{Name: "flow.lcd", Address: "127.0.1.3"})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(got) != 3 || find(got, "flow.local").Name == "" || find(got, "flowy.local").Name != "" {
+		if len(got) != 3 || find(got, "flow.lcd").Name == "" || find(got, "flowy.lcd").Name != "" {
 			t.Errorf("Update = %q", names(got))
 		}
 	})
 	t.Run("keeping its own name is allowed", func(t *testing.T) {
 		t.Parallel()
-		if _, err := store.Update(base, "flowy.local", store.Domain{Name: "flowy.local", Address: "127.0.1.3", Port: 3000}); err != nil {
+		if _, err := store.Update(base, "flowy.lcd", store.Domain{Name: "flowy.lcd", Address: "127.0.1.3", Port: 3000}); err != nil {
 			t.Fatal(err)
 		}
 	})
 	t.Run("renaming onto another row", func(t *testing.T) {
 		t.Parallel()
-		_, err := store.Update(base, "flowy.local", store.Domain{Name: "crm.local", Address: "127.0.1.3"})
-		assertFieldErr(t, err, store.FieldName, "crm.local is already listed")
+		_, err := store.Update(base, "flowy.lcd", store.Domain{Name: "crm.lcd", Address: "127.0.1.3"})
+		assertFieldErr(t, err, store.FieldName, "crm.lcd is already listed")
 	})
 	t.Run("missing row", func(t *testing.T) {
 		t.Parallel()
-		if _, err := store.Update(base, "nope.local", store.Domain{Name: "nope.local", Address: "127.0.0.1"}); errString(err) != "nope.local is not listed" {
+		if _, err := store.Update(base, "nope.lcd", store.Domain{Name: "nope.lcd", Address: "127.0.0.1"}); errString(err) != "nope.lcd is not listed" {
 			t.Errorf("err = %v", err)
 		}
 	})
@@ -396,23 +397,23 @@ func TestRemove(t *testing.T) {
 	t.Parallel()
 
 	base := []store.Domain{
-		{Name: "crm.local", Address: "127.0.1.1"},
-		{Name: "flowy.local", Address: "127.0.1.2"},
+		{Name: "crm.lcd", Address: "127.0.1.1"},
+		{Name: "flowy.lcd", Address: "127.0.1.2"},
 	}
-	got, err := store.Remove(base, "crm.local")
+	got, err := store.Remove(base, "crm.lcd")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(names(got), []string{"flowy.local"}) {
+	if !slices.Equal(names(got), []string{"flowy.lcd"}) {
 		t.Errorf("Remove = %q", names(got))
 	}
 	if free, _ := store.NextFree(got); free != "127.0.1.1" {
 		t.Errorf("NextFree after Remove = %s, want the freed 127.0.1.1", free)
 	}
-	if len(base) != 2 || base[0].Name != "crm.local" {
+	if len(base) != 2 || base[0].Name != "crm.lcd" {
 		t.Error("Remove changed its input")
 	}
-	if _, err := store.Remove(base, "nope.local"); err == nil {
+	if _, err := store.Remove(base, "nope.lcd"); err == nil {
 		t.Error("Remove of a missing row: err = nil")
 	}
 }
@@ -420,15 +421,15 @@ func TestRemove(t *testing.T) {
 func TestToggle(t *testing.T) {
 	t.Parallel()
 
-	base := []store.Domain{{Name: "crm.local", Address: "127.0.1.1", Enabled: true}}
-	got, err := store.Toggle(base, "crm.local")
+	base := []store.Domain{{Name: "crm.lcd", Address: "127.0.1.1", Enabled: true}}
+	got, err := store.Toggle(base, "crm.lcd")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got[0].Enabled || !base[0].Enabled {
 		t.Errorf("Toggle: got enabled=%v, input enabled=%v; want false, true", got[0].Enabled, base[0].Enabled)
 	}
-	if _, err := store.Toggle(base, "nope.local"); err == nil {
+	if _, err := store.Toggle(base, "nope.lcd"); err == nil {
 		t.Error("Toggle of a missing row: err = nil")
 	}
 }
@@ -443,11 +444,11 @@ func TestLoad(t *testing.T) {
 		wantErrs string // substring
 	}{
 		{name: "missing file is empty", content: nil, want: nil},
-		{name: "sorted on load", content: ptr(`{"version":1,"domains":[{"name":"flowy.local","address":"127.0.1.3","enabled":true},{"name":"crm.local","address":"127.0.1.1","enabled":false}]}`), want: []string{"crm.local", "flowy.local"}},
+		{name: "sorted on load", content: ptr(`{"version":1,"domains":[{"name":"flowy.lcd","address":"127.0.1.3","enabled":true},{"name":"crm.lcd","address":"127.0.1.1","enabled":false}]}`), want: []string{"crm.lcd", "flowy.lcd"}},
 		{name: "bad json", content: ptr(`{`), wantErrs: "parse "},
-		{name: "unknown field", content: ptr(`{"version":1,"domains":[{"name":"crm.local","addr":"127.0.1.1"}]}`), wantErrs: `unknown field "addr"`},
+		{name: "unknown field", content: ptr(`{"version":1,"domains":[{"name":"crm.lcd","addr":"127.0.1.1"}]}`), wantErrs: `unknown field "addr"`},
 		{name: "wrong version", content: ptr(`{"version":2,"domains":[]}`), wantErrs: "format version 2, this lcd reads version 1"},
-		{name: "invalid domain", content: ptr(`{"version":1,"domains":[{"name":"crm.com","address":"127.0.1.1","enabled":true}]}`), wantErrs: `"crm.com": name must end in .local`},
+		{name: "invalid domain", content: ptr(`{"version":1,"domains":[{"name":"crm.com","address":"127.0.1.1","enabled":true}]}`), wantErrs: `"crm.com": name must end in .lcd`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -483,9 +484,9 @@ func TestSave(t *testing.T) {
 		dir := t.TempDir()
 		path := filepath.Join(dir, "nested", "domains.json")
 		in := []store.Domain{
-			{Name: "test.crm.local", Address: "127.0.1.1", Port: 3000, Enabled: true},
-			{Name: "crm.local", Address: "127.0.1.1", Enabled: true},
-			{Name: "old.local", Address: "127.0.0.1"},
+			{Name: "test.crm.lcd", Address: "127.0.1.1", Port: 3000, Enabled: true},
+			{Name: "crm.lcd", Address: "127.0.1.1", Enabled: true},
+			{Name: "old.lcd", Address: "127.0.0.1"},
 		}
 		if err := store.Save(path, in); err != nil {
 			t.Fatal(err)

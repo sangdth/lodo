@@ -20,9 +20,9 @@ const dnsmasqBin = "/opt/homebrew/opt/dnsmasq/sbin/dnsmasq"
 const logPath = "/Users/tester/.config/lcd/dnsmasq.log"
 
 // lists are the domain lists every test here renders. The sample is out of
-// order on purpose; sorted and without the disabled old.local it is crm.local,
-// api.crm.local, a.api.crm.local, dashboard.crm.local, test.crm.local,
-// flowy.local.
+// order on purpose; sorted and without the disabled old.lcd it is crm.lcd,
+// api.crm.lcd, a.api.crm.lcd, dashboard.crm.lcd, test.crm.lcd,
+// flowy.lcd.
 var lists = []struct {
 	name    string
 	domains []store.Domain
@@ -30,13 +30,13 @@ var lists = []struct {
 	{
 		name: "sample",
 		domains: []store.Domain{
-			{Name: "flowy.local", Address: "127.0.1.3", Enabled: true},
-			{Name: "dashboard.crm.local", Address: "127.0.1.1", Port: 3000, Enabled: true},
-			{Name: "old.local", Address: "127.0.0.1"},
-			{Name: "a.api.crm.local", Address: "127.0.1.1", Enabled: true},
-			{Name: "crm.local", Address: "127.0.1.1", Enabled: true},
-			{Name: "test.crm.local", Address: "127.0.1.4", Enabled: true},
-			{Name: "api.crm.local", Address: "127.0.1.1", Enabled: true},
+			{Name: "flowy.lcd", Address: "127.0.1.3", Enabled: true},
+			{Name: "dashboard.crm.lcd", Address: "127.0.1.1", Port: 3000, Enabled: true},
+			{Name: "old.lcd", Address: "127.0.0.1"},
+			{Name: "a.api.crm.lcd", Address: "127.0.1.1", Enabled: true},
+			{Name: "crm.lcd", Address: "127.0.1.1", Enabled: true},
+			{Name: "test.crm.lcd", Address: "127.0.1.4", Enabled: true},
+			{Name: "api.crm.lcd", Address: "127.0.1.1", Enabled: true},
 		},
 	},
 	{name: "empty"},

@@ -20,9 +20,17 @@ import (
 	"github.com/sangdth/lcd/internal/fsutil"
 )
 
+// TLD is the top-level domain every name ends in. It is lcd's own because
+// macOS sends a .local name with one label before .local to Bonjour only, and
+// .lcd is not in the public root zone.
+const TLD = "lcd"
+
+// label matches one DNS label: a-z, 0-9 and inner '-', 1-63 characters.
+const label = `[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?`
+
 // NamePattern matches a valid name, without anchors. The root script runs it
 // through grep -E -x, so it must mean the same in POSIX ERE and in Go's RE2.
-const NamePattern = `[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*\.local`
+const NamePattern = label + `(\.` + label + `)*\.` + TLD
 
 // MaxNameLen is the longest name DNS allows.
 const MaxNameLen = 253
@@ -79,8 +87,9 @@ func (e *FieldError) Error() string { return e.Msg }
 func fieldErr(field, msg string) error { return &FieldError{Field: field, Msg: msg} }
 
 // ValidateName checks a name: lowercase labels of a-z, 0-9 and inner '-',
-// ending in .local, with at least one label before it.
+// ending in .lcd, with at least one label before it.
 func ValidateName(name string) error {
+	suffix := "." + TLD
 	switch {
 	case name == "":
 		return fieldErr(FieldName, "name is empty")
@@ -88,10 +97,10 @@ func ValidateName(name string) error {
 		return fieldErr(FieldName, fmt.Sprintf("name is longer than %d characters", MaxNameLen))
 	case strings.ToLower(name) != name:
 		return fieldErr(FieldName, "name must be lowercase")
-	case !strings.HasSuffix(name, ".local"):
-		return fieldErr(FieldName, "name must end in .local")
-	case name == ".local":
-		return fieldErr(FieldName, "name needs a label before .local")
+	case !strings.HasSuffix(name, suffix):
+		return fieldErr(FieldName, "name must end in "+suffix)
+	case name == suffix:
+		return fieldErr(FieldName, "name needs a label before "+suffix)
 	case !nameRE.MatchString(name):
 		return fieldErr(FieldName, "name may use only a-z, 0-9 and '-' inside labels of 1-63 characters")
 	}
@@ -153,7 +162,7 @@ func IsOwn(addr string) bool {
 	return err == nil && n >= OwnFirst && n <= OwnLast && strconv.Itoa(n) == rest
 }
 
-// Project returns the last two labels of a name: crm.local for test.crm.local.
+// Project returns the last two labels of a name: crm.lcd for test.crm.lcd.
 func Project(name string) string {
 	labels := strings.Split(name, ".")
 	if len(labels) <= 2 {
@@ -163,8 +172,8 @@ func Project(name string) string {
 }
 
 // Parent returns the listed domain whose name is the longest proper suffix
-// of name: test.crm.local for a.test.crm.local when both it and crm.local
-// are listed.
+// of name: test.crm.lcd for a.test.crm.lcd when both it and crm.lcd are
+// listed.
 func Parent(domains []Domain, name string) (Domain, bool) {
 	var parent Domain
 	found := false

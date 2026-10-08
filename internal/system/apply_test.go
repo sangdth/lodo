@@ -21,10 +21,10 @@ const (
 func TestApply(t *testing.T) {
 	t.Parallel()
 
-	dnsOnly := []store.Domain{{Name: "crm.local", Address: "127.0.1.1", Enabled: true}}
+	dnsOnly := []store.Domain{{Name: "crm.lcd", Address: "127.0.1.1", Enabled: true}}
 	withPort := []store.Domain{
-		{Name: "crm.local", Address: "127.0.1.1", Enabled: true},
-		{Name: "dashboard.crm.local", Address: "127.0.1.1", Port: 3000, Enabled: true},
+		{Name: "crm.lcd", Address: "127.0.1.1", Enabled: true},
+		{Name: "dashboard.crm.lcd", Address: "127.0.1.1", Port: 3000, Enabled: true},
 	}
 	tests := []struct {
 		name         string
@@ -80,7 +80,7 @@ func TestApply(t *testing.T) {
 func TestApply_StopsAtFirstFailure(t *testing.T) {
 	t.Parallel()
 
-	domains := []store.Domain{{Name: "crm.local", Address: "127.0.1.1", Enabled: true}}
+	domains := []store.Domain{{Name: "crm.lcd", Address: "127.0.1.1", Enabled: true}}
 
 	t.Run("dnsmasq restart", func(t *testing.T) {
 		t.Parallel()
@@ -93,7 +93,7 @@ func TestApply_StopsAtFirstFailure(t *testing.T) {
 		if len(r.Calls()) != 1 {
 			t.Errorf("calls = %q, want only the restart", r.Calls())
 		}
-		assertFile(t, p.Resolvers, "crm.local\n") // files are written before any command
+		assertFile(t, p.Resolvers, "crm.lcd\n") // files are written before any command
 	})
 	t.Run("resolver script", func(t *testing.T) {
 		t.Parallel()
@@ -109,7 +109,7 @@ func TestApply_StopsAtFirstFailure(t *testing.T) {
 func TestApply_BeforeSetup(t *testing.T) {
 	t.Parallel()
 
-	domains := []store.Domain{{Name: "crm.local", Address: "127.0.1.1", Enabled: true}}
+	domains := []store.Domain{{Name: "crm.lcd", Address: "127.0.1.1", Enabled: true}}
 	tests := []struct {
 		name    string
 		prepare func(t *testing.T, p paths.Paths)

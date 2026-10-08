@@ -75,6 +75,14 @@ on port 53. It was stopped with `brew services stop dnsmasq`; Homebrew had repla
 `~/Library/LaunchAgents/homebrew.mxcl.dnsmasq.plist` with `sh.brew.dnsmasq.plist` and then removed it.
 `apply` now refuses to run until setup has.
 
+## Decision
+
+Names end in `.lcd` (`store.TLD`), Sang's choice after the finding above. `.dev` was ruled out first: the whole
+TLD is on the HSTS preload list (hstspreload.org reports `dev` as preloaded) and `flowy.dev` is a registered
+domain. Public DNS answers `flowy.lcd` with NXDOMAIN; `.lcd`, `.internal` and `.test` have no public
+nameservers.
+
 ## Still to do
 
-- Decide how two-label names work (see the finding above), then `lcd uninstall` and `lcd setup` again.
+- `lcd uninstall`, then `lcd setup` again, which installs the script with the `.lcd` name check; then prove that
+  two-label `.lcd` names resolve.

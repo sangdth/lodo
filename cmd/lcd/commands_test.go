@@ -46,9 +46,9 @@ func TestFormatResults(t *testing.T) {
 	}{
 		{name: "none", results: nil},
 		{name: "mixed", results: []check.Result{
-			{Name: "crm.local", Address: "127.0.1.1", Direct: true, System: true},
-			{Name: "dashboard.crm.local", Address: "127.0.1.1", Port: 3000, Direct: true, System: true, Detail: "app down: nothing answers on 127.0.1.1:3000"},
-			{Name: "flowy.local", Address: "127.0.1.3", Direct: true, Detail: "macOS: no address"},
+			{Name: "crm.lcd", Address: "127.0.1.1", Direct: true, System: true},
+			{Name: "dashboard.crm.lcd", Address: "127.0.1.1", Port: 3000, Direct: true, System: true, Detail: "app down: nothing answers on 127.0.1.1:3000"},
+			{Name: "flowy.lcd", Address: "127.0.1.3", Direct: true, Detail: "macOS: no address"},
 		}},
 	}
 	for _, tt := range tests {

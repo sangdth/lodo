@@ -22,18 +22,18 @@ import (
 // name, a subdomain with a port and a disabled name. The domain with a port
 // uses 127.0.0.1, where the test's stand-in for Caddy listens.
 var healthyDomains = []store.Domain{
-	{Name: "crm.local", Address: "127.0.1.1", Enabled: true},
-	{Name: "dashboard.crm.local", Address: "127.0.0.1", Port: 3000, Enabled: true},
-	{Name: "old.local", Address: "127.0.1.2"},
+	{Name: "crm.lcd", Address: "127.0.1.1", Enabled: true},
+	{Name: "dashboard.crm.lcd", Address: "127.0.0.1", Port: 3000, Enabled: true},
+	{Name: "old.lcd", Address: "127.0.1.2"},
 }
 
 // fiveDomains are more enabled names than a Detail lists.
 var fiveDomains = []store.Domain{
-	{Name: "a.local", Address: "127.0.1.1", Enabled: true},
-	{Name: "b.local", Address: "127.0.1.2", Enabled: true},
-	{Name: "c.local", Address: "127.0.1.3", Enabled: true},
-	{Name: "d.local", Address: "127.0.1.4", Enabled: true},
-	{Name: "e.local", Address: "127.0.1.5", Enabled: true},
+	{Name: "a.lcd", Address: "127.0.1.1", Enabled: true},
+	{Name: "b.lcd", Address: "127.0.1.2", Enabled: true},
+	{Name: "c.lcd", Address: "127.0.1.3", Enabled: true},
+	{Name: "d.lcd", Address: "127.0.1.4", Enabled: true},
+	{Name: "e.lcd", Address: "127.0.1.5", Enabled: true},
 }
 
 // The eight checks, to build expected results.
@@ -326,35 +326,35 @@ func TestEnv_Run_Resolvers(t *testing.T) {
 		},
 		{
 			name:   "a resolver file missing",
-			change: func(t *testing.T, m *mac) { t.Helper(); removeFile(t, filepath.Join(m.p.ResolverDir, "crm.local")) },
-			want:   resolversCheck.fail("missing for crm.local", "lcd apply"),
+			change: func(t *testing.T, m *mac) { t.Helper(); removeFile(t, filepath.Join(m.p.ResolverDir, "crm.lcd")) },
+			want:   resolversCheck.fail("missing for crm.lcd", "lcd apply"),
 		},
 		{
 			name: "a resolver file lcd did not write",
 			change: func(t *testing.T, m *mac) {
 				t.Helper()
-				writeFile(t, filepath.Join(m.p.ResolverDir, "dashboard.crm.local"), "nameserver 127.0.0.1\n")
+				writeFile(t, filepath.Join(m.p.ResolverDir, "dashboard.crm.lcd"), "nameserver 127.0.0.1\n")
 			},
-			want: resolversCheck.fail("not written by lcd, so lcd apply won't replace: dashboard.crm.local",
-				"sudo rm {root}/etc/resolver/dashboard.crm.local, then lcd apply"),
+			want: resolversCheck.fail("not written by lcd, so lcd apply won't replace: dashboard.crm.lcd",
+				"sudo rm {root}/etc/resolver/dashboard.crm.lcd, then lcd apply"),
 		},
 		{
 			name: "a hand-made file outranks a missing one",
 			change: func(t *testing.T, m *mac) {
 				t.Helper()
-				removeFile(t, filepath.Join(m.p.ResolverDir, "crm.local"))
-				writeFile(t, filepath.Join(m.p.ResolverDir, "dashboard.crm.local"), "nameserver 127.0.0.1\n")
+				removeFile(t, filepath.Join(m.p.ResolverDir, "crm.lcd"))
+				writeFile(t, filepath.Join(m.p.ResolverDir, "dashboard.crm.lcd"), "nameserver 127.0.0.1\n")
 			},
-			want: resolversCheck.fail("not written by lcd, so lcd apply won't replace: dashboard.crm.local",
-				"sudo rm {root}/etc/resolver/dashboard.crm.local, then lcd apply"),
+			want: resolversCheck.fail("not written by lcd, so lcd apply won't replace: dashboard.crm.lcd",
+				"sudo rm {root}/etc/resolver/dashboard.crm.lcd, then lcd apply"),
 		},
 		{
 			name: "an lcd file with old content",
 			change: func(t *testing.T, m *mac) {
 				t.Helper()
-				writeFile(t, filepath.Join(m.p.ResolverDir, "crm.local"), system.Marker+"\nnameserver 127.0.0.1\n")
+				writeFile(t, filepath.Join(m.p.ResolverDir, "crm.lcd"), system.Marker+"\nnameserver 127.0.0.1\n")
 			},
-			want: resolversCheck.fail("missing for crm.local", "lcd apply"),
+			want: resolversCheck.fail("missing for crm.lcd", "lcd apply"),
 		},
 		{
 			name:    "more resolver files missing than the detail lists",
@@ -365,7 +365,7 @@ func TestEnv_Run_Resolvers(t *testing.T) {
 					removeFile(t, filepath.Join(m.p.ResolverDir, d.Name))
 				}
 			},
-			want: resolversCheck.fail("missing for a.local, b.local, c.local, and 2 more", "lcd apply"),
+			want: resolversCheck.fail("missing for a.lcd, b.lcd, c.lcd, and 2 more", "lcd apply"),
 		},
 		{
 			name:    "one enabled domain",
@@ -422,7 +422,7 @@ func TestEnv_Run_GeneratedFiles(t *testing.T) {
 	runCases(t, []runCase{
 		{
 			name:   "dnsmasq.conf edited by hand",
-			change: func(t *testing.T, m *mac) { t.Helper(); writeFile(t, m.p.DnsmasqConf, "address=/x.local/127.0.0.1\n") },
+			change: func(t *testing.T, m *mac) { t.Helper(); writeFile(t, m.p.DnsmasqConf, "address=/x.lcd/127.0.0.1\n") },
 			want:   generatedCheck.fail("out of date: dnsmasq.conf", "lcd apply"),
 		},
 		{
@@ -455,9 +455,9 @@ func TestEnv_Run_NamesResolve(t *testing.T) {
 		{
 			name: "macOS resolves a name to another address",
 			change: func(_ *testing.T, m *mac) {
-				m.fake.Set(dscacheutil(m.p, "crm.local"), macOSOutput("crm.local", "127.0.1.9"))
+				m.fake.Set(dscacheutil(m.p, "crm.lcd"), macOSOutput("crm.lcd", "127.0.1.9"))
 			},
-			want: namesCheck.fail("crm.local: macOS: 127.0.1.9, want 127.0.1.1", "lcd apply"),
+			want: namesCheck.fail("crm.lcd: macOS: 127.0.1.9, want 127.0.1.1", "lcd apply"),
 		},
 		{
 			name: "caddy cannot reach an app",
@@ -465,7 +465,7 @@ func TestEnv_Run_NamesResolve(t *testing.T) {
 				t.Helper()
 				m.env.HTTPPort = startHTTP(t, respond(http.StatusBadGateway, "Server", "Caddy"))
 			},
-			want: namesCheck.fail("dashboard.crm.local: app down: nothing answers on 127.0.0.1:3000", "lcd apply"),
+			want: namesCheck.fail("dashboard.crm.lcd: app down: nothing answers on 127.0.0.1:3000", "lcd apply"),
 		},
 		{
 			name:    "more names fail than the detail lists",
@@ -476,7 +476,7 @@ func TestEnv_Run_NamesResolve(t *testing.T) {
 				}
 			},
 			want: namesCheck.fail(
-				"a.local: macOS: no address; b.local: macOS: no address; c.local: macOS: no address; and 2 more", "lcd apply"),
+				"a.lcd: macOS: no address; b.lcd: macOS: no address; c.lcd: macOS: no address; and 2 more", "lcd apply"),
 		},
 	})
 }
@@ -500,8 +500,8 @@ func TestEnv_Run_Caddy(t *testing.T) {
 		{
 			name: "no enabled domain has a port",
 			domains: []store.Domain{
-				{Name: "crm.local", Address: "127.0.1.1", Enabled: true},
-				{Name: "dashboard.crm.local", Address: "127.0.0.1", Port: 3000},
+				{Name: "crm.lcd", Address: "127.0.1.1", Enabled: true},
+				{Name: "dashboard.crm.lcd", Address: "127.0.0.1", Port: 3000},
 			},
 			want: caddyCheck.skip("no enabled domain has a port"),
 		},
@@ -563,7 +563,7 @@ func TestEnv_Run_Caddy(t *testing.T) {
 		{
 			name: "two sites",
 			domains: append(slices.Clone(healthyDomains),
-				store.Domain{Name: "api.crm.local", Address: "127.0.0.1", Port: 3001, Enabled: true}),
+				store.Domain{Name: "api.crm.lcd", Address: "127.0.0.1", Port: 3001, Enabled: true}),
 			want: caddyCheck.pass("running, serves 2 sites"),
 		},
 	})

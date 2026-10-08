@@ -36,7 +36,7 @@ func TestScript_Run(t *testing.T) {
 	t.Parallel()
 
 	resolver := system.ResolverFile()
-	long := strings.Repeat("abc.", 63) + "local" // matches the pattern, 257 characters
+	long := strings.Repeat("abc.", 63) + "lcd" // matches the pattern, 255 characters
 	tests := []struct {
 		name       string
 		list       *string           // nil: no list file
@@ -48,57 +48,57 @@ func TestScript_Run(t *testing.T) {
 	}{
 		{
 			name:       "writes valid names",
-			list:       ptr("crm.local\ntest.crm.local\n"),
-			after:      map[string]string{"crm.local": resolver, "test.crm.local": resolver},
+			list:       ptr("crm.lcd\ntest.crm.lcd\n"),
+			after:      map[string]string{"crm.lcd": resolver, "test.crm.lcd": resolver},
 			wantStdout: "lcd: 2 resolver files written, 0 removed, 0 lines skipped\n",
 		},
 		{
 			name:       "skips invalid lines",
-			list:       ptr("local\n../x.local\nX.LOCAL\nx.com\n\nx.local \n-x.local\nflowy.local\na/b.local\n" + long + "\n"),
-			after:      map[string]string{"flowy.local": resolver},
+			list:       ptr("lcd\n../x.lcd\nX.LCD\nx.com\n\nx.lcd \n-x.lcd\nflowy.lcd\na/b.lcd\n" + long + "\n"),
+			after:      map[string]string{"flowy.lcd": resolver},
 			wantStdout: "lcd: 1 resolver files written, 0 removed, 9 lines skipped\n",
 		},
 		{
 			name:       "last line without newline",
-			list:       ptr("crm.local\nflowy.local"),
-			after:      map[string]string{"crm.local": resolver, "flowy.local": resolver},
+			list:       ptr("crm.lcd\nflowy.lcd"),
+			after:      map[string]string{"crm.lcd": resolver, "flowy.lcd": resolver},
 			wantStdout: "lcd: 2 resolver files written, 0 removed, 0 lines skipped\n",
 		},
 		{
 			name:       "removes its files no longer listed",
-			list:       ptr("crm.local\n"),
-			before:     map[string]string{"old.local": resolver, "crm.local": resolver},
-			after:      map[string]string{"crm.local": resolver},
+			list:       ptr("crm.lcd\n"),
+			before:     map[string]string{"old.lcd": resolver, "crm.lcd": resolver},
+			after:      map[string]string{"crm.lcd": resolver},
 			wantStdout: "lcd: 1 resolver files written, 1 removed, 0 lines skipped\n",
 		},
 		{
 			name:       "empty list removes all its files",
 			list:       ptr(""),
-			before:     map[string]string{"old.local": resolver, "older.local": resolver},
+			before:     map[string]string{"old.lcd": resolver, "older.lcd": resolver},
 			after:      map[string]string{},
 			wantStdout: "lcd: 0 resolver files written, 2 removed, 0 lines skipped\n",
 		},
 		{
 			name: "leaves files it did not write",
-			list: ptr("crm.local\n"),
+			list: ptr("crm.lcd\n"),
 			before: map[string]string{
-				"crm.local":   "nameserver 10.0.0.1\n",
-				"other.local": "nameserver 10.0.0.2\n",
-				"local":       "nameserver 127.0.0.1\n",
+				"crm.lcd":   "nameserver 10.0.0.1\n",
+				"other.lcd": "nameserver 10.0.0.2\n",
+				"local":     "nameserver 127.0.0.1\n",
 			},
 			after: map[string]string{
-				"crm.local":   "nameserver 10.0.0.1\n",
-				"other.local": "nameserver 10.0.0.2\n",
-				"local":       "nameserver 127.0.0.1\n",
+				"crm.lcd":   "nameserver 10.0.0.1\n",
+				"other.lcd": "nameserver 10.0.0.2\n",
+				"local":     "nameserver 127.0.0.1\n",
 			},
 			wantStdout: "lcd: 0 resolver files written, 0 removed, 0 lines skipped\n",
-			wantStderr: "crm.local alone: lcd did not write it",
+			wantStderr: "crm.lcd alone: lcd did not write it",
 		},
 		{
 			name:       "missing list",
 			list:       nil,
-			before:     map[string]string{"old.local": resolver},
-			after:      map[string]string{"old.local": resolver},
+			before:     map[string]string{"old.lcd": resolver},
+			after:      map[string]string{"old.lcd": resolver},
 			wantFail:   true,
 			wantStderr: "is missing or not a regular file",
 		},
@@ -125,8 +125,8 @@ func TestScript_Run(t *testing.T) {
 			if got := readDir(t, p.ResolverDir); !maps.Equal(got, tt.after) {
 				t.Errorf("resolver dir = %v, want %v", got, tt.after)
 			}
-			if _, err := os.Stat(filepath.Join(filepath.Dir(p.ResolverDir), "x.local")); !os.IsNotExist(err) {
-				t.Error("../x.local escaped the resolver dir")
+			if _, err := os.Stat(filepath.Join(filepath.Dir(p.ResolverDir), "x.lcd")); !os.IsNotExist(err) {
+				t.Error("../x.lcd escaped the resolver dir")
 			}
 		})
 	}
@@ -136,11 +136,11 @@ func TestScript_RunFileModes(t *testing.T) {
 	t.Parallel()
 
 	p := paths.ForTest(t.TempDir())
-	writeFile(t, p.Resolvers, "crm.local\n")
+	writeFile(t, p.Resolvers, "crm.lcd\n")
 	if _, stderr, err := runScript(t, p); err != nil {
 		t.Fatalf("%v: %s", err, stderr)
 	}
-	info, err := os.Stat(filepath.Join(p.ResolverDir, "crm.local"))
+	info, err := os.Stat(filepath.Join(p.ResolverDir, "crm.lcd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +154,7 @@ func TestScript_RunSymlinkedList(t *testing.T) {
 
 	p := paths.ForTest(t.TempDir())
 	target := filepath.Join(t.TempDir(), "secret")
-	writeFile(t, target, "crm.local\n")
+	writeFile(t, target, "crm.lcd\n")
 	if err := os.MkdirAll(filepath.Dir(p.Resolvers), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -177,12 +177,12 @@ func TestScript_RunQuotedPath(t *testing.T) {
 	t.Parallel()
 
 	p := paths.ForTest(filepath.Join(t.TempDir(), "it's here"))
-	writeFile(t, p.Resolvers, "crm.local\n")
+	writeFile(t, p.Resolvers, "crm.lcd\n")
 	if _, stderr, err := runScript(t, p); err != nil {
 		t.Fatalf("%v: %s", err, stderr)
 	}
 	if got := readDir(t, p.ResolverDir); len(got) != 1 {
-		t.Errorf("resolver dir = %v, want crm.local", got)
+		t.Errorf("resolver dir = %v, want crm.lcd", got)
 	}
 }
 
@@ -190,13 +190,13 @@ func TestScript_RunTwice(t *testing.T) {
 	t.Parallel()
 
 	p := paths.ForTest(t.TempDir())
-	writeFile(t, p.Resolvers, "crm.local\nflowy.local\n")
+	writeFile(t, p.Resolvers, "crm.lcd\nflowy.lcd\n")
 	for range 2 {
 		if _, stderr, err := runScript(t, p); err != nil {
 			t.Fatalf("%v: %s", err, stderr)
 		}
 	}
-	want := map[string]string{"crm.local": system.ResolverFile(), "flowy.local": system.ResolverFile()}
+	want := map[string]string{"crm.lcd": system.ResolverFile(), "flowy.lcd": system.ResolverFile()}
 	if got := readDir(t, p.ResolverDir); !maps.Equal(got, want) {
 		t.Errorf("resolver dir = %v, want %v", got, want)
 	}
@@ -208,13 +208,13 @@ func TestScript_AgreesWithStore(t *testing.T) {
 	t.Parallel()
 
 	names := []string{
-		"a.local", "1.local", "a--b.local", "xn--bcher-kva.local", "a.b.c.d.local", "a.local.local",
-		strings.Repeat("a", 63) + ".local",
-		strings.Repeat("a", 64) + ".local",
-		strings.Repeat("abc.", 62) + "local", // 253 characters
-		strings.Repeat("abc.", 63) + "local", // 257 characters
-		"local", "a-.local", "-a.local", "LOCAL", "a.LOCAL", "a.local.", "a..local", ".a.local",
-		"a.locals", "localhost", "a.local\r", "a\tb.local", "a b.local", "é.local", "a/b.local", "..local",
+		"a.lcd", "1.lcd", "a--b.lcd", "xn--bcher-kva.lcd", "a.b.c.d.lcd", "a.local.lcd",
+		strings.Repeat("a", 63) + ".lcd",
+		strings.Repeat("a", 64) + ".lcd",
+		strings.Repeat("abc.", 62) + "lcd", // 251 characters
+		strings.Repeat("abc.", 63) + "lcd", // 255 characters
+		"lcd", "a-.lcd", "-a.lcd", "LCD", "a.LCD", "a.lcd.", "a..lcd", ".a.lcd", "flowy.local",
+		"a.lcds", "localhost", "a.lcd\r", "a\tb.lcd", "a b.lcd", "é.lcd", "a/b.lcd", "..lcd",
 	}
 	p := paths.ForTest(t.TempDir())
 	writeFile(t, p.Resolvers, strings.Join(names, "\n")+"\n")
