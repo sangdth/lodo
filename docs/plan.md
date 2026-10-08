@@ -1,0 +1,458 @@
+# Plan: `lcd`, a terminal UI for dnsmasq
+
+## Goal
+
+`lcd` is a small terminal app that manages local `.local` names on macOS through dnsmasq. Each project gets its
+own loopback address (`127.0.1.x`), so many projects run at once on their standard ports, and each is
+reached by name:
+
+```text
+flowy.local -> 127.0.1.3 -> 127.0.1.3:5432 (flowy's Postgres), 127.0.1.3:3000 (its Next app)
+crm.local   -> 127.0.1.1 -> 127.0.1.1:5432 (crm's Postgres)
+```
+
+A project may have subdomains, like `test.crm.local`. Each is a row of its own: it shares the project's address
+by default, or gets its own when it needs its own ports. Subdomains that aren't listed resolve to the parent's
+address anyway, because dnsmasq's `address=` lines and the `/etc/resolver` files both match by suffix.
+
+Admin rights are needed once, for `lcd setup`. Adding, editing and removing names never asks for a password.
+
+## Decisions
+
+Settled 2026-10-08. The steps below follow them.
+
+- **Root hop:** one root-owned script, `apply-resolvers.sh`, run through `sudo -n` under a `NOPASSWD` rule in
+  `/etc/sudoers.d/lcd`. It runs synchronously: lcd sees its exit code and output, and the resolve check runs
+  after the cache flush. No launchd job watches files; `launchd.plist(5)` calls `WatchPaths` "highly
+  race-prone".
+- **Address:** one form field, prefilled with the lowest free `127.0.1.x`. You may overwrite it (`127.0.1.3`
+  to match flowy's `.env.example`, or `127.0.0.1` to share). "Own" is derived: the address lies in
+  `127.0.1.1`–`127.0.1.50`. An own-block address belongs to one project; other addresses may be shared.
+- **Subdomains:** a subdomain is a normal row; the hierarchy is derived from the name, nothing is nested in
+  `domains.json`. The form prefills a subdomain with its parent's address. A project is the last two labels
+  (`crm.local`), and any name in a project may share its own-block address. Editing or deleting a parent leaves
+  its subdomains as they are.
+- **Stack:** Charm v2 modules under their `charm.land` import paths.
+- **Repo:** module `github.com/sangdth/lcd`; `master` holds the initial commit, work happens on `sang-dev`.
+- **localdns leftovers:** `setup` replaces the old `conf-file` line, starts with an empty `domains.json`, and
+  prints the other leftovers for manual cleanup. No migration code.
+- **Hand test:** Phase 2 runs on this Mac right after Phase 1, with Sang at the keyboard for the password.
+- **Uninstall:** restores the conf backup and leaves dnsmasq stopped; prints the command that brings the old
+  root job back.
+- **flowy README:** the pointer edit is the last step, its own commit on `sang-dev` in `opscom/flowy`.
+
+## Stack
+
+- Go 1.27, one binary, module `github.com/sangdth/lcd`.
+- `charm.land/bubbletea/v2` v2.0.10 (app loop), `charm.land/bubbles/v2` v2.2.1 (`table`, `textinput`, `spinner`,
+  `viewport`, `key`), `charm.land/lipgloss/v2` v2.0.6 (styling).
+- Tests only: `github.com/charmbracelet/x/exp/teatest/v2` with its `x/exp/golden` helper.
+- No other dependencies. Direct DNS checks use `net.Resolver` dialing `127.0.0.1:53535`. `brew`, `sudo`,
+  `launchctl`, `dscacheutil` and `pbcopy` run through `os/exec` with absolute paths.
+- dnsmasq 2.93 from Homebrew (`/opt/homebrew`, Apple Silicon).
+
+Bubble Tea v2 facts the TUI code relies on (checked against the module docs): `Model` is `Init() Cmd`,
+`Update(Msg) (Model, Cmd)`, `View() View`; `tea.NewView(string)` builds the view; keys arrive as
+`tea.KeyPressMsg` with `.String()` giving `"a"`, `"ctrl+c"`, `"enter"`; `tea.WindowSizeMsg`, `tea.Tick`.
+
+## Commands
+
+| Command         | What it does                                                                                  |
+| --------------- | --------------------------------------------------------------------------------------------- |
+| `lcd`           | opens the TUI; refuses when doctor checks 1–5 fail, and prints them                           |
+| `lcd setup`     | one-time system setup; asks for the admin password in the terminal; safe to run again         |
+| `lcd apply`     | regenerates both files from `domains.json`, restarts dnsmasq, writes resolver files, checks   |
+| `lcd doctor`    | runs the seven checks, prints what's wrong and the fix; exit 1 if any fail                    |
+| `lcd uninstall` | removes everything `setup` installed; keeps `domains.json`                                    |
+| `lcd version`   | prints the version set at build time (`-ldflags "-X main.Version=..."`)                       |
+
+`apply` is the code path the TUI runs after every change and on `r`. It exists as a command so the Phase 2 hand
+test and scripts can use it.
+
+## How it works
+
+### Files
+
+| Path                                                  | Owner | Written by                        |
+| ----------------------------------------------------- | ----- | --------------------------------- |
+| `~/.config/lcd/domains.json`                          | user  | the TUI (only source of truth)    |
+| `~/.config/lcd/dnsmasq.conf`                          | user  | `apply`, on every change          |
+| `~/.config/lcd/resolvers`                             | user  | `apply`, on every change          |
+| `~/.config/lcd/dnsmasq.log`                           | user  | dnsmasq                           |
+| `/opt/homebrew/etc/dnsmasq.conf`                      | user  | `lcd setup` (user-owned, no sudo) |
+| `/opt/homebrew/etc/dnsmasq.conf.before-lcd`           | user  | `lcd setup`, first run only       |
+| `/Library/LaunchDaemons/io.lcd.loopback.plist`        | root  | `lcd setup`                       |
+| `/Library/Application Support/lcd/apply-resolvers.sh` | root  | `lcd setup`                       |
+| `/etc/sudoers.d/lcd`                                  | root  | `lcd setup`                       |
+| `/etc/resolver/<domain>`                              | root  | `apply-resolvers.sh`              |
+
+### dnsmasq runs as the user on port 53535
+
+```conf
+# /opt/homebrew/etc/dnsmasq.conf (lcd's block; everything else in the file stays)
+# lcd
+conf-file=/Users/<user>/.config/lcd/dnsmasq.conf
+listen-address=127.0.0.1
+port=53535
+bind-interfaces
+```
+
+A port above 1024 needs no root, so `brew services restart dnsmasq` runs as the user on every change. The job
+must live in the user's launchd domain (`~/Library/LaunchAgents/homebrew.mxcl.dnsmasq.plist`). A job started
+with `sudo brew services start` lives in the system domain, runs as `nobody`, and is invisible to the user's
+`brew services`; `setup` stops it first.
+
+The generated file holds `log-queries`, `log-facility=/Users/<user>/.config/lcd/dnsmasq.log`, and one
+`address=/<name>/<ip>` line per enabled domain, sorted by name. It has no `local=/local/`, so names lcd doesn't
+know stay with Bonjour.
+
+### One resolver file per domain, written by one root script
+
+macOS sends a name to dnsmasq only when a file in `/etc/resolver/` matches it:
+
+```text
+# /etc/resolver/flowy.local
+# lcd
+nameserver 127.0.0.1
+port 53535
+```
+
+```text
+# /etc/sudoers.d/lcd
+<user> ALL=(root) NOPASSWD: /Library/Application\ Support/lcd/apply-resolvers.sh
+```
+
+`apply` runs `sudo -n "/Library/Application Support/lcd/apply-resolvers.sh"`. The script (`/bin/sh`, `set -eu`,
+fixed `PATH`, absolute tool paths, user paths baked in at setup):
+
+1. reads `~/.config/lcd/resolvers`, one name per line;
+2. keeps only lines matching the name rule below. The regex is one Go constant, rendered into the script
+   template, so the two can't drift;
+3. writes `/etc/resolver/<name>` (temp file, then `mv`) with the three fixed lines above;
+4. removes `/etc/resolver/*` files whose first line is `# lcd` and whose name is no longer listed. It never
+   touches a file it didn't write;
+5. flushes the cache (`dscacheutil -flushcache; killall -HUP mDNSResponder`) when running as root, and skips
+   the flush otherwise, so tests run it unprivileged.
+
+It never runs user-writable code and never writes user content, only file names that pass the check.
+
+### The loopback address block
+
+`io.lcd.loopback` runs `ifconfig lo0 alias 127.0.1.$i up` for `i` = 1–50 at every boot (`RunAtLoad`). macOS
+only has `127.0.0.1` by default.
+
+### What happens when a domain changes (`apply`)
+
+1. Save `domains.json` (written to a temp file, then renamed into place).
+2. Regenerate `dnsmasq.conf` and `resolvers`.
+3. `/opt/homebrew/bin/brew services restart dnsmasq`.
+4. `sudo -n` the resolver script. It writes `/etc/resolver/` and flushes the cache.
+5. Per enabled domain: query dnsmasq on `127.0.0.1:53535`, then resolve through macOS
+   (`dscacheutil -q host -a name <name>`). Each row shows ✓ or ✗ with the reason.
+
+A failure at any step shows in the status line. The saved file stays as written; `r` runs `apply` again.
+
+## The TUI
+
+```text
+ lcd  dnsmasq ● running :53535   loopback ● 50   resolvers ● ok
+ ───────────────────────────────────────────────────────────────
+  ● crm.local            127.0.1.1   own     ✓
+  ●   test.crm.local     127.0.1.1   own     ✓
+  ● flowy.local          127.0.1.3   own     ✓
+  ○ old.local            127.0.0.1           –
+ ───────────────────────────────────────────────────────────────
+ a add  e edit  d delete  space on/off  c copy env  l log  r apply  q quit
+```
+
+```text
+ Add domain
+ Name     test.crm.local
+ Address  127.0.1.1          crm.local's address; next free own address is 127.0.1.4
+ enter save   esc cancel
+```
+
+- **List:** a `bubbles/table` with name, address, own, on/off, resolve check. Up to 50 rows, no filtering.
+- **Form:** two `textinput`s. Add prefills the address while you type the name: the parent's address when the
+  name is a subdomain of a listed name, else the lowest free own address (`127.0.0.1`, with a note, when all 50
+  are taken). The hint names the next free own address so a subdomain can get its own. Typing in the address
+  field stops the prefill. Edit prefills the stored values. Validation errors show under the field.
+- **Delete:** `d` asks `delete flowy.local? y/n` in the status line.
+- **Copy env** puts `DOCKER_HOST_IP=127.0.1.3` on the clipboard (`pbcopy`).
+- **Log:** a `viewport` tailing `dnsmasq.log`, polled every 500 ms; `l` or `esc` returns.
+- **Status bar:** checks 1, 3 and 4. Any red one says "run `lcd doctor`".
+- Every change runs `apply` as a `tea.Cmd`, with a spinner while dnsmasq restarts. Errors show in the status
+  line and never exit the app.
+
+## Rules
+
+- Names: lowercase labels of `[a-z0-9-]`, 1–63 chars, no leading or trailing `-`, ending in `.local`, and not
+  `local` itself. Regex:
+  `^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*\.local$`
+- Names are unique.
+- A project is the last two labels of a name: `crm.local`, `test.crm.local` and `api.crm.local` are one
+  project. Rows sort by project, then label count, then name, so a parent comes before its subdomains.
+- Addresses: IPv4 inside `127.0.0.0/8`. `127.0.1.1`–`127.0.1.50` is the own block. An own-block address belongs
+  to one project; any name in that project may share it. Every other address may be shared by anyone.
+- Subdomains that aren't listed resolve to the parent's address anyway. A row for a subdomain gives it another
+  address, or a check mark and log lines of its own.
+- Editing or deleting a row never changes other rows: moving `crm.local` leaves `test.crm.local` where it is.
+- Deleting a domain frees its address.
+- `lcd` refuses to start the TUI when checks 1–5 fail, and prints them.
+
+## `lcd doctor` checks
+
+| #   | Check                                                                              | Fix it prints      |
+| --- | ---------------------------------------------------------------------------------- | ------------------ |
+| 1   | dnsmasq installed; `brew services info dnsmasq --json` says running as this user;  | `lcd setup`        |
+|     | no `system/homebrew.mxcl.dnsmasq` job                                              |                    |
+| 2   | system conf has lcd's block, exactly one `conf-file=` line, pointing at lcd's file | `lcd setup`        |
+| 3   | `system/io.lcd.loopback` is loaded and `127.0.1.1` is on `lo0` (count reported)    | `lcd setup`        |
+| 4   | script is root-owned, mode 755, content current; `sudo -n -l <script>` succeeds;   | `lcd setup`, then  |
+|     | every enabled domain has its `/etc/resolver` file with the marker and port         | `lcd apply`        |
+| 5   | no `/etc/resolver/local` (it takes every `.local` name away from Bonjour)          | `sudo rm` it       |
+| 6   | `dnsmasq.conf` and `resolvers` equal what `domains.json` generates                 | `lcd apply`        |
+| 7   | each enabled domain resolves, from dnsmasq directly and through macOS              | `lcd apply`, `l`   |
+
+"Content current" compares the installed script with the one this build of lcd renders, so an upgraded lcd
+asks for `lcd setup` again.
+
+## This Mac today, and what `setup` changes
+
+| Found                                                                    | `setup` does                 |
+| ------------------------------------------------------------------------ | ---------------------------- |
+| dnsmasq runs as `nobody` from a root job in `/Library/LaunchDaemons`     | `sudo brew services stop`    |
+| system conf: `conf-file=~/.config/localdns/dnsmasq.conf`                 | backup, rewrite              |
+| `/etc/resolver/` empty; `lo0` has only `127.0.0.1`                       | install script, plist, rule  |
+| `~/.config/localdns/`, the caddy LaunchAgent, LocalDNS `domains.json`    | print, leave alone           |
+| `/etc/sudoers.d/` exists and is empty                                    | add `lcd`                    |
+| Cloudflare WARP and NordVPN helpers installed                            | nothing (see README)         |
+
+`setup` is safe to run twice: the backup is written only when missing, every install overwrites, and
+`launchctl bootout` before `bootstrap` ignores "not loaded".
+
+## Layout
+
+```text
+cmd/lcd/main.go         subcommand dispatch, exit codes, Version
+internal/paths/         Paths struct: every file and tool path; Default() and ForTest(root)
+internal/run/           Runner interface over os/exec; Exec (real) and Fake (records calls, canned output)
+internal/store/         domains.json load/save, name and address rules, own-block allocation
+internal/dnsmasq/       config and resolver-list generation, brew services restart/status, log tail
+internal/system/        setup, apply, uninstall; templates for the script, plist, sudoers, conf block
+internal/check/         the seven doctor checks and the per-domain resolve check
+internal/tui/           Bubble Tea model, views, key map
+```
+
+Every package takes a `paths.Paths` and a `run.Runner`, so tests point all paths at a temp directory and all
+commands at the fake. Only `cmd/lcd` builds the real ones.
+
+## Steps
+
+Each step ends with `go test -race ./...`, `go vet ./...` and `gofmt -l .` clean, then one conventional commit.
+
+### Phase 0: repo
+
+| Step | Work                                                                                             |
+| ---- | ------------------------------------------------------------------------------------------------ |
+| 0.1  | `git init`; `.gitignore` (`/lcd`, `.DS_Store`); `go mod init github.com/sangdth/lcd`; `go 1.27`   |
+| 0.2  | `go get` the three `charm.land` modules and `teatest/v2`                                          |
+| 0.3  | `CLAUDE.md` (short): commands, layout, "no test touches the system", `charm.land` import paths     |
+| 0.4  | commit `chore: init module and plan` on `master`; `git switch -c sang-dev`                        |
+
+### Phase 1: core, no system changes
+
+| Step | Package            | Work                                                                                   |
+| ---- | ------------------ | -------------------------------------------------------------------------------------- |
+| 1.1  | `internal/paths`   | `Paths{Home, User, ConfigDir, DomainsJSON, DnsmasqConf, Resolvers, Log, SystemConf,`  |
+|      |                    | `SystemConfBackup, LoopbackPlist, Script, Sudoers, ResolverDir, Brew, Dnsmasq, Sudo,`  |
+|      |                    | `Launchctl, Dscacheutil, Pbcopy}`; `Default()`; `ForTest(root)` puts every path under |
+|      |                    | `root` and every tool at `root/bin/<name>`                                             |
+| 1.2  | `internal/run`     | `Runner` with `Run(ctx, name, args...) (string, error)`; `Exec` (10 s timeout, stderr |
+|      |                    | folded into the error); `Fake` (map of `name args` to output or error, records calls) |
+| 1.3  | `internal/store`   | `Domain{Name, Address, Enabled}`, `File{Version, Domains}`; `Load` (missing file is   |
+|      |                    | empty, bad JSON is an error); `Save` (mkdir, temp + rename, 0644, sorted); `Sort`      |
+|      |                    | (project, label count, name); `ValidateName`, `ValidateAddress`, `IsOwn`, `Project`,   |
+|      |                    | `Parent` (longest listed suffix), `NextFree` (`ErrBlockFull`); pure `Add`, `Update`,   |
+|      |                    | `Remove`, `Toggle` that return a new slice and enforce the uniqueness rules            |
+| 1.4  | `internal/dnsmasq` | `Config(domains, logPath)`, `ResolverList(domains)`, `WriteFiles(paths, domains)`;    |
+|      |                    | `Restart(ctx, r, paths)`, `Status(ctx, r, paths)` from `--json`; `Tail(path, offset)` |
+|      |                    | that restarts from 0 when the file shrank                                              |
+| 1.5  | `internal/system`  | templates (`embed`): `apply-resolvers.sh`, `io.lcd.loopback.plist`, `sudoers`, conf    |
+|      |                    | block; `Render(paths)` for each; `RewriteSystemConf(old string, paths) string` that    |
+|      |                    | drops old `conf-file=`, `listen-address=`, `port=`, `bind-interfaces` and lcd blocks,  |
+|      |                    | keeps the rest, appends lcd's block                                                    |
+| 1.6  | `cmd/lcd`          | dispatch with `os.Args`; `version`; unknown command prints usage, exit 2               |
+
+Tests for Phase 1:
+
+- `store`: names accept `flowy.local`, `a-b.dev.local`; reject `local`, `.local`, `X.LOCAL`, `x.com`,
+  `../x.local`, `x.local\nfoo`, `-x.local`, a 64-char label. Addresses accept `127.0.0.1`, `127.0.1.3`;
+  reject `10.0.0.1`, `::1`, `127.0.1`, `abc`. `NextFree`: empty gives `.1`; `.1,.2` gives `.3`; a gap gives the
+  gap; 50 taken gives `ErrBlockFull`. `Add` rejects a duplicate name and an own address held by another
+  project; it allows `test.crm.local` at `crm.local`'s address, at its own free address, and two `127.0.0.1`.
+  `Parent` of `a.test.crm.local` is `test.crm.local` when it and `crm.local` are listed, and none when neither
+  is. `Sort` puts `crm.local` before `test.crm.local` before `flowy.local`. `Remove` frees the address. `Save`
+  then `Load` round-trips and leaves no temp file.
+- `dnsmasq`: golden files `testdata/dnsmasq.conf.golden` and `testdata/resolvers.golden` (disabled domains
+  left out, sorted, one subdomain sharing its parent's address and one with its own; dnsmasq answers from the
+  longest matching `address=` line, so a subdomain's own line wins). `Status` parses the JSON captured from
+  this Mac. `Tail` handles append and truncation.
+- `system`: golden files for the rendered script, plist, sudoers and conf block with fixed fake paths.
+  `RewriteSystemConf` with this Mac's current conf, with Homebrew's all-comment default, and with lcd's own
+  block (unchanged). The script test renders it with a temp resolver dir and input file, runs `/bin/sh`, and
+  asserts: files written for good names with the marker; bad names skipped; a marker file no longer listed is
+  removed; a foreign file is untouched; exit 0; missing input exits non-zero.
+
+Commit: `feat: domain store, generated configs and resolver script`.
+
+### Phase 2: setup, apply, doctor, uninstall
+
+- **2.1 `internal/check`:** `Check{ID, Name, OK, Detail, Fix}`; `Run(ctx, paths, r, domains) []Check` runs
+  the seven checks; `Resolve(ctx, r, name, want) Result{Direct, System bool, Err}`. The direct query uses
+  `net.Resolver{PreferGo: true}` with a `Dial` to `127.0.0.1:53535`.
+- **2.2 `internal/system.Apply(ctx, paths, r, domains) ([]check.Result, error)`:** write both files, restart
+  dnsmasq, run the script through `sudo -n`, resolve every enabled domain. Used by `lcd apply` and the TUI.
+- **2.3 `internal/system.Setup(ctx, paths, r, out)`**, one `✓`/`✗` line per step, stop at the first failure
+  with the fix:
+  1. preflight: dnsmasq binary, system conf file, `/opt/homebrew` prefix;
+  2. user files: `mkdir`, empty `domains.json` when missing, both generated files;
+  3. system conf: backup once, rewrite with `RewriteSystemConf`;
+  4. `sudo -v`, the one password prompt;
+  5. stop the system dnsmasq job when `launchctl print system/homebrew.mxcl.dnsmasq` finds it
+     (`sudo brew services stop dnsmasq`);
+  6. script: `sudo install -o root -g wheel -m 755` from a temp file;
+  7. sudoers: `sudo visudo -cf` on the temp file, then `install -m 440`;
+  8. loopback plist: `install -m 644`, `launchctl bootout` (ignore "not loaded"), then `bootstrap`;
+  9. remove `/etc/resolver/local` when present;
+  10. `brew services restart dnsmasq` as the user;
+  11. `sudo -n` the script, which proves the rule works without a password;
+  12. print the localdns leftovers it saw, then the doctor table.
+- **2.4 `internal/system.Uninstall(ctx, paths, r, out)`:** write an empty resolver list and `sudo -n` the
+  script (removes lcd's resolver files, flushes); `brew services stop dnsmasq`; restore the backup conf, or
+  strip lcd's block when there is none; `sudo`: `bootout` the loopback job, remove its plist,
+  `ifconfig lo0 -alias 127.0.1.$i` for 1–50, remove sudoers and the script. Keep `~/.config/lcd`. Print the
+  `sudo brew services start dnsmasq` hint.
+- **2.5 `cmd/lcd`:** wire `setup`, `apply`, `doctor` (table, exit 1 on any failure) and `uninstall`.
+- **2.6 Hand test on this Mac, Sang present:** `go run ./cmd/lcd setup`; `doctor`; add `flowy.local` and
+  `test.flowy.local`, both `127.0.1.3`, to `domains.json` by hand; `apply`; `time dscacheutil -q host -a name`
+  for `flowy.local`, `test.flowy.local` and the unlisted `foo.flowy.local` (all `127.0.1.3`, which proves suffix
+  matching on both sides); `ifconfig lo0 | grep 127.0.1`; `uninstall`; `doctor` (expect failures); `setup`
+  again. Record the output in `docs/setup-log.md`.
+
+Tests for Phase 2 use the fake runner and temp paths only:
+
+- `check`: each check both ways with canned command output; the direct resolve against an in-test UDP server
+  that answers one A record (packet built by hand, no DNS library).
+- `system`: the exact command sequence of `Setup` on a fresh Mac, with a system job present, and on a second
+  run (no second backup); `Uninstall`'s sequence and that `domains.json` survives; `Apply` writes both files
+  before any command and stops at the first failing command.
+
+Commit: `feat: setup, apply, doctor and uninstall commands`.
+
+### Phase 3: TUI list and status
+
+| Step | Work                                                                                                 |
+| ---- | ---------------------------------------------------------------------------------------------------- |
+| 3.1  | `tui.Model` with modes `list`, `form`, `confirm`, `log`; fields: domains, checks, results, table,     |
+|      | spinner, status text, busy flag, size                                                                |
+| 3.2  | `Applier` interface (`Apply(ctx, domains)`) and `Checker` (`Run(ctx)`); real ones wrap `system` and  |
+|      | `check`; fakes in tests                                                                              |
+| 3.3  | `Init`: load domains, run checks and resolve as one `tea.Cmd`; `Update`: `q`/`ctrl+c`, `r` (apply), |
+|      | `space` (toggle then apply), `j`/`k`/arrows via the table; messages `appliedMsg`, `checksMsg`,      |
+|      | `errMsg`; spinner while busy, other keys ignored while busy                                          |
+| 3.4  | `View`: status bar, table with subdomains indented by label count, key help; colors through          |
+|      | one `styles` struct                                                                                  |
+| 3.5  | `cmd/lcd`: no args runs checks 1–5 first; failures print and exit 1; else `tea.NewProgram` with the |
+|      | alt screen                                                                                           |
+
+Tests: `Update` tests with the fakes (toggle calls `Apply` with the flipped domain; an apply error lands in the
+status text and keeps the list; keys are ignored while busy). `teatest` golden of the list view at 80×24 with
+three domains.
+
+Commit: `feat: tui list and status bar`.
+
+### Phase 4: add, edit, delete, copy env
+
+| Step | Work                                                                                                 |
+| ---- | ---------------------------------------------------------------------------------------------------- |
+| 4.1  | form: name and address `textinput`s, `tab`/`shift+tab`, `enter` validates with `store` rules and     |
+|      | uniqueness then applies, `esc` cancels; while the name is typed, add prefills the address from       |
+|      | `Parent`, else `NextFree` (with the "all 50 taken" note); `addressTouched` stops the prefill;        |
+|      | the hint names the next free own address                                                             |
+| 4.2  | edit (`e`) prefills the selected row; a changed name keeps the address                               |
+| 4.3  | delete (`d`): `confirm` mode, `y` applies the removal, anything else cancels                         |
+| 4.4  | copy env (`c`): `pbcopy` through the runner with `DOCKER_HOST_IP=<address>`; status "copied"         |
+
+Tests: form validation paths (bad name, duplicate name, own address held by another project, a subdomain
+sharing its parent's address allowed, shared `127.0.0.1` allowed); prefill from the parent, from `NextFree`,
+and frozen after typing in the address field; the hint's next free value; delete confirm and cancel; `pbcopy`
+input seen by the fake. `teatest` golden of the form.
+
+Commit: `feat: add, edit, delete and copy env`.
+
+### Phase 5: log view
+
+| Step | Work                                                                                              |
+| ---- | ------------------------------------------------------------------------------------------------- |
+| 5.1  | `l` opens a `viewport` over `dnsmasq.log`; `tea.Tick` every 500 ms calls `Tail`, appends, goes to |
+|      | the bottom; `l`/`esc` returns; missing log file shows "no log yet"                                |
+
+Tests: `Update` toggles the mode and stops the tick when leaving; `Tail` growth and truncation already covered.
+
+Commit: `feat: dnsmasq log view`.
+
+### Phase 6: docs and repo
+
+| Step | Work                                                                                                   |
+| ---- | ------------------------------------------------------------------------------------------------------ |
+| 6.1  | `README.md`: install (`go install github.com/sangdth/lcd/cmd/lcd@latest`), `setup`, keys, `apply`,     |
+|      | `doctor`, `uninstall`, how it works (short, with the project and subdomain rules), troubleshooting     |
+| 6.2  | `CLAUDE.md` final pass, under 200 lines                                                                |
+| 6.3  | `.github/workflows/ci.yml` like randomport's, plus `go test -race ./...`, on `macos-latest`            |
+| 6.4  | `opscom/flowy`: branch `sang-dev`; shrink "Local services on their own address" to the address table, |
+|      | `lcd` install and `lcd setup`, "add `flowy.local` with `127.0.1.3`", and the `.env` note. Own commit   |
+|      | `docs: point local network setup at lcd`. Search the flowy Linear project for a matching ticket first  |
+
+## Tests
+
+- `go test -race ./...`, table-driven, `t.TempDir()` for every path, `run.Fake` for every command.
+- No test touches `/etc`, `/Library`, `/opt/homebrew`, `sudo` or the real `~/.config/lcd`.
+- Golden files live in `testdata/`; `teatest` goldens update with `go test ./internal/tui -update`.
+- The resolver script is tested for real with `/bin/sh` on temp paths (its flush step skips when not root).
+
+## Risks
+
+- **Per-name resolver files under `.local` on macOS 27.** The flowy README recipe relied on it; the Phase 2
+  hand test is the proof. If macOS ignores them, the fallback is `/etc/resolver/local` plus `local=/local/`,
+  which takes every `.local` name from Bonjour.
+- **Someone runs `sudo brew services start dnsmasq` again.** The root job comes back and shadows lcd's.
+  Doctor check 1 names it; `setup` fixes it.
+- **A VPN that captures DNS.** Cloudflare WARP and NordVPN helpers are installed here. When one is on, `.local`
+  lookups may skip `/etc/resolver`. Troubleshooting line; nothing lcd can do.
+- **Bad sudoers file locks `sudo`.** `visudo -cf` runs on the temp file and install happens only when it passes.
+- **Docker Desktop binding to `127.0.1.x`.** The flowy compose file proves it after the hand test; lcd only
+  provides the aliases.
+
+## Troubleshooting (goes in the README)
+
+- `cannot assign requested address` from Docker: the loopback job didn't run. Run `lcd doctor`.
+- `sudo: a password is required` in the TUI: the sudoers rule is missing or the script changed. `lcd doctor`
+  check 4, then `lcd setup`.
+- `dig flowy.local` finds nothing: expected. `dig` and `nslookup` skip `/etc/resolver`; Node, `psql` and
+  browsers use it. Test with `dscacheutil -q host -a name flowy.local`.
+- About 5 s per lookup: the resolver file is missing, so macOS asked Bonjour. `lcd doctor` check 4.
+- `foo.crm.local` resolves although it isn't listed: expected. dnsmasq's `address=` and the resolver file both
+  match subdomains. Add a row only to give it another address.
+- Names resolve for one app but not another: a VPN or WARP is capturing DNS.
+- Containers can't reach `flowy.local`: they don't need to. Inside Docker they use the service name.
+- The log view shows no queries: the lookup never reached dnsmasq. Check 4 (resolver file) or the VPN line.
+
+## Out of scope for v1
+
+- HTTPS and a reverse proxy (Caddy). Apps are reached at `http://<name>:<port>`; with its own address each app
+  keeps its usual port (`next dev -H 127.0.1.3 -p 3000`).
+- Migrating or cleaning up localdns.
+- Intel Homebrew (`/usr/local`) and Linux.
+- Non-interactive `lcd add` / `lcd rm`. `lcd apply` on a hand-edited `domains.json` covers scripts for now.
+- A Homebrew tap and a release workflow. `go install` until there's a second user.
