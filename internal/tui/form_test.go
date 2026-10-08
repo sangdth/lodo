@@ -318,7 +318,7 @@ func TestConfirm(t *testing.T) {
 			t.Parallel()
 			b := &fakeBackend{}
 			m := send(send(send(send(ready(b, sample), "down"), "down"), "down"), "d") // old.oo
-			if got := strings.TrimSpace(ansi.Strip(m.statusLine())); got != "delete old.oo? y/n" {
+			if got := strings.TrimSpace(ansi.Strip(m.statusLine())); got != "delete old.oo? y/N" {
 				t.Errorf("status line = %q, want the question", got)
 			}
 			m = send(m, tt.key)

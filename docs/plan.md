@@ -270,7 +270,7 @@ A failure at any step shows in the status line. The saved file stays as written;
   field.
 - **Spinner:** while a change runs, the changed row's mark spins, whether the name is on or off; the first
   check and `r` spin every enabled row.
-- **Delete:** `d` asks `delete flowy.oo? y/n` in the status line.
+- **Delete:** `d` asks `delete flowy.oo? y/N` in the status line; only `y` deletes.
 - **Copy env** puts `DOCKER_HOST_IP=127.0.1.3` on the clipboard (`pbcopy`).
 - **Log:** a `viewport` tailing `dnsmasq.log`, polled every 500 ms; `g` or `esc` returns.
 - **Status bar:** checks 8, 1, 3 and 4, in that order. A green `●` is on and works, a dim `○` is off: turned off, or Caddy

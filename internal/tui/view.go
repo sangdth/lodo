@@ -280,7 +280,7 @@ func (m Model) statusLine() string {
 	line := ""
 	switch {
 	case m.mode == modeConfirm:
-		line = m.styles.title.Render("delete " + m.target + "? y/n")
+		line = m.styles.title.Render("delete " + m.target + "? y/N")
 	case m.err != nil:
 		line = m.styles.bad.Render("✗ " + oneLine(m.err.Error()))
 	case m.note != "":
