@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sangdth/lcd/internal/paths"
-	"github.com/sangdth/lcd/internal/run"
-	"github.com/sangdth/lcd/internal/system"
+	"github.com/sangdth/oo/internal/paths"
+	"github.com/sangdth/oo/internal/run"
+	"github.com/sangdth/oo/internal/system"
 )
 
 // newMac returns paths under a temp root holding what a Mac with Homebrew
@@ -44,10 +44,10 @@ func setupCalls(p paths.Paths, withCaddy bool) []string {
 		run.Line(p.Launchctl, "print", "system/sh.brew.dnsmasq"),
 		run.Line(p.Sudo, "-n", p.Install, "-d", "-o", "root", "-g", "wheel", "-m", "755", filepath.Dir(p.Script)),
 		install("755", "apply-resolvers.sh", p.Script),
-		run.Line(p.Visudo, "-c", "-f", filepath.Join(p.Staging, "lcd")),
-		install("440", "lcd", p.Sudoers),
-		install("644", "io.lcd.loopback.plist", p.LoopbackPlist),
-		run.Line(p.Sudo, "-n", p.Launchctl, "bootout", "system/io.lcd.loopback"),
+		run.Line(p.Visudo, "-c", "-f", filepath.Join(p.Staging, "oo")),
+		install("440", "oo", p.Sudoers),
+		install("644", "io.oo.loopback.plist", p.LoopbackPlist),
+		run.Line(p.Sudo, "-n", p.Launchctl, "bootout", "system/io.oo.loopback"),
 		run.Line(p.Sudo, "-n", p.Launchctl, "bootstrap", "system", p.LoopbackPlist),
 		run.Line(p.Brew, "services", "restart", "dnsmasq"),
 	}
@@ -90,7 +90,7 @@ func TestSetup(t *testing.T) {
 				if _, err := os.Stat(p.SystemCaddyfileBackup); !os.IsNotExist(err) {
 					t.Errorf("Caddyfile backup made with no Caddyfile before: %v", err)
 				}
-			} else if !strings.Contains(out.String(), "– Caddy serves lcd's sites on port 80: Caddy is not installed") {
+			} else if !strings.Contains(out.String(), "– Caddy serves oo's sites on port 80: Caddy is not installed") {
 				t.Errorf("output does not say Caddy was skipped:\n%s", out.String())
 			}
 			if _, err := os.Stat(p.Staging); !os.IsNotExist(err) {
@@ -192,7 +192,7 @@ func TestSetup_Failures(t *testing.T) {
 		{
 			name:     "password refused",
 			prepare:  func(_ *testing.T, p paths.Paths, r *run.Fake) { r.Fail(run.Line(p.Sudo, "-v"), "Sorry, try again.") },
-			wantStep: "admin password", wantFix: "run lcd setup again and enter your password", wantCalls: 1,
+			wantStep: "admin password", wantFix: "run oo setup again and enter your password", wantCalls: 1,
 		},
 		{
 			name: "invalid domains.json",
@@ -200,21 +200,21 @@ func TestSetup_Failures(t *testing.T) {
 				t.Helper()
 				writeFile(t, p.DomainsJSON, `{"version":1,"domains":[{"name":"X","address":"127.0.0.1","enabled":true}]}`)
 			},
-			wantStep: "lcd's files in", wantFix: "fix or remove", wantCalls: 1,
+			wantStep: "oo's files in", wantFix: "fix or remove", wantCalls: 1,
 		},
 		{
 			name: "visudo rejects the rule",
 			prepare: func(_ *testing.T, p paths.Paths, r *run.Fake) {
-				r.Fail(run.Line(p.Visudo, "-c", "-f", filepath.Join(p.Staging, "lcd")), "syntax error")
+				r.Fail(run.Line(p.Visudo, "-c", "-f", filepath.Join(p.Staging, "oo")), "syntax error")
 			},
-			wantStep: "sudoers rule installed", wantFix: "lcd setup", wantCalls: 6,
+			wantStep: "sudoers rule installed", wantFix: "oo setup", wantCalls: 6,
 		},
 		{
 			name: "sudo rule does not work",
 			prepare: func(_ *testing.T, p paths.Paths, r *run.Fake) {
 				r.Fail(run.Line(p.Sudo, "-n", "-k", p.Script), "sudo: a password is required")
 			},
-			wantStep: "sudo runs the resolver script without a password", wantFix: "lcd setup", wantCalls: 12,
+			wantStep: "sudo runs the resolver script without a password", wantFix: "oo setup", wantCalls: 12,
 		},
 	}
 	for _, tt := range tests {

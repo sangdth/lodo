@@ -1,10 +1,10 @@
- [1mlcd[m   dnsmasq [32m●[m   loopback [32m●[m   resolvers [32m●[m   caddy [32m●[m
+ [1moo[m   dnsmasq [32m●[m   loopback [32m●[m   resolvers [32m●[m   caddy [32m●[m
 
  [1mAdd a name[m
 
- name     [37m[m[37mtest.crm.lcd[m [37m                            [m
- address  [37m[m[37m127.0.1.1[m [37m       [m  [90mcrm.lcd's address; next free: 127.0.1.2[m
- port     [37m[m3001[7;37m [m    [90mhttp://test.crm.lcd then reaches 127.0.1.1:3001[m
+ name     [37m[m[37mtest.crm.oo[m [37m                             [m
+ address  [37m[m[37m127.0.1.1[m [37m       [m  [90mcrm.oo's address; next free: 127.0.1.2[m
+ port     [37m[m3001[7;37m [m    [90mhttp://test.crm.oo then reaches 127.0.1.1:3001[m
 
 
 

@@ -7,11 +7,11 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/sangdth/lcd/internal/run"
+	"github.com/sangdth/oo/internal/run"
 )
 
 // Status is one service as brew services info --json reports it. JSON nulls,
-// such as the pid of a stopped service, decode to zero values, and fields lcd
+// such as the pid of a stopped service, decode to zero values, and fields oo
 // does not read are ignored.
 type Status struct {
 	Name    string `json:"name"`    // the formula, such as "dnsmasq"

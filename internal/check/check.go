@@ -1,4 +1,4 @@
-// Package check runs lcd doctor's checks and probes each enabled domain.
+// Package check runs oo doctor's checks and probes each enabled domain.
 package check
 
 import (
@@ -14,16 +14,16 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/sangdth/lcd/internal/brew"
-	"github.com/sangdth/lcd/internal/caddy"
-	"github.com/sangdth/lcd/internal/dnsmasq"
-	"github.com/sangdth/lcd/internal/paths"
-	"github.com/sangdth/lcd/internal/run"
-	"github.com/sangdth/lcd/internal/store"
-	"github.com/sangdth/lcd/internal/system"
+	"github.com/sangdth/oo/internal/brew"
+	"github.com/sangdth/oo/internal/caddy"
+	"github.com/sangdth/oo/internal/dnsmasq"
+	"github.com/sangdth/oo/internal/paths"
+	"github.com/sangdth/oo/internal/run"
+	"github.com/sangdth/oo/internal/store"
+	"github.com/sangdth/oo/internal/system"
 )
 
-// Env holds what the checks and probes need: lcd's paths, the runner for
+// Env holds what the checks and probes need: oo's paths, the runner for
 // commands, and where dnsmasq and Caddy listen. NewEnv returns the values for
 // this Mac; tests point DNS and HTTPPort at local servers and RootUID at their
 // own uid.
@@ -59,8 +59,8 @@ type Check struct {
 
 // The fixes most checks print.
 const (
-	fixSetup = "lcd setup"
-	fixApply = "lcd apply"
+	fixSetup = "oo setup"
+	fixApply = "oo apply"
 )
 
 // doctorChecks are the eight checks, in ID order. Each gets the whole domain
@@ -79,8 +79,8 @@ var doctorChecks = []struct {
 	{"caddy", Env.checkCaddy},
 }
 
-// prerequisites is how many checks, from the first, need lcd setup or a
-// manual fix rather than lcd apply.
+// prerequisites is how many checks, from the first, need oo setup or a
+// manual fix rather than oo apply.
 const prerequisites = 5
 
 // Run runs the eight checks one after another and returns them in ID order.
@@ -97,7 +97,7 @@ func (e Env) Report(ctx context.Context, domains []store.Domain) ([]Check, []Res
 	return e.run(ctx, domains, results, len(doctorChecks)), results
 }
 
-// Prerequisites runs checks 1 to 5, which need lcd setup or a manual fix.
+// Prerequisites runs checks 1 to 5, which need oo setup or a manual fix.
 // It probes nothing, so it is quick enough to run before the TUI starts.
 func (e Env) Prerequisites(ctx context.Context, domains []store.Domain) []Check {
 	return e.run(ctx, domains, nil, prerequisites)
@@ -123,7 +123,7 @@ func Failed(checks []Check) []Check {
 	return failed
 }
 
-// checkDnsmasq: dnsmasq is installed, no root job shadows lcd's, and
+// checkDnsmasq: dnsmasq is installed, no root job shadows oo's, and
 // Homebrew's job runs it as the user.
 func (e Env) checkDnsmasq(ctx context.Context, _ []store.Domain, _ []Result) Check {
 	p := e.Paths
@@ -132,7 +132,7 @@ func (e Env) checkDnsmasq(ctx context.Context, _ []store.Domain, _ []Result) Che
 	}
 	for _, label := range system.DnsmasqSystemLabels {
 		if _, err := e.Runner.Run(ctx, p.Launchctl, "print", "system/"+label); err == nil {
-			return fail("a root job, system/"+label+", runs dnsmasq and shadows lcd's", fixSetup)
+			return fail("a root job, system/"+label+", runs dnsmasq and shadows oo's", fixSetup)
 		}
 	}
 	st, err := brew.Info(ctx, e.Runner, p.Brew, "dnsmasq")
@@ -147,7 +147,7 @@ func (e Env) checkDnsmasq(ctx context.Context, _ []store.Domain, _ []Result) Che
 	return pass(fmt.Sprintf("running as %s, pid %d", p.User, st.PID))
 }
 
-// checkConfig: Homebrew's dnsmasq.conf includes lcd's file and makes dnsmasq
+// checkConfig: Homebrew's dnsmasq.conf includes oo's file and makes dnsmasq
 // listen where the resolver files point.
 func (e Env) checkConfig(_ context.Context, _ []store.Domain, _ []Result) Check {
 	p := e.Paths
@@ -201,15 +201,15 @@ func (e Env) checkResolvers(ctx context.Context, domains []store.Domain, _ []Res
 		case errors.Is(err, fs.ErrNotExist), err == nil && strings.HasPrefix(got, system.Marker+"\n"):
 			missing = append(missing, d.Name)
 		default:
-			// The script leaves files without lcd's marker alone, so apply
+			// The script leaves files without oo's marker alone, so apply
 			// can never fix this one.
 			foreign = append(foreign, path)
 			foreignNames = append(foreignNames, d.Name)
 		}
 	}
 	if len(foreign) > 0 {
-		return fail("not written by lcd, so lcd apply won't replace: "+firstFew(foreignNames, ", "),
-			"sudo rm "+strings.Join(foreign, " ")+", then lcd apply")
+		return fail("not written by oo, so oo apply won't replace: "+firstFew(foreignNames, ", "),
+			"sudo rm "+strings.Join(foreign, " ")+", then oo apply")
 	}
 	if len(missing) > 0 {
 		return fail("missing for "+firstFew(missing, ", "), fixApply)
@@ -257,7 +257,7 @@ func (e Env) checkResolverLocal(_ context.Context, _ []store.Domain, _ []Result)
 	return fail(local+" sends every .local name to one server, away from Bonjour", "sudo rm "+local)
 }
 
-// checkGenerated: lcd's three generated files hold what domains generates.
+// checkGenerated: oo's three generated files hold what domains generates.
 func (e Env) checkGenerated(_ context.Context, domains []store.Domain, _ []Result) Check {
 	p := e.Paths
 	var stale []string
@@ -307,10 +307,10 @@ func (e Env) checkCaddy(ctx context.Context, domains []store.Domain, _ []Result)
 	}
 	p := e.Paths
 	if !installed(p.Caddy) {
-		return fail("not installed", "brew install caddy, then lcd setup")
+		return fail("not installed", "brew install caddy, then oo setup")
 	}
 	if !system.CaddySetUp(p) {
-		return fail("Homebrew's Caddyfile does not import lcd's", fixSetup)
+		return fail("Homebrew's Caddyfile does not import oo's", fixSetup)
 	}
 	st, err := brew.Info(ctx, e.Runner, p.Brew, "caddy")
 	switch {
@@ -334,7 +334,7 @@ func (e Env) portOwner(ctx context.Context, sites int) Check {
 	case slices.ContainsFunc(commands, func(c string) bool { return strings.HasPrefix(c, "caddy") }):
 		return pass("running, serves " + plural(sites, "site"))
 	case len(commands) > 0:
-		return fail(fmt.Sprintf("port %d is taken by %s", e.HTTPPort, commands[0]), "stop "+commands[0]+", then lcd apply")
+		return fail(fmt.Sprintf("port %d is taken by %s", e.HTTPPort, commands[0]), "stop "+commands[0]+", then oo apply")
 	}
 	return fail(fmt.Sprintf("nothing listens on port %d", e.HTTPPort), fixSetup)
 }
@@ -390,13 +390,13 @@ func confValues(content string) map[string][]string {
 	return values
 }
 
-// confProblem returns the first way values differ from lcd's block in
+// confProblem returns the first way values differ from oo's block in
 // Homebrew's dnsmasq.conf, or "" when they match it.
-func confProblem(values map[string][]string, lcdConf string) string {
+func confProblem(values map[string][]string, ooConf string) string {
 	if problem := lineCount(values, "conf-file"); problem != "" {
 		return problem
 	}
-	if got := values["conf-file"][0]; got != lcdConf {
+	if got := values["conf-file"][0]; got != ooConf {
 		return "conf-file points at " + got
 	}
 	for _, want := range []struct{ key, value string }{

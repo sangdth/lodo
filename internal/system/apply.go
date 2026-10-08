@@ -8,16 +8,16 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/sangdth/lcd/internal/brew"
-	"github.com/sangdth/lcd/internal/caddy"
-	"github.com/sangdth/lcd/internal/paths"
-	"github.com/sangdth/lcd/internal/run"
-	"github.com/sangdth/lcd/internal/store"
+	"github.com/sangdth/oo/internal/brew"
+	"github.com/sangdth/oo/internal/caddy"
+	"github.com/sangdth/oo/internal/paths"
+	"github.com/sangdth/oo/internal/run"
+	"github.com/sangdth/oo/internal/store"
 )
 
-// ErrNotSetUp means lcd setup has not run. Apply then changes nothing: it
-// would start dnsmasq against a config that does not include lcd's.
-var ErrNotSetUp = errors.New("lcd is not set up: run lcd setup")
+// ErrNotSetUp means oo setup has not run. Apply then changes nothing: it
+// would start dnsmasq against a config that does not include oo's.
+var ErrNotSetUp = errors.New("oo is not set up: run oo setup")
 
 // Apply makes the running system match domains: it writes the generated
 // files, restarts dnsmasq, runs the resolver script through sudo (which also
@@ -42,8 +42,8 @@ func Apply(ctx context.Context, p paths.Paths, r run.Runner, domains []store.Dom
 }
 
 // errCaddyNotSetUp means a domain has a port but setup never pointed
-// Homebrew's Caddy at lcd's Caddyfile.
-var errCaddyNotSetUp = errors.New("a domain has a port but Caddy is not set up for lcd: brew install caddy, then lcd setup")
+// Homebrew's Caddy at oo's Caddyfile.
+var errCaddyNotSetUp = errors.New("a domain has a port but Caddy is not set up for oo: brew install caddy, then oo setup")
 
 func applyCaddy(ctx context.Context, p paths.Paths, r run.Runner, domains []store.Domain, changed bool) error {
 	needed := slices.ContainsFunc(domains, func(d store.Domain) bool { return d.Enabled && d.Port > 0 })
@@ -71,13 +71,13 @@ func applyCaddy(ctx context.Context, p paths.Paths, r run.Runner, domains []stor
 	return brew.Restart(ctx, r, p.Brew, "caddy")
 }
 
-// SetupDone reports whether lcd setup has run: the resolver script is
-// installed and Homebrew's dnsmasq.conf includes lcd's file.
+// SetupDone reports whether oo setup has run: the resolver script is
+// installed and Homebrew's dnsmasq.conf includes oo's file.
 func SetupDone(p paths.Paths) bool {
 	return exists(p.Script) && hasLine(p.SystemConf, "conf-file="+p.DnsmasqConf)
 }
 
-// CaddySetUp reports whether Homebrew's Caddyfile imports lcd's.
+// CaddySetUp reports whether Homebrew's Caddyfile imports oo's.
 func CaddySetUp(p paths.Paths) bool {
 	return hasLine(p.SystemCaddyfile, "import "+p.Caddyfile)
 }

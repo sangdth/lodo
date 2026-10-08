@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sangdth/lcd/internal/store"
+	"github.com/sangdth/oo/internal/store"
 )
 
 // Probe time limits. Probe often runs right after apply restarted dnsmasq or
@@ -227,7 +227,7 @@ func httpProblem(status int, h http.Header, d store.Domain, httpPort int) string
 	case server == "Caddy" && status == http.StatusBadGateway:
 		return "app down: nothing answers on " + net.JoinHostPort(d.Address, strconv.Itoa(d.Port))
 	case server == "Caddy":
-		return "caddy has no site for " + d.Name + ": run lcd apply"
+		return "caddy has no site for " + d.Name + ": run oo apply"
 	}
 	return fmt.Sprintf("port %d on %s answered by %s, not Caddy", httpPort, d.Address, cmp.Or(server, "something"))
 }

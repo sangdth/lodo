@@ -8,7 +8,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/sangdth/lcd/internal/store"
+	"github.com/sangdth/oo/internal/store"
 )
 
 func TestPress(t *testing.T) {
@@ -43,10 +43,10 @@ func TestModel_Toggle(t *testing.T) {
 
 	b := &fakeBackend{}
 	m := ready(b, sample)
-	m = send(m, "down") // dashboard.crm.lcd
+	m = send(m, "down") // dashboard.crm.oo
 	m = send(m, "space")
 
-	want, err := store.Toggle(sample, "dashboard.crm.lcd")
+	want, err := store.Toggle(sample, "dashboard.crm.oo")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,12 +95,12 @@ func TestModel_Reload(t *testing.T) {
 
 	b := &fakeBackend{}
 	m := ready(b, sample)
-	b.onDisk = []store.Domain{{Name: "new.lcd", Address: "127.0.1.9", Enabled: true}}
+	b.onDisk = []store.Domain{{Name: "new.oo", Address: "127.0.1.9", Enabled: true}}
 	m = send(m, "r")
-	if len(b.applied) != 1 || b.applied[0][0].Name != "new.lcd" {
+	if len(b.applied) != 1 || b.applied[0][0].Name != "new.oo" {
 		t.Errorf("applied %v, want the list on disk", b.applied)
 	}
-	if len(m.domains) != 1 || m.domains[0].Name != "new.lcd" {
+	if len(m.domains) != 1 || m.domains[0].Name != "new.oo" {
 		t.Errorf("domains = %v, want the list on disk", m.domains)
 	}
 }

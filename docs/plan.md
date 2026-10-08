@@ -1,31 +1,31 @@
-# Plan: `lcd`, a terminal UI for dnsmasq
+# Plan: `oo`, a terminal UI for dnsmasq
 
 ## Goal
 
-`lcd` is a small terminal app that manages local `.lcd` names on macOS through dnsmasq. Each project gets its
+`oo` is a small terminal app that manages local `.oo` names on macOS through dnsmasq. Each project gets its
 own loopback address (`127.0.1.x`), so many projects run at once on their standard ports, and each is
 reached by name:
 
 ```text
-flowy.lcd -> 127.0.1.3 -> 127.0.1.3:5432 (flowy's Postgres), 127.0.1.3:3000 (its Next app)
-crm.lcd   -> 127.0.1.1 -> 127.0.1.1:5432 (crm's Postgres)
+flowy.oo -> 127.0.1.3 -> 127.0.1.3:5432 (flowy's Postgres), 127.0.1.3:3000 (its Next app)
+crm.oo   -> 127.0.1.1 -> 127.0.1.1:5432 (crm's Postgres)
 ```
 
-A project may have subdomains, like `test.crm.lcd`. Each is a row of its own: it shares the project's address
+A project may have subdomains, like `test.crm.oo`. Each is a row of its own: it shares the project's address
 by default, or gets its own when it needs its own ports. Subdomains that aren't listed resolve to the parent's
 address anyway, because dnsmasq's `address=` lines and the `/etc/resolver` files both match by suffix.
 
-A row may also carry a port. Then Caddy answers `http://dashboard.crm.lcd` on port 80 and forwards it to
+A row may also carry a port. Then Caddy answers `http://dashboard.crm.oo` on port 80 and forwards it to
 `127.0.1.1:3000`, so a monorepo's apps get port-less URLs while every service keeps its own port.
 
-Admin rights are needed once, for `lcd setup`. Adding, editing and removing names never asks for a password.
+Admin rights are needed once, for `oo setup`. Adding, editing and removing names never asks for a password.
 
 ## Decisions
 
 Settled 2026-10-08. The steps below follow them.
 
 - **Root hop:** one root-owned script, `apply-resolvers.sh`, run through `sudo -n` under a `NOPASSWD` rule in
-  `/etc/sudoers.d/lcd`. It runs synchronously: lcd sees its exit code and output, and the resolve check runs
+  `/etc/sudoers.d/oo`. It runs synchronously: oo sees its exit code and output, and the resolve check runs
   after the cache flush. No launchd job watches files; `launchd.plist(5)` calls `WatchPaths` "highly
   race-prone".
 - **Address:** one form field, prefilled with the lowest free `127.0.1.x`. You may overwrite it (`127.0.1.3`
@@ -33,13 +33,13 @@ Settled 2026-10-08. The steps below follow them.
   `127.0.1.1`–`127.0.1.50`. An own-block address belongs to one project; other addresses may be shared.
 - **Subdomains:** a subdomain is a normal row; the hierarchy is derived from the name, nothing is nested in
   `domains.json`. The form prefills a subdomain with its parent's address. A project is the last two labels
-  (`crm.lcd`), and any name in a project may share its own-block address. Editing or deleting a parent leaves
+  (`crm.oo`), and any name in a project may share its own-block address. Editing or deleting a parent leaves
   its subdomains as they are.
-- **Ports:** a row has an optional port. With one, lcd writes a Caddy site
+- **Ports:** a row has an optional port. With one, oo writes a Caddy site
   `http://<name> { reverse_proxy <address>:<port> }` and restarts Caddy as the user. HTTP only; HTTPS stays out.
   Caddy is needed only when a row has a port. Apps listen on their project's address.
 - **Stack:** Charm v2 modules under their `charm.land` import paths.
-- **Repo:** module `github.com/sangdth/lcd`; `master` holds the initial commit, work happens on `sang-dev`.
+- **Repo:** module `github.com/sangdth/oo`; `master` holds the initial commit, work happens on `sang-dev`.
 - **localdns leftovers:** `setup` replaces the old `conf-file` line, starts with an empty `domains.json`, and
   prints the other leftovers for manual cleanup. No migration code.
 - **Hand test:** Phase 2 runs on this Mac right after Phase 1, with Sang at the keyboard for the password.
@@ -50,47 +50,48 @@ Settled 2026-10-08. The steps below follow them.
 ### Settled while building
 
 - **Branch:** `master` already held Sang's first commit, so Phase 0 is committed on `sang-dev`.
-- **Order:** rows sort by their labels read right to left: `crm.lcd`, `api.crm.lcd`, `a.api.crm.lcd`,
-  `test.crm.lcd`, `flowy.lcd`. A parent comes right before its subdomains, at any depth.
+- **Order:** rows sort by their labels read right to left: `crm.oo`, `api.crm.oo`, `a.api.crm.oo`,
+  `test.crm.oo`, `flowy.oo`. A parent comes right before its subdomains, at any depth.
 - **Port 80 is refused:** Caddy listens there, so a route to it would loop back into Caddy.
 - **Probing is separate from applying:** `system.Apply` changes the system; `check.Env.Probe` checks the names.
-  `lcd apply` and the TUI call both. `check` reads `system`'s templates, so `system` can't import `check`.
+  `oo apply` and the TUI call both. `check` reads `system`'s templates, so `system` can't import `check`.
 - **Setup asks for the password first,** before it changes anything, so a cancelled prompt leaves no trace.
 - **A root dnsmasq job is stopped with `launchctl bootout` and its plist removed,** not with
   `sudo brew services stop`, so Homebrew never runs as root.
-- **`bind-dynamic` is dropped from Homebrew's dnsmasq.conf too:** it conflicts with lcd's `bind-interfaces`.
+- **`bind-dynamic` is dropped from Homebrew's dnsmasq.conf too:** it conflicts with oo's `bind-interfaces`.
 - **The sudoers rule allows the script with no arguments only** (`""` after the path), and the script refuses a
   symlinked list and never prints a line it read from the list.
 - **The HTTP probe reads Caddy's headers** (checked against Caddy 2.11): `Via: 1.0 Caddy` means the app answered;
   `502` with `Server: Caddy` means the app is down; any other `Server: Caddy` answer means Caddy has no site for
   the name.
 - **Charm modules are added in Phase 3,** where the TUI first imports them; `go mod tidy` drops them earlier.
-- **Names end in `.lcd`** (`store.TLD`). The hand test showed macOS 27 sends a name with one label before
+- **Names end in `.oo`** (`store.TLD`). The hand test showed macOS 27 sends a name with one label before
   `.local`, like `flowy.local`, to Bonjour only and ignores its resolver file (`docs/setup-log.md`). `.dev` was
-  ruled out: browsers force HTTPS on all of it (HSTS preload) and `flowy.dev` is a registered domain. `.lcd` is in
-  no public zone today.
+  ruled out: browsers force HTTPS on all of it (HSTS preload) and `flowy.dev` is a registered domain. `.oo` is in
+  no public zone today, and two-letter top-level domains are kept for country codes. The tool and its
+  names were renamed from `lcd` to `oo` on 2026-10-08.
 - **The TUI has one `Backend` interface** (load, save, apply, report) instead of separate applier and checker
   interfaces; the real one wraps `store`, `system` and `check`.
-- **`lcd` refuses to open while checks 1–5 fail,** using `check.Env.Prerequisites`, which probes nothing. The
+- **`oo` refuses to open while checks 1–5 fail,** using `check.Env.Prerequisites`, which probes nothing. The
   TUI then runs `check.Env.Report` in the background: one probe feeds the status bar and every row.
 - **The table has its own key map:** the default binds `space` and `d` to paging.
 - **TUI snapshots golden `View().Content`,** not teatest's byte stream, which holds spinner frames and timing;
   one teatest test drives the real program loop.
-- **The form refuses a port until Caddy is ready** (installed, and Homebrew's Caddyfile imports lcd's), checked
+- **The form refuses a port until Caddy is ready** (installed, and Homebrew's Caddyfile imports oo's), checked
   only when the port is new or changed. Copy env pipes into `pbcopy` through `run.Runner.RunInput`. The form's
   cursor doesn't blink, so it starts no timers.
 - **Golden files** use `github.com/charmbracelet/x/exp/golden`: `testdata/<TestName>.golden`, `-update` per package.
-- **`apply` refuses before setup:** until the script is installed and Homebrew's dnsmasq.conf includes lcd's,
-  `system.Apply` returns `ErrNotSetUp` and changes nothing. Without it, `lcd apply` before setup started a user
+- **`apply` refuses before setup:** until the script is installed and Homebrew's dnsmasq.conf includes oo's,
+  `system.Apply` returns `ErrNotSetUp` and changes nothing. Without it, `oo apply` before setup started a user
   dnsmasq against the old config.
-- **Doctor names hand-made resolver files:** an `/etc/resolver/<name>` without lcd's marker gets `sudo rm` as its
+- **Doctor names hand-made resolver files:** an `/etc/resolver/<name>` without oo's marker gets `sudo rm` as its
   fix, because the script never replaces it. The old flowy README recipe made exactly such files.
 - **Probes name `/etc/hosts` conflicts:** macOS and dnsmasq answer from `/etc/hosts` first, so an entry with another
   address is reported as the cause of a failed lookup.
 
 ## Stack
 
-- Go 1.27, one binary, module `github.com/sangdth/lcd`.
+- Go 1.27, one binary, module `github.com/sangdth/oo`.
 - `charm.land/bubbletea/v2` v2.0.10 (app loop), `charm.land/bubbles/v2` v2.2.1 (`table`, `textinput`, `spinner`,
   `viewport`, `key`), `charm.land/lipgloss/v2` v2.0.6 (styling).
 - Tests only: `github.com/charmbracelet/x/exp/teatest/v2` with its `x/exp/golden` helper.
@@ -108,13 +109,13 @@ Bubble Tea v2 facts the TUI code relies on (checked against the module docs): `M
 
 | Command         | What it does                                                                                  |
 | --------------- | --------------------------------------------------------------------------------------------- |
-| `lcd`           | opens the TUI; refuses when doctor checks 1–5 fail, and prints them                           |
-| `lcd setup`     | one-time system setup; asks for the admin password in the terminal; safe to run again         |
-| `lcd apply`     | regenerates the files from `domains.json`, restarts dnsmasq (and Caddy when needed), writes   |
+| `oo`           | opens the TUI; refuses when doctor checks 1–5 fail, and prints them                           |
+| `oo setup`     | one-time system setup; asks for the admin password in the terminal; safe to run again         |
+| `oo apply`     | regenerates the files from `domains.json`, restarts dnsmasq (and Caddy when needed), writes   |
 |                 | resolver files, checks                                                                        |
-| `lcd doctor`    | runs the eight checks, prints what's wrong and the fix; exit 1 if any fail                    |
-| `lcd uninstall` | removes everything `setup` installed; keeps `domains.json`                                    |
-| `lcd version`   | prints the version set at build time (`-ldflags "-X main.Version=..."`)                       |
+| `oo doctor`    | runs the eight checks, prints what's wrong and the fix; exit 1 if any fail                    |
+| `oo uninstall` | removes everything `setup` installed; keeps `domains.json`                                    |
+| `oo version`   | prints the version set at build time (`-ldflags "-X main.Version=..."`)                       |
 
 `apply` is the code path the TUI runs after every change and on `r`. It exists as a command so the Phase 2 hand
 test and scripts can use it.
@@ -125,26 +126,26 @@ test and scripts can use it.
 
 | Path                                                  | Owner | Written by                               |
 | ----------------------------------------------------- | ----- | ---------------------------------------- |
-| `~/.config/lcd/domains.json`                          | user  | the TUI (only source of truth)           |
-| `~/.config/lcd/dnsmasq.conf`                          | user  | `apply`, on every change                 |
-| `~/.config/lcd/resolvers`                             | user  | `apply`, on every change                 |
-| `~/.config/lcd/Caddyfile`                             | user  | `apply`, on every change                 |
-| `~/.config/lcd/dnsmasq.log`                           | user  | dnsmasq                                  |
-| `/opt/homebrew/etc/dnsmasq.conf`                      | user  | `lcd setup` (user-owned, no sudo)        |
-| `/opt/homebrew/etc/dnsmasq.conf.before-lcd`           | user  | `lcd setup`, first run only              |
-| `/opt/homebrew/etc/Caddyfile`                         | user  | `lcd setup` (user-owned dir, no sudo)    |
-| `/opt/homebrew/etc/Caddyfile.before-lcd`              | user  | `lcd setup`, first run, if one existed   |
-| `/Library/LaunchDaemons/io.lcd.loopback.plist`        | root  | `lcd setup`                              |
-| `/Library/Application Support/lcd/apply-resolvers.sh` | root  | `lcd setup`                              |
-| `/etc/sudoers.d/lcd`                                  | root  | `lcd setup`                              |
+| `~/.config/oo/domains.json`                          | user  | the TUI (only source of truth)           |
+| `~/.config/oo/dnsmasq.conf`                          | user  | `apply`, on every change                 |
+| `~/.config/oo/resolvers`                             | user  | `apply`, on every change                 |
+| `~/.config/oo/Caddyfile`                             | user  | `apply`, on every change                 |
+| `~/.config/oo/dnsmasq.log`                           | user  | dnsmasq                                  |
+| `/opt/homebrew/etc/dnsmasq.conf`                      | user  | `oo setup` (user-owned, no sudo)        |
+| `/opt/homebrew/etc/dnsmasq.conf.before-oo`           | user  | `oo setup`, first run only              |
+| `/opt/homebrew/etc/Caddyfile`                         | user  | `oo setup` (user-owned dir, no sudo)    |
+| `/opt/homebrew/etc/Caddyfile.before-oo`              | user  | `oo setup`, first run, if one existed   |
+| `/Library/LaunchDaemons/io.oo.loopback.plist`        | root  | `oo setup`                              |
+| `/Library/Application Support/oo/apply-resolvers.sh` | root  | `oo setup`                              |
+| `/etc/sudoers.d/oo`                                  | root  | `oo setup`                              |
 | `/etc/resolver/<domain>`                              | root  | `apply-resolvers.sh`                     |
 
 ### dnsmasq runs as the user on port 53535
 
 ```conf
-# /opt/homebrew/etc/dnsmasq.conf (lcd's block; everything else in the file stays)
-# lcd
-conf-file=/Users/<user>/.config/lcd/dnsmasq.conf
+# /opt/homebrew/etc/dnsmasq.conf (oo's block; everything else in the file stays)
+# oo
+conf-file=/Users/<user>/.config/oo/dnsmasq.conf
 listen-address=127.0.0.1
 port=53535
 bind-interfaces
@@ -155,7 +156,7 @@ must live in the user's launchd domain (`~/Library/LaunchAgents/homebrew.mxcl.dn
 with `sudo brew services start` lives in the system domain, runs as `nobody`, and is invisible to the user's
 `brew services`; `setup` stops it first.
 
-The generated file holds `log-queries`, `log-facility=/Users/<user>/.config/lcd/dnsmasq.log`, and one
+The generated file holds `log-queries`, `log-facility=/Users/<user>/.config/oo/dnsmasq.log`, and one
 `address=/<name>/<ip>` line per enabled domain, in the list's order. Only names with a resolver file
 reach it.
 
@@ -164,25 +165,25 @@ reach it.
 macOS sends a name to dnsmasq only when a file in `/etc/resolver/` matches it:
 
 ```text
-# /etc/resolver/flowy.lcd
-# lcd
+# /etc/resolver/flowy.oo
+# oo
 nameserver 127.0.0.1
 port 53535
 ```
 
 ```text
-# /etc/sudoers.d/lcd
-<user> ALL=(root) NOPASSWD: /Library/Application\ Support/lcd/apply-resolvers.sh
+# /etc/sudoers.d/oo
+<user> ALL=(root) NOPASSWD: /Library/Application\ Support/oo/apply-resolvers.sh
 ```
 
-`apply` runs `sudo -n "/Library/Application Support/lcd/apply-resolvers.sh"`. The script (`/bin/sh`, `set -eu`,
+`apply` runs `sudo -n "/Library/Application Support/oo/apply-resolvers.sh"`. The script (`/bin/sh`, `set -eu`,
 fixed `PATH`, absolute tool paths, user paths baked in at setup):
 
-1. reads `~/.config/lcd/resolvers`, one name per line;
+1. reads `~/.config/oo/resolvers`, one name per line;
 2. keeps only lines matching the name rule below. The regex is one Go constant, rendered into the script
    template, so the two can't drift;
 3. writes `/etc/resolver/<name>` (temp file, then `mv`) with the three fixed lines above;
-4. removes `/etc/resolver/*` files whose first line is `# lcd` and whose name is no longer listed. It never
+4. removes `/etc/resolver/*` files whose first line is `# oo` and whose name is no longer listed. It never
    touches a file it didn't write;
 5. flushes the cache (`dscacheutil -flushcache; killall -HUP mDNSResponder`) when running as root, and skips
    the flush otherwise, so tests run it unprivileged.
@@ -191,7 +192,7 @@ It never runs user-writable code and never writes user content, only file names 
 
 ### The loopback address block
 
-`io.lcd.loopback` runs `ifconfig lo0 alias 127.0.1.$i up` for `i` = 1–50 at every boot (`RunAtLoad`). macOS
+`io.oo.loopback` runs `ifconfig lo0 alias 127.0.1.$i up` for `i` = 1–50 at every boot (`RunAtLoad`). macOS
 only has `127.0.0.1` by default.
 
 ### Ports go through Caddy
@@ -199,17 +200,17 @@ only has `127.0.0.1` by default.
 A row with a port gets a Caddy site. Caddy listens on port 80 as the user and forwards by name:
 
 ```text
-# ~/.config/lcd/Caddyfile
-# Generated by lcd from domains.json. Edits are overwritten.
-http://dashboard.crm.lcd {
+# ~/.config/oo/Caddyfile
+# Generated by oo from domains.json. Edits are overwritten.
+http://dashboard.crm.oo {
 	reverse_proxy 127.0.1.1:3000
 }
 ```
 
 ```text
 # /opt/homebrew/etc/Caddyfile, the file Homebrew's service loads
-# lcd
-import /Users/<user>/.config/lcd/Caddyfile
+# oo
+import /Users/<user>/.config/oo/Caddyfile
 ```
 
 The `http://` prefix keeps Caddy on port 80 with no automatic HTTPS (`caddy adapt` shows one server on `:80`
@@ -235,22 +236,22 @@ A failure at any step shows in the status line. The saved file stays as written;
 ## The TUI
 
 ```text
- lcd   dnsmasq ●   loopback ●   resolvers ●   caddy ●
+ oo   dnsmasq ●   loopback ●   resolvers ●   caddy ●
  ─────────────────────────────────────────────────────────────────────────────
-  ● crm.lcd                127.0.1.1          own    dns ✓
-  ●   dashboard.crm.lcd    127.0.1.1  :3000   own    dns ✓  http ✓
-  ●   service.crm.lcd      127.0.1.1  :3002   own    dns ✓  http ✗ 502, app down
-  ● flowy.lcd              127.0.1.3          own    dns ✓
-  ○ old.lcd                127.0.0.1                 –
+  ● crm.oo                127.0.1.1          own    dns ✓
+  ●   dashboard.crm.oo    127.0.1.1  :3000   own    dns ✓  http ✓
+  ●   service.crm.oo      127.0.1.1  :3002   own    dns ✓  http ✗ 502, app down
+  ● flowy.oo              127.0.1.3          own    dns ✓
+  ○ old.oo                127.0.0.1                 –
  ─────────────────────────────────────────────────────────────────────────────
  a add  e edit  d delete  space on/off  c copy env  l log  r apply  q quit
 ```
 
 ```text
  Add domain
- Name     dashboard.crm.lcd
- Address  127.0.1.1          crm.lcd's address; next free: 127.0.1.4
- Port     3000               optional; http://dashboard.crm.lcd then reaches 127.0.1.1:3000
+ Name     dashboard.crm.oo
+ Address  127.0.1.1          crm.oo's address; next free: 127.0.1.4
+ Port     3000               optional; http://dashboard.crm.oo then reaches 127.0.1.1:3000
  enter save   esc cancel
 ```
 
@@ -260,23 +261,23 @@ A failure at any step shows in the status line. The saved file stays as written;
   the name is a subdomain of a listed name, else the lowest free own address (`127.0.0.1`, with a note, when
   all 50 are taken). The hint names the next free own address so a subdomain can get its own. Typing in the
   address field stops the prefill. Port is optional; a port when `caddy` isn't installed says
-  `brew install caddy`, then `lcd setup`. Edit prefills the stored values. Validation errors show under the
+  `brew install caddy`, then `oo setup`. Edit prefills the stored values. Validation errors show under the
   field.
-- **Delete:** `d` asks `delete flowy.lcd? y/n` in the status line.
+- **Delete:** `d` asks `delete flowy.oo? y/n` in the status line.
 - **Copy env** puts `DOCKER_HOST_IP=127.0.1.3` on the clipboard (`pbcopy`).
 - **Log:** a `viewport` tailing `dnsmasq.log`, polled every 500 ms; `l` or `esc` returns.
 - **Status bar:** checks 1, 3, 4 and 8. `caddy` shows `off` when no row has a port. Any red one says "run
-  `lcd doctor`".
+  `oo doctor`".
 - Every change runs `apply` as a `tea.Cmd`, with a spinner while dnsmasq restarts. Errors show in the status
   line and never exit the app.
 
 ## Rules
 
-- Names: lowercase labels of `[a-z0-9-]`, 1–63 chars, no leading or trailing `-`, ending in `.lcd`, and not
-  `lcd` itself. Regex:
-  `^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*\.lcd$`
+- Names: lowercase labels of `[a-z0-9-]`, 1–63 chars, no leading or trailing `-`, ending in `.oo`, and not
+  `oo` itself. Regex:
+  `^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*\.oo$`
 - Names are unique.
-- A project is the last two labels of a name: `crm.lcd`, `test.crm.lcd` and `api.crm.lcd` are one
+- A project is the last two labels of a name: `crm.oo`, `test.crm.oo` and `api.crm.oo` are one
   project. Rows sort by their labels read right to left, so a parent comes right before its subdomains.
 - Addresses: IPv4 inside `127.0.0.0/8`. `127.0.1.1`–`127.0.1.50` is the own block. An own-block address belongs
   to one project; any name in that project may share it. Every other address may be shared by anyone.
@@ -286,31 +287,31 @@ A failure at any step shows in the status line. The saved file stays as written;
   needs Caddy installed and set up.
 - Turning a subdomain off removes its own lines only. While its parent is on, the parent's lines still answer
   for it.
-- Editing or deleting a row never changes other rows: moving `crm.lcd` leaves `test.crm.lcd` where it is.
+- Editing or deleting a row never changes other rows: moving `crm.oo` leaves `test.crm.oo` where it is.
 - Deleting a domain frees its address.
-- `lcd` refuses to start the TUI when checks 1–5 fail, and prints them.
+- `oo` refuses to start the TUI when checks 1–5 fail, and prints them.
 
-## `lcd doctor` checks
+## `oo doctor` checks
 
 | #   | Check                                                                              | Fix it prints        |
 | --- | ---------------------------------------------------------------------------------- | -------------------- |
-| 1   | dnsmasq installed; `brew services info dnsmasq --json` says running, as this user; | `lcd setup`          |
+| 1   | dnsmasq installed; `brew services info dnsmasq --json` says running, as this user; | `oo setup`          |
 |     | no system job under `homebrew.mxcl.dnsmasq` or `sh.brew.dnsmasq`                   |                      |
-| 2   | system conf has lcd's block, exactly one `conf-file=` line, pointing at lcd's file | `lcd setup`          |
-| 3   | `system/io.lcd.loopback` is loaded and `127.0.1.1` is on `lo0` (count reported)    | `lcd setup`          |
-| 4   | script is root-owned, mode 755, content current; `sudo -n -l <script>` succeeds;   | `lcd setup`, then    |
-|     | every enabled domain has its `/etc/resolver` file with the marker and port         | `lcd apply`          |
+| 2   | system conf has oo's block, exactly one `conf-file=` line, pointing at oo's file | `oo setup`          |
+| 3   | `system/io.oo.loopback` is loaded and `127.0.1.1` is on `lo0` (count reported)    | `oo setup`          |
+| 4   | script is root-owned, mode 755, content current; `sudo -n -l <script>` succeeds;   | `oo setup`, then    |
+|     | every enabled domain has its `/etc/resolver` file with the marker and port         | `oo apply`          |
 | 5   | no `/etc/resolver/local` (it takes every `.local` name away from Bonjour)          | `sudo rm` it         |
-| 6   | `dnsmasq.conf`, `resolvers` and `Caddyfile` equal what `domains.json` generates    | `lcd apply`          |
-| 7   | each enabled domain resolves, from dnsmasq directly and through macOS; with a      | `lcd apply`, `l`     |
+| 6   | `dnsmasq.conf`, `resolvers` and `Caddyfile` equal what `domains.json` generates    | `oo apply`          |
+| 7   | each enabled domain resolves, from dnsmasq directly and through macOS; with a      | `oo apply`, `l`     |
 |     | port, Caddy answers for it                                                         |                      |
 | 8   | only when an enabled row has a port: Caddy installed; `brew services info caddy    | `brew install        |
-|     | --json` running; Homebrew's `Caddyfile` holds lcd's import line;                   | caddy`, `lcd setup`  |
-|     | `caddy validate` passes on lcd's file; port 80 belongs to Caddy, else `lsof -nP    |                      |
+|     | --json` running; Homebrew's `Caddyfile` holds oo's import line;                   | caddy`, `oo setup`  |
+|     | `caddy validate` passes on oo's file; port 80 belongs to Caddy, else `lsof -nP    |                      |
 |     | -iTCP:80 -sTCP:LISTEN` names the listener                                          |                      |
 
-"Content current" compares the installed script with the one this build of lcd renders, so an upgraded lcd
-asks for `lcd setup` again. `lcd` starts the TUI when checks 1–5 pass; a failing check 8 only turns the status
+"Content current" compares the installed script with the one this build of oo renders, so an upgraded oo
+asks for `oo setup` again. `oo` starts the TUI when checks 1–5 pass; a failing check 8 only turns the status
 bar red.
 
 ## This Mac today, and what `setup` changes
@@ -322,7 +323,7 @@ bar red.
 | `/etc/resolver/` empty; `lo0` has only `127.0.0.1`                       | install script, plist, rule  |
 | Caddy 2.11.6 installed, not running; no `/opt/homebrew/etc/Caddyfile`    | write it, start Caddy        |
 | `~/.config/localdns/`, the caddy LaunchAgent, LocalDNS `domains.json`    | print, leave alone           |
-| `/etc/sudoers.d/` exists and is empty                                    | add `lcd`                    |
+| `/etc/sudoers.d/` exists and is empty                                    | add `oo`                    |
 | Cloudflare WARP and NordVPN helpers installed                            | nothing (see README)         |
 
 `setup` is safe to run twice: the backup is written only when missing, every install overwrites, and
@@ -331,7 +332,7 @@ bar red.
 ## Layout
 
 ```text
-cmd/lcd/main.go         subcommand dispatch, exit codes, Version
+cmd/oo/main.go         subcommand dispatch, exit codes, Version
 internal/paths/         Paths struct: every file and tool path; Default() and ForTest(root)
 internal/run/           Runner interface over os/exec; Exec (real) and Fake (records calls, canned output)
 internal/fsutil/        atomic writes (temp file, then rename) that skip unchanged content
@@ -345,7 +346,7 @@ internal/tui/           Bubble Tea model, views, key map
 ```
 
 Every package takes a `paths.Paths` and a `run.Runner`, so tests point all paths at a temp directory and all
-commands at the fake. Only `cmd/lcd` builds the real ones.
+commands at the fake. Only `cmd/oo` builds the real ones.
 
 ## Steps
 
@@ -355,7 +356,7 @@ Each step ends with `go test -race ./...`, `go vet ./...` and `gofmt -l .` clean
 
 | Step | Work                                                                                             |
 | ---- | ------------------------------------------------------------------------------------------------ |
-| 0.1  | `git init`; `.gitignore` (`/lcd`, `.DS_Store`); `go mod init github.com/sangdth/lcd`; `go 1.27`   |
+| 0.1  | `git init`; `.gitignore` (`/oo`, `.DS_Store`); `go mod init github.com/sangdth/oo`; `go 1.27`   |
 | 0.2  | the three `charm.land` modules and `teatest/v2` come in Phase 3, where they are first imported     |
 | 0.3  | `CLAUDE.md` (short): commands, layout, "no test touches the system", `charm.land` import paths     |
 | 0.4  | `git switch -c sang-dev`; commit `chore: init module and plan` there                              |
@@ -385,24 +386,24 @@ Each step ends with `go test -race ./...`, `go vet ./...` and `gofmt -l .` clean
 |      |                    | enabled row with a port, sorted, or the header alone; `Validate(ctx, r, caddyBin,`     |
 |      |                    | `path)` runs `caddy validate --config <path> --adapter caddyfile` and returns the      |
 |      |                    | `msg` of caddy's last JSON error line                                                  |
-| 1.7  | `internal/system`  | templates (`embed`): `apply-resolvers.sh`, `io.lcd.loopback.plist`, `sudoers`, the     |
+| 1.7  | `internal/system`  | templates (`embed`): `apply-resolvers.sh`, `io.oo.loopback.plist`, `sudoers`, the     |
 |      |                    | dnsmasq conf block, the Caddyfile import block; `Render(paths)` for each;              |
 |      |                    | `RewriteSystemConf(old string, paths) string` that drops old `conf-file=`,             |
-|      |                    | `listen-address=`, `port=`, `bind-interfaces` and lcd blocks, keeps the rest, appends  |
-|      |                    | lcd's block; `WriteFiles(paths, domains)` writes the three generated files (temp +     |
+|      |                    | `listen-address=`, `port=`, `bind-interfaces` and oo blocks, keeps the rest, appends  |
+|      |                    | oo's block; `WriteFiles(paths, domains)` writes the three generated files (temp +     |
 |      |                    | rename)                                                                                |
-| 1.8  | `cmd/lcd`          | dispatch with `os.Args`; `version`; unknown command prints usage, exit 2               |
+| 1.8  | `cmd/oo`          | dispatch with `os.Args`; `version`; unknown command prints usage, exit 2               |
 
 Tests for Phase 1:
 
-- `store`: names accept `flowy.lcd`, `a-b.dev.lcd`; reject `lcd`, `.lcd`, `X.LCD`, `x.com`, `flowy.local`,
-  `../x.lcd`, `x.lcd\nfoo`, `-x.lcd`, a 64-char label. Addresses accept `127.0.0.1`, `127.0.1.3`;
+- `store`: names accept `flowy.oo`, `a-b.dev.oo`; reject `oo`, `.oo`, `X.OO`, `x.com`, `flowy.local`,
+  `../x.oo`, `x.oo\nfoo`, `-x.oo`, a 64-char label. Addresses accept `127.0.0.1`, `127.0.1.3`;
   reject `10.0.0.1`, `::1`, `127.0.1`, `abc`. Ports accept empty (none), `1`, `3000`, `65535`; reject `0`,
   `70000`, `abc`. `NextFree`: empty gives `.1`; `.1,.2` gives `.3`; a gap gives the
   gap; 50 taken gives `ErrBlockFull`. `Add` rejects a duplicate name and an own address held by another
-  project; it allows `test.crm.lcd` at `crm.lcd`'s address, at its own free address, and two `127.0.0.1`.
-  `Parent` of `a.test.crm.lcd` is `test.crm.lcd` when it and `crm.lcd` are listed, and none when neither
-  is. `Sort` puts `crm.lcd` before `test.crm.lcd` before `flowy.lcd`. `Remove` frees the address. `Save`
+  project; it allows `test.crm.oo` at `crm.oo`'s address, at its own free address, and two `127.0.0.1`.
+  `Parent` of `a.test.crm.oo` is `test.crm.oo` when it and `crm.oo` are listed, and none when neither
+  is. `Sort` puts `crm.oo` before `test.crm.oo` before `flowy.oo`. `Remove` frees the address. `Save`
   then `Load` round-trips and leaves no temp file.
 - `dnsmasq`: golden files `testdata/dnsmasq.conf.golden` and `testdata/resolvers.golden` (disabled domains
   left out, sorted, one subdomain sharing its parent's address and one with its own; dnsmasq answers from the
@@ -410,9 +411,9 @@ Tests for Phase 1:
 - `brew`: `Status` parses the dnsmasq and caddy JSON captured from this Mac; `Restart` runs
   `brew services restart <service>` and returns stderr on failure.
 - `caddy`: golden `testdata/Caddyfile.golden` with two sites, and the comment-only file when no row has a
-  port; a disabled row with a port is left out; `Validate` passes the lcd file path and the adapter flag.
+  port; a disabled row with a port is left out; `Validate` passes the oo file path and the adapter flag.
 - `system`: golden files for the rendered script, plist, sudoers and conf block with fixed fake paths.
-  `RewriteSystemConf` with this Mac's current conf, with Homebrew's all-comment default, and with lcd's own
+  `RewriteSystemConf` with this Mac's current conf, with Homebrew's all-comment default, and with oo's own
   block (unchanged). The script test renders it with a temp resolver dir and input file, runs `/bin/sh`, and
   asserts: files written for good names with the marker; bad names skipped; a marker file no longer listed is
   removed; a foreign file is untouched; exit 0; missing input exits non-zero.
@@ -426,8 +427,8 @@ Commit: `feat: domain store, generated configs, caddyfile and resolver script`.
   direct query uses `net.Resolver{PreferGo: true}` with a `Dial` to `127.0.0.1:53535`; the http probe dials
   `<address>:80` for `GET http://<name>/` and reads Caddy's `Via` and `Server` headers.
 - **2.2 `internal/system.Apply(ctx, paths, r, domains) error`:** write the three files, restart dnsmasq, run
-  the script through `sudo -n`, and when lcd's import line is in place and the Caddyfile changed or Caddy
-  stopped: validate, then restart Caddy. `lcd apply` and the TUI probe afterward with `check.Env.Probe`.
+  the script through `sudo -n`, and when oo's import line is in place and the Caddyfile changed or Caddy
+  stopped: validate, then restart Caddy. `oo apply` and the TUI probe afterward with `check.Env.Probe`.
 - **2.3 `internal/system.Setup(ctx, paths, r, out)`**, one `✓`/`✗` line per step, stop at the first failure
   with the fix:
   1. preflight: dnsmasq binary, system conf file, `/opt/homebrew` prefix;
@@ -441,23 +442,23 @@ Commit: `feat: domain store, generated configs, caddyfile and resolver script`.
   8. loopback plist: `install -m 644`, `launchctl bootout` (ignore "not loaded"), then `bootstrap`;
   9. remove `/etc/resolver/local` when present;
   10. `brew services restart dnsmasq` as the user;
-  11. Caddy, when installed: back up `/opt/homebrew/etc/Caddyfile` once if present, write lcd's import block,
+  11. Caddy, when installed: back up `/opt/homebrew/etc/Caddyfile` once if present, write oo's import block,
       `brew services restart caddy`; when not installed, print the optional `brew install caddy` hint;
   12. `sudo -n` the script, which proves the rule works without a password;
   13. print the localdns leftovers it saw, then the doctor table.
 - **2.4 `internal/system.Uninstall(ctx, paths, r, out)`:** write an empty resolver list and `sudo -n` the
-  script (removes lcd's resolver files, flushes); `brew services stop dnsmasq`; restore the backup conf, or
-  strip lcd's block when there is none; `brew services stop caddy`; restore `Caddyfile.before-lcd`, or remove
-  lcd's `/opt/homebrew/etc/Caddyfile` when none existed; `sudo`: `bootout` the loopback job, remove its plist,
-  `ifconfig lo0 -alias 127.0.1.$i` for 1–50, remove sudoers and the script. Keep `~/.config/lcd`. Print the
+  script (removes oo's resolver files, flushes); `brew services stop dnsmasq`; restore the backup conf, or
+  strip oo's block when there is none; `brew services stop caddy`; restore `Caddyfile.before-oo`, or remove
+  oo's `/opt/homebrew/etc/Caddyfile` when none existed; `sudo`: `bootout` the loopback job, remove its plist,
+  `ifconfig lo0 -alias 127.0.1.$i` for 1–50, remove sudoers and the script. Keep `~/.config/oo`. Print the
   `sudo brew services start dnsmasq` hint.
-- **2.5 `cmd/lcd`:** wire `setup`, `apply`, `doctor` (table, exit 1 on any failure) and `uninstall`.
-- **2.6 Hand test on this Mac, Sang present:** `go run ./cmd/lcd setup`; `doctor`; add `flowy.lcd` and
-  `test.flowy.lcd`, both `127.0.1.3`, to `domains.json` by hand; `apply`; `time dscacheutil -q host -a name`
-  for `flowy.lcd`, `test.flowy.lcd` and the unlisted `foo.flowy.lcd` (all `127.0.1.3`, which proves suffix
-  matching on both sides); `ifconfig lo0 | grep 127.0.1`. Then ports: add `dashboard.flowy.lcd`,
+- **2.5 `cmd/oo`:** wire `setup`, `apply`, `doctor` (table, exit 1 on any failure) and `uninstall`.
+- **2.6 Hand test on this Mac, Sang present:** `go run ./cmd/oo setup`; `doctor`; add `flowy.oo` and
+  `test.flowy.oo`, both `127.0.1.3`, to `domains.json` by hand; `apply`; `time dscacheutil -q host -a name`
+  for `flowy.oo`, `test.flowy.oo` and the unlisted `foo.flowy.oo` (all `127.0.1.3`, which proves suffix
+  matching on both sides); `ifconfig lo0 | grep 127.0.1`. Then ports: add `dashboard.flowy.oo`,
   `127.0.1.3`, port 3000; `apply`; in another terminal `python3 -m http.server 3000 --bind 127.0.1.3`;
-  `curl -s http://dashboard.flowy.lcd/ | head -3` shows the listing; stop the server, `apply` reports
+  `curl -s http://dashboard.flowy.oo/ | head -3` shows the listing; stop the server, `apply` reports
   `http ✗ 502`. Then `uninstall`; `doctor` (expect failures); `setup` again. Record the output in
   `docs/setup-log.md`.
 
@@ -487,7 +488,7 @@ Commit: `feat: setup, apply, doctor and uninstall commands`.
 |      | `errMsg`; spinner while busy, other keys ignored while busy                                          |
 | 3.4  | `View`: status bar (checks 1, 3, 4 and 8), table with subdomains indented by label count and the dns |
 |      | and http marks, key help; colors through one `styles` struct                                         |
-| 3.5  | `cmd/lcd`: no args runs checks 1–5 first; failures print and exit 1; else `tea.NewProgram` with the |
+| 3.5  | `cmd/oo`: no args runs checks 1–5 first; failures print and exit 1; else `tea.NewProgram` with the |
 |      | alt screen                                                                                           |
 
 Tests: `Update` tests with the fakes (toggle calls `Apply` with the flipped domain; an apply error lands in the
@@ -504,7 +505,7 @@ Commit: `feat: tui list and status bar`.
 |      | and uniqueness then applies, `esc` cancels; while the name is typed, add prefills the address from   |
 |      | `Parent`, else `NextFree` (with the "all 50 taken" note); `addressTouched` stops the prefill; the    |
 |      | hint names the next free own address; a port when the `caddy` binary is missing is refused with      |
-|      | `brew install caddy`, then `lcd setup`                                                               |
+|      | `brew install caddy`, then `oo setup`                                                               |
 | 4.2  | edit (`e`) prefills the selected row; a changed name keeps the address                               |
 | 4.3  | delete (`d`): `confirm` mode, `y` applies the removal, anything else cancels                         |
 | 4.4  | copy env (`c`): `pbcopy` through the runner with `DOCKER_HOST_IP=<address>`; status "copied"         |
@@ -531,19 +532,19 @@ Commit: `feat: dnsmasq log view`.
 
 | Step | Work                                                                                                   |
 | ---- | ------------------------------------------------------------------------------------------------------ |
-| 6.1  | `README.md`: install (`go install github.com/sangdth/lcd/cmd/lcd@latest`), `setup`, keys, `apply`,     |
+| 6.1  | `README.md`: install (`go install github.com/sangdth/oo/cmd/oo@latest`), `setup`, keys, `apply`,     |
 |      | `doctor`, `uninstall`, how it works (short: project, subdomain and port rules), troubleshooting        |
 | 6.2  | `CLAUDE.md` final pass, under 200 lines                                                                |
 | 6.3  | `.github/workflows/ci.yml` like randomport's, plus `go test -race ./...`, on `macos-latest`            |
 | 6.4  | `opscom/flowy`: branch `sang-dev`; shrink "Local services on their own address" to the address table, |
-|      | `lcd` install and `lcd setup`, "add `flowy.lcd` with `127.0.1.3`", and the `.env` note; move          |
-|      | `.env.example` hosts from `flowy.local` to `flowy.lcd`. Own commit                                    |
-|      | `docs: point local network setup at lcd`. Search the flowy Linear project for a matching ticket first |
+|      | `oo` install and `oo setup`, "add `flowy.oo` with `127.0.1.3`", and the `.env` note; move          |
+|      | `.env.example` hosts from `flowy.local` to `flowy.oo`. Own commit                                    |
+|      | `docs: point local network setup at oo`. Search the flowy Linear project for a matching ticket first |
 
 ## Tests
 
 - `go test -race ./...`, table-driven, `t.TempDir()` for every path, `run.Fake` for every command.
-- No test changes the system: nothing writes to `/etc`, `/Library`, `/opt/homebrew` or the real `~/.config/lcd`,
+- No test changes the system: nothing writes to `/etc`, `/Library`, `/opt/homebrew` or the real `~/.config/oo`,
   and nothing runs `sudo` or starts a service. A few tests run `dnsmasq --test`, `caddy validate`, `visudo -c`
   and `plutil -lint` read-only on generated files, and skip when the tool is missing.
 - Golden files live in `testdata/`; `teatest` goldens update with `go test ./internal/tui -update`.
@@ -552,37 +553,38 @@ Commit: `feat: dnsmasq log view`.
 
 ## Risks
 
-- **ICANN could create `.lcd`.** Its 2026 round of new top-level domains is open. Only the names lcd lists would
-  be shadowed, because each has its own resolver file.
-- **Someone runs `sudo brew services start dnsmasq` again.** The root job comes back and shadows lcd's.
+- **`.oo` could become a country code.** Two-letter top-level domains are kept for ISO 3166 country codes, so
+  a new-domain round can't claim `.oo`; only an ISO assignment of `OO` could. Only the names oo lists would be
+  shadowed, because each has its own resolver file.
+- **Someone runs `sudo brew services start dnsmasq` again.** The root job comes back and shadows oo's.
   Doctor check 1 names it; `setup` fixes it.
-- **A VPN that captures DNS.** Cloudflare WARP and NordVPN helpers are installed here. When one is on, `.lcd`
-  lookups may skip `/etc/resolver`. Troubleshooting line; nothing lcd can do.
+- **A VPN that captures DNS.** Cloudflare WARP and NordVPN helpers are installed here. When one is on, `.oo`
+  lookups may skip `/etc/resolver`. Troubleshooting line; nothing oo can do.
 - **Bad sudoers file locks `sudo`.** `visudo -cf` runs on the temp file and install happens only when it passes.
-- **Docker Desktop binding to `127.0.1.x`.** The flowy compose file proves it after the hand test; lcd only
+- **Docker Desktop binding to `127.0.1.x`.** The flowy compose file proves it after the hand test; oo only
   provides the aliases.
 - **Port 80 taken.** Docker publishing `:80` or another proxy keeps Caddy from starting. Doctor check 8 names
-  the listener; nothing else lcd can do.
+  the listener; nothing else oo can do.
 - **Dev servers bound to localhost only.** Vite and some tools listen on `127.0.0.1`, so Caddy's upstream
   `127.0.1.1:5173` gets a 502 until `--host 127.0.1.1`. The row shows "app down" and the README says why.
 
 ## Troubleshooting (goes in the README)
 
-- `can't assign requested address` from Docker: the loopback job didn't run. Run `lcd doctor`.
-- `sudo: a password is required` in the TUI: the sudoers rule is missing or the script changed. `lcd doctor`
-  check 4, then `lcd setup`.
-- `dig flowy.lcd` finds nothing: expected. `dig` and `nslookup` skip `/etc/resolver`; Node, `psql` and
-  browsers use it. Test with `dscacheutil -q host -a name flowy.lcd`.
+- `can't assign requested address` from Docker: the loopback job didn't run. Run `oo doctor`.
+- `sudo: a password is required` in the TUI: the sudoers rule is missing or the script changed. `oo doctor`
+  check 4, then `oo setup`.
+- `dig flowy.oo` finds nothing: expected. `dig` and `nslookup` skip `/etc/resolver`; Node, `psql` and
+  browsers use it. Test with `dscacheutil -q host -a name flowy.oo`.
 - A name isn't found right after adding it: the resolver file is missing, so macOS asked the public DNS servers.
-  `lcd doctor` check 4.
-- `foo.crm.lcd` resolves although it isn't listed: expected. dnsmasq's `address=` and the resolver file both
+  `oo doctor` check 4.
+- `foo.crm.oo` resolves although it isn't listed: expected. dnsmasq's `address=` and the resolver file both
   match subdomains. Add a row only to give it another address or a port.
-- `502 Bad Gateway` on `http://dashboard.crm.lcd`: Caddy is up but nothing listens on `127.0.1.1:3000`. Start
+- `502 Bad Gateway` on `http://dashboard.crm.oo`: Caddy is up but nothing listens on `127.0.1.1:3000`. Start
   the app on its address: `next dev -H 127.0.1.1`, Vite `--host 127.0.1.1`; Docker ports bind `DOCKER_HOST_IP`.
-- `http://dashboard.crm.lcd` refuses the connection: Caddy isn't running or port 80 is taken. `lcd doctor`
+- `http://dashboard.crm.oo` refuses the connection: Caddy isn't running or port 80 is taken. `oo doctor`
   check 8.
 - Names resolve for one app but not another: a VPN or WARP is capturing DNS.
-- Containers can't reach `flowy.lcd`: they don't need to. Inside Docker they use the service name.
+- Containers can't reach `flowy.oo`: they don't need to. Inside Docker they use the service name.
 - The log view shows no queries: the lookup never reached dnsmasq. Check 4 (resolver file) or the VPN line.
 
 ## Out of scope for v1
@@ -591,5 +593,5 @@ Commit: `feat: dnsmasq log view`.
   reached at `http://<name>:<port>`.
 - Migrating or cleaning up localdns.
 - Intel Homebrew (`/usr/local`) and Linux.
-- Non-interactive `lcd add` / `lcd rm`. `lcd apply` on a hand-edited `domains.json` covers scripts for now.
+- Non-interactive `oo add` / `oo rm`. `oo apply` on a hand-edited `domains.json` covers scripts for now.
 - A Homebrew tap and a release workflow. `go install` until there's a second user.

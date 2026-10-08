@@ -11,8 +11,8 @@ import (
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/sangdth/lcd/internal/check"
-	"github.com/sangdth/lcd/internal/store"
+	"github.com/sangdth/oo/internal/check"
+	"github.com/sangdth/oo/internal/store"
 )
 
 // The terminal size before the first WindowSizeMsg.
@@ -88,7 +88,7 @@ func New(ctx context.Context, b Backend, domains []store.Domain) Model {
 }
 
 // tableKeys moves the cursor with arrows, j/k, page and home/end keys only,
-// so the table never takes a key lcd uses, such as space.
+// so the table never takes a key oo uses, such as space.
 func tableKeys() table.KeyMap {
 	return table.KeyMap{
 		LineUp:     key.NewBinding(key.WithKeys("up", "k")),

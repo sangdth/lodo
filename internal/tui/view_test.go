@@ -12,7 +12,7 @@ import (
 func TestModel_View(t *testing.T) {
 	t.Parallel()
 
-	b := &fakeBackend{failing: map[string]string{"dashboard.crm.lcd": "app down: nothing answers on 127.0.1.1:3000"}}
+	b := &fakeBackend{failing: map[string]string{"dashboard.crm.oo": "app down: nothing answers on 127.0.1.1:3000"}}
 	m := ready(b, sample)
 	v := m.View()
 	if !v.AltScreen {
@@ -33,18 +33,18 @@ func TestModel_StatusLine(t *testing.T) {
 		{name: "all good", backend: &fakeBackend{}, want: ""},
 		{
 			name:    "the selected name fails",
-			backend: &fakeBackend{failing: map[string]string{"crm.lcd": "macOS: no address"}},
-			want:    "crm.lcd: macOS: no address",
+			backend: &fakeBackend{failing: map[string]string{"crm.oo": "macOS: no address"}},
+			want:    "crm.oo: macOS: no address",
 		},
 		{
 			name:    "another name fails",
-			backend: &fakeBackend{failing: map[string]string{"flowy.lcd": "macOS: no address"}},
+			backend: &fakeBackend{failing: map[string]string{"flowy.oo": "macOS: no address"}},
 			want:    "",
 		},
 		{
 			name:    "a system part fails",
 			backend: &fakeBackend{failingChecks: map[int]string{1: "not running", 3: "job not loaded"}},
-			want:    "dnsmasq, loopback need attention: run lcd doctor",
+			want:    "dnsmasq, loopback need attention: run oo doctor",
 		},
 		{
 			name:    "a failed change",
@@ -70,7 +70,7 @@ func TestModel_StatusLine(t *testing.T) {
 func TestModel_StatusLineFitsTheWidth(t *testing.T) {
 	t.Parallel()
 
-	b := &fakeBackend{failing: map[string]string{"crm.lcd": strings.Repeat("very long detail ", 20)}}
+	b := &fakeBackend{failing: map[string]string{"crm.oo": strings.Repeat("very long detail ", 20)}}
 	m := ready(b, sample)
 	if w := ansi.StringWidth(m.statusLine()); w > m.width {
 		t.Errorf("status line is %d wide, terminal %d", w, m.width)

@@ -10,8 +10,8 @@ import (
 	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/sangdth/lcd/internal/check"
-	"github.com/sangdth/lcd/internal/store"
+	"github.com/sangdth/oo/internal/check"
+	"github.com/sangdth/oo/internal/store"
 )
 
 // fakeBackend records what the TUI asks of it. Every check passes and every
@@ -110,7 +110,7 @@ func (f *fakeBackend) Report(_ context.Context, domains []store.Domain) ([]check
 		id := i + 1
 		checks[i] = check.Check{ID: id, OK: true}
 		if detail, ok := f.failingChecks[id]; ok {
-			checks[i] = check.Check{ID: id, Detail: detail, Fix: "lcd setup"}
+			checks[i] = check.Check{ID: id, Detail: detail, Fix: "oo setup"}
 		}
 	}
 	if !ports {
@@ -130,10 +130,10 @@ var errBoom = errors.New("restart dnsmasq: brew services restart dnsmasq: Error:
 // sample is a project with a subdomain on a port, another project and a
 // disabled name.
 var sample = []store.Domain{
-	{Name: "crm.lcd", Address: "127.0.1.1", Enabled: true},
-	{Name: "dashboard.crm.lcd", Address: "127.0.1.1", Port: 3000, Enabled: true},
-	{Name: "flowy.lcd", Address: "127.0.1.3", Enabled: true},
-	{Name: "old.lcd", Address: "127.0.0.1"},
+	{Name: "crm.oo", Address: "127.0.1.1", Enabled: true},
+	{Name: "dashboard.crm.oo", Address: "127.0.1.1", Port: 3000, Enabled: true},
+	{Name: "flowy.oo", Address: "127.0.1.3", Enabled: true},
+	{Name: "old.oo", Address: "127.0.0.1"},
 }
 
 // settle runs cmd and every command its messages lead to, then returns the

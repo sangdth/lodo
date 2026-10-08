@@ -11,29 +11,29 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sangdth/lcd/internal/check"
-	"github.com/sangdth/lcd/internal/paths"
-	"github.com/sangdth/lcd/internal/run"
-	"github.com/sangdth/lcd/internal/store"
-	"github.com/sangdth/lcd/internal/system"
+	"github.com/sangdth/oo/internal/check"
+	"github.com/sangdth/oo/internal/paths"
+	"github.com/sangdth/oo/internal/run"
+	"github.com/sangdth/oo/internal/store"
+	"github.com/sangdth/oo/internal/system"
 )
 
 // healthyDomains are what the test Mac serves unless a test says otherwise: a
 // name, a subdomain with a port and a disabled name. The domain with a port
 // uses 127.0.0.1, where the test's stand-in for Caddy listens.
 var healthyDomains = []store.Domain{
-	{Name: "crm.lcd", Address: "127.0.1.1", Enabled: true},
-	{Name: "dashboard.crm.lcd", Address: "127.0.0.1", Port: 3000, Enabled: true},
-	{Name: "old.lcd", Address: "127.0.1.2"},
+	{Name: "crm.oo", Address: "127.0.1.1", Enabled: true},
+	{Name: "dashboard.crm.oo", Address: "127.0.0.1", Port: 3000, Enabled: true},
+	{Name: "old.oo", Address: "127.0.1.2"},
 }
 
 // fiveDomains are more enabled names than a Detail lists.
 var fiveDomains = []store.Domain{
-	{Name: "a.lcd", Address: "127.0.1.1", Enabled: true},
-	{Name: "b.lcd", Address: "127.0.1.2", Enabled: true},
-	{Name: "c.lcd", Address: "127.0.1.3", Enabled: true},
-	{Name: "d.lcd", Address: "127.0.1.4", Enabled: true},
-	{Name: "e.lcd", Address: "127.0.1.5", Enabled: true},
+	{Name: "a.oo", Address: "127.0.1.1", Enabled: true},
+	{Name: "b.oo", Address: "127.0.1.2", Enabled: true},
+	{Name: "c.oo", Address: "127.0.1.3", Enabled: true},
+	{Name: "d.oo", Address: "127.0.1.4", Enabled: true},
+	{Name: "e.oo", Address: "127.0.1.5", Enabled: true},
 }
 
 // The eight checks, to build expected results.
@@ -95,7 +95,7 @@ func TestEnv_Run(t *testing.T) {
 	got := m.env.Run(t.Context(), m.domains)
 	want := []check.Check{
 		dnsmasqCheck.pass("running as tester, pid 42"),
-		configCheck.pass("includes {root}/Users/tester/.config/lcd/dnsmasq.conf"),
+		configCheck.pass("includes {root}/Users/tester/.config/oo/dnsmasq.conf"),
 		loopbackCheck.pass("50 of 50 addresses on lo0"),
 		resolversCheck.pass("2 files"),
 		localCheck.pass("absent"),
@@ -128,14 +128,14 @@ func TestEnv_Run_Dnsmasq(t *testing.T) {
 			change: func(_ *testing.T, m *mac) {
 				m.fake.Set(launchctlPrint(m.p, "homebrew.mxcl.dnsmasq"), "system/homebrew.mxcl.dnsmasq = {\n}\n")
 			},
-			want: dnsmasqCheck.fail("a root job, system/homebrew.mxcl.dnsmasq, runs dnsmasq and shadows lcd's", "lcd setup"),
+			want: dnsmasqCheck.fail("a root job, system/homebrew.mxcl.dnsmasq, runs dnsmasq and shadows oo's", "oo setup"),
 		},
 		{
 			name: "a root job under the newer label",
 			change: func(_ *testing.T, m *mac) {
 				m.fake.Set(launchctlPrint(m.p, "sh.brew.dnsmasq"), "system/sh.brew.dnsmasq = {\n}\n")
 			},
-			want: dnsmasqCheck.fail("a root job, system/sh.brew.dnsmasq, runs dnsmasq and shadows lcd's", "lcd setup"),
+			want: dnsmasqCheck.fail("a root job, system/sh.brew.dnsmasq, runs dnsmasq and shadows oo's", "oo setup"),
 		},
 		{
 			name: "brew fails",
@@ -144,17 +144,17 @@ func TestEnv_Run_Dnsmasq(t *testing.T) {
 			},
 			want: dnsmasqCheck.fail(
 				`read dnsmasq status: {root}/opt/homebrew/bin/brew services info dnsmasq --json: Error: No available formula with the name "dnsmasq".`,
-				"lcd setup"),
+				"oo setup"),
 		},
 		{
 			name:   "not running",
 			change: setBrew(false, "tester"),
-			want:   dnsmasqCheck.fail("not running", "lcd setup"),
+			want:   dnsmasqCheck.fail("not running", "oo setup"),
 		},
 		{
 			name:   "runs as another user",
 			change: setBrew(true, "nobody"),
-			want:   dnsmasqCheck.fail("runs as nobody", "lcd setup"),
+			want:   dnsmasqCheck.fail("runs as nobody", "oo setup"),
 		},
 		{
 			name:   "brew names no user",
@@ -171,62 +171,62 @@ func TestEnv_Run_DnsmasqConfig(t *testing.T) {
 		{
 			name:   "missing",
 			change: func(t *testing.T, m *mac) { t.Helper(); removeFile(t, m.p.SystemConf) },
-			want:   configCheck.fail("missing", "lcd setup"),
+			want:   configCheck.fail("missing", "oo setup"),
 		},
 		{
 			name:   "a folder where the file should be",
 			change: func(t *testing.T, m *mac) { t.Helper(); replaceWithDir(t, m.p.SystemConf) },
-			want:   configCheck.fail("read {root}/opt/homebrew/etc/dnsmasq.conf: is a directory", "lcd setup"),
+			want:   configCheck.fail("read {root}/opt/homebrew/etc/dnsmasq.conf: is a directory", "oo setup"),
 		},
 		{
 			name:   "conf-file points at another file",
 			change: writeConf("conf-file=/Users/tester/.config/localdns/dnsmasq.conf", "listen-address=127.0.0.1", "port=53535", "bind-interfaces"),
-			want:   configCheck.fail("conf-file points at /Users/tester/.config/localdns/dnsmasq.conf", "lcd setup"),
+			want:   configCheck.fail("conf-file points at /Users/tester/.config/localdns/dnsmasq.conf", "oo setup"),
 		},
 		{
 			name:   "two conf-file lines",
 			change: writeConf("conf-file={conf}", "conf-file=/x.conf", "listen-address=127.0.0.1", "port=53535", "bind-interfaces"),
-			want:   configCheck.fail("2 conf-file lines", "lcd setup"),
+			want:   configCheck.fail("2 conf-file lines", "oo setup"),
 		},
 		{
 			name:   "a commented conf-file line does not count",
 			change: writeConf("#conf-file={conf}", "listen-address=127.0.0.1", "port=53535", "bind-interfaces"),
-			want:   configCheck.fail("no conf-file line", "lcd setup"),
+			want:   configCheck.fail("no conf-file line", "oo setup"),
 		},
 		{
 			name:   "port 53",
 			change: writeConf("conf-file={conf}", "listen-address=127.0.0.1", "port=53", "bind-interfaces"),
-			want:   configCheck.fail("port is 53, want 53535", "lcd setup"),
+			want:   configCheck.fail("port is 53, want 53535", "oo setup"),
 		},
 		{
 			name:   "two port lines",
 			change: writeConf("conf-file={conf}", "listen-address=127.0.0.1", "port=53535", "port=53", "bind-interfaces"),
-			want:   configCheck.fail("2 port lines", "lcd setup"),
+			want:   configCheck.fail("2 port lines", "oo setup"),
 		},
 		{
 			name:   "no port line",
 			change: writeConf("conf-file={conf}", "listen-address=127.0.0.1", "bind-interfaces"),
-			want:   configCheck.fail("no port line", "lcd setup"),
+			want:   configCheck.fail("no port line", "oo setup"),
 		},
 		{
 			name:   "listen-address with a second address",
 			change: writeConf("conf-file={conf}", "listen-address=127.0.0.1,10.0.0.1", "port=53535", "bind-interfaces"),
-			want:   configCheck.fail("listen-address is 127.0.0.1,10.0.0.1, want 127.0.0.1", "lcd setup"),
+			want:   configCheck.fail("listen-address is 127.0.0.1,10.0.0.1, want 127.0.0.1", "oo setup"),
 		},
 		{
 			name:   "no listen-address line",
 			change: writeConf("conf-file={conf}", "port=53535", "bind-interfaces"),
-			want:   configCheck.fail("no listen-address line", "lcd setup"),
+			want:   configCheck.fail("no listen-address line", "oo setup"),
 		},
 		{
 			name:   "no bind-interfaces line",
 			change: writeConf("conf-file={conf}", "listen-address=127.0.0.1", "port=53535", "#bind-interfaces"),
-			want:   configCheck.fail("no bind-interfaces line", "lcd setup"),
+			want:   configCheck.fail("no bind-interfaces line", "oo setup"),
 		},
 		{
 			name:   "spaces, comments and other options",
 			change: writeConf("# dnsmasq", "", "#port=53", "server=1.1.1.1", "  conf-file = {conf} ", "listen-address= 127.0.0.1", "port =53535", "\tbind-interfaces"),
-			want:   configCheck.pass("includes {root}/Users/tester/.config/lcd/dnsmasq.conf"),
+			want:   configCheck.pass("includes {root}/Users/tester/.config/oo/dnsmasq.conf"),
 		},
 	})
 }
@@ -239,14 +239,14 @@ func TestEnv_Run_Loopback(t *testing.T) {
 		{
 			name:   "49 of the 50 aliases",
 			change: func(_ *testing.T, m *mac) { m.fake.Set(run.Line(m.p.Ifconfig, "lo0"), lo0(49)) },
-			want:   loopbackCheck.fail("49 of 50 addresses on lo0", "lcd setup"),
+			want:   loopbackCheck.fail("49 of 50 addresses on lo0", "oo setup"),
 		},
 		{
 			name: "an address past the block does not count",
 			change: func(_ *testing.T, m *mac) {
 				m.fake.Set(run.Line(m.p.Ifconfig, "lo0"), lo0(49)+"\tinet 127.0.1.51 netmask 0xff000000\n")
 			},
-			want: loopbackCheck.fail("49 of 50 addresses on lo0", "lcd setup"),
+			want: loopbackCheck.fail("49 of 50 addresses on lo0", "oo setup"),
 		},
 		{
 			name: "job not loaded, no aliases",
@@ -254,12 +254,12 @@ func TestEnv_Run_Loopback(t *testing.T) {
 				notLoaded(m)
 				m.fake.Set(run.Line(m.p.Ifconfig, "lo0"), lo0(0))
 			},
-			want: loopbackCheck.fail("job not loaded; 0 of 50 addresses on lo0", "lcd setup"),
+			want: loopbackCheck.fail("job not loaded; 0 of 50 addresses on lo0", "oo setup"),
 		},
 		{
 			name:   "job not loaded, aliases still up",
 			change: func(_ *testing.T, m *mac) { notLoaded(m) },
-			want:   loopbackCheck.fail("job not loaded; 50 of 50 addresses on lo0", "lcd setup"),
+			want:   loopbackCheck.fail("job not loaded; 50 of 50 addresses on lo0", "oo setup"),
 		},
 	})
 }
@@ -271,7 +271,7 @@ func TestEnv_Run_Resolvers(t *testing.T) {
 		{
 			name:   "script missing",
 			change: func(t *testing.T, m *mac) { t.Helper(); removeFile(t, m.p.Script) },
-			want:   resolversCheck.fail("script missing", "lcd setup"),
+			want:   resolversCheck.fail("script missing", "oo setup"),
 		},
 		{
 			name: "script is a symlink",
@@ -283,12 +283,12 @@ func TestEnv_Run_Resolvers(t *testing.T) {
 				removeFile(t, m.p.Script)
 				symlink(t, target, m.p.Script)
 			},
-			want: resolversCheck.fail("script is a symlink", "lcd setup"),
+			want: resolversCheck.fail("script is a symlink", "oo setup"),
 		},
 		{
 			name:   "script is a folder",
 			change: func(t *testing.T, m *mac) { t.Helper(); replaceWithDir(t, m.p.Script) },
-			want:   resolversCheck.fail("script is not a regular file", "lcd setup"),
+			want:   resolversCheck.fail("script is not a regular file", "oo setup"),
 		},
 		{
 			name: "a file where the script's folder should be",
@@ -300,61 +300,61 @@ func TestEnv_Run_Resolvers(t *testing.T) {
 				}
 				writeFile(t, dir, "")
 			},
-			want: resolversCheck.fail("lstat {root}/Library/Application Support/lcd/apply-resolvers.sh: not a directory", "lcd setup"),
+			want: resolversCheck.fail("lstat {root}/Library/Application Support/oo/apply-resolvers.sh: not a directory", "oo setup"),
 		},
 		{
 			name:   "script not owned by root",
 			change: func(_ *testing.T, m *mac) { m.env.RootUID++ },
-			want:   resolversCheck.fail("script not owned by root", "lcd setup"),
+			want:   resolversCheck.fail("script not owned by root", "oo setup"),
 		},
 		{
 			name:   "script mode 0644",
 			change: func(t *testing.T, m *mac) { t.Helper(); chmod(t, m.p.Script, 0o644) },
-			want:   resolversCheck.fail("script mode 0644, want 0755", "lcd setup"),
+			want:   resolversCheck.fail("script mode 0644, want 0755", "oo setup"),
 		},
 		{
-			name:   "script from an older lcd",
+			name:   "script from an older oo",
 			change: func(t *testing.T, m *mac) { t.Helper(); writeFile(t, m.p.Script, "#!/bin/sh\nexit 0\n") },
-			want:   resolversCheck.fail("script out of date", "lcd setup"),
+			want:   resolversCheck.fail("script out of date", "oo setup"),
 		},
 		{
 			name: "sudo asks for a password",
 			change: func(_ *testing.T, m *mac) {
 				m.fake.Fail(run.Line(m.p.Sudo, "-n", "-k", "-l", m.p.Script), "sudo: a password is required")
 			},
-			want: resolversCheck.fail("sudo asks for a password: the sudoers rule is missing", "lcd setup"),
+			want: resolversCheck.fail("sudo asks for a password: the sudoers rule is missing", "oo setup"),
 		},
 		{
 			name:   "a resolver file missing",
-			change: func(t *testing.T, m *mac) { t.Helper(); removeFile(t, filepath.Join(m.p.ResolverDir, "crm.lcd")) },
-			want:   resolversCheck.fail("missing for crm.lcd", "lcd apply"),
+			change: func(t *testing.T, m *mac) { t.Helper(); removeFile(t, filepath.Join(m.p.ResolverDir, "crm.oo")) },
+			want:   resolversCheck.fail("missing for crm.oo", "oo apply"),
 		},
 		{
-			name: "a resolver file lcd did not write",
+			name: "a resolver file oo did not write",
 			change: func(t *testing.T, m *mac) {
 				t.Helper()
-				writeFile(t, filepath.Join(m.p.ResolverDir, "dashboard.crm.lcd"), "nameserver 127.0.0.1\n")
+				writeFile(t, filepath.Join(m.p.ResolverDir, "dashboard.crm.oo"), "nameserver 127.0.0.1\n")
 			},
-			want: resolversCheck.fail("not written by lcd, so lcd apply won't replace: dashboard.crm.lcd",
-				"sudo rm {root}/etc/resolver/dashboard.crm.lcd, then lcd apply"),
+			want: resolversCheck.fail("not written by oo, so oo apply won't replace: dashboard.crm.oo",
+				"sudo rm {root}/etc/resolver/dashboard.crm.oo, then oo apply"),
 		},
 		{
 			name: "a hand-made file outranks a missing one",
 			change: func(t *testing.T, m *mac) {
 				t.Helper()
-				removeFile(t, filepath.Join(m.p.ResolverDir, "crm.lcd"))
-				writeFile(t, filepath.Join(m.p.ResolverDir, "dashboard.crm.lcd"), "nameserver 127.0.0.1\n")
+				removeFile(t, filepath.Join(m.p.ResolverDir, "crm.oo"))
+				writeFile(t, filepath.Join(m.p.ResolverDir, "dashboard.crm.oo"), "nameserver 127.0.0.1\n")
 			},
-			want: resolversCheck.fail("not written by lcd, so lcd apply won't replace: dashboard.crm.lcd",
-				"sudo rm {root}/etc/resolver/dashboard.crm.lcd, then lcd apply"),
+			want: resolversCheck.fail("not written by oo, so oo apply won't replace: dashboard.crm.oo",
+				"sudo rm {root}/etc/resolver/dashboard.crm.oo, then oo apply"),
 		},
 		{
-			name: "an lcd file with old content",
+			name: "an oo file with old content",
 			change: func(t *testing.T, m *mac) {
 				t.Helper()
-				writeFile(t, filepath.Join(m.p.ResolverDir, "crm.lcd"), system.Marker+"\nnameserver 127.0.0.1\n")
+				writeFile(t, filepath.Join(m.p.ResolverDir, "crm.oo"), system.Marker+"\nnameserver 127.0.0.1\n")
 			},
-			want: resolversCheck.fail("missing for crm.lcd", "lcd apply"),
+			want: resolversCheck.fail("missing for crm.oo", "oo apply"),
 		},
 		{
 			name:    "more resolver files missing than the detail lists",
@@ -365,7 +365,7 @@ func TestEnv_Run_Resolvers(t *testing.T) {
 					removeFile(t, filepath.Join(m.p.ResolverDir, d.Name))
 				}
 			},
-			want: resolversCheck.fail("missing for a.lcd, b.lcd, c.lcd, and 2 more", "lcd apply"),
+			want: resolversCheck.fail("missing for a.oo, b.oo, c.oo, and 2 more", "oo apply"),
 		},
 		{
 			name:    "one enabled domain",
@@ -422,13 +422,13 @@ func TestEnv_Run_GeneratedFiles(t *testing.T) {
 	runCases(t, []runCase{
 		{
 			name:   "dnsmasq.conf edited by hand",
-			change: func(t *testing.T, m *mac) { t.Helper(); writeFile(t, m.p.DnsmasqConf, "address=/x.lcd/127.0.0.1\n") },
-			want:   generatedCheck.fail("out of date: dnsmasq.conf", "lcd apply"),
+			change: func(t *testing.T, m *mac) { t.Helper(); writeFile(t, m.p.DnsmasqConf, "address=/x.oo/127.0.0.1\n") },
+			want:   generatedCheck.fail("out of date: dnsmasq.conf", "oo apply"),
 		},
 		{
 			name:   "resolvers missing",
 			change: func(t *testing.T, m *mac) { t.Helper(); removeFile(t, m.p.Resolvers) },
-			want:   generatedCheck.fail("out of date: resolvers", "lcd apply"),
+			want:   generatedCheck.fail("out of date: resolvers", "oo apply"),
 		},
 		{
 			name: "every file stale",
@@ -438,7 +438,7 @@ func TestEnv_Run_GeneratedFiles(t *testing.T) {
 					writeFile(t, f, "stale\n")
 				}
 			},
-			want: generatedCheck.fail("out of date: dnsmasq.conf, resolvers, Caddyfile", "lcd apply"),
+			want: generatedCheck.fail("out of date: dnsmasq.conf, resolvers, Caddyfile", "oo apply"),
 		},
 	})
 }
@@ -455,9 +455,9 @@ func TestEnv_Run_NamesResolve(t *testing.T) {
 		{
 			name: "macOS resolves a name to another address",
 			change: func(_ *testing.T, m *mac) {
-				m.fake.Set(dscacheutil(m.p, "crm.lcd"), macOSOutput("crm.lcd", "127.0.1.9"))
+				m.fake.Set(dscacheutil(m.p, "crm.oo"), macOSOutput("crm.oo", "127.0.1.9"))
 			},
-			want: namesCheck.fail("crm.lcd: macOS: 127.0.1.9, want 127.0.1.1", "lcd apply"),
+			want: namesCheck.fail("crm.oo: macOS: 127.0.1.9, want 127.0.1.1", "oo apply"),
 		},
 		{
 			name: "caddy cannot reach an app",
@@ -465,7 +465,7 @@ func TestEnv_Run_NamesResolve(t *testing.T) {
 				t.Helper()
 				m.env.HTTPPort = startHTTP(t, respond(http.StatusBadGateway, "Server", "Caddy"))
 			},
-			want: namesCheck.fail("dashboard.crm.lcd: app down: nothing answers on 127.0.0.1:3000", "lcd apply"),
+			want: namesCheck.fail("dashboard.crm.oo: app down: nothing answers on 127.0.0.1:3000", "oo apply"),
 		},
 		{
 			name:    "more names fail than the detail lists",
@@ -476,7 +476,7 @@ func TestEnv_Run_NamesResolve(t *testing.T) {
 				}
 			},
 			want: namesCheck.fail(
-				"a.lcd: macOS: no address; b.lcd: macOS: no address; c.lcd: macOS: no address; and 2 more", "lcd apply"),
+				"a.oo: macOS: no address; b.oo: macOS: no address; c.oo: macOS: no address; and 2 more", "oo apply"),
 		},
 	})
 }
@@ -500,23 +500,23 @@ func TestEnv_Run_Caddy(t *testing.T) {
 		{
 			name: "no enabled domain has a port",
 			domains: []store.Domain{
-				{Name: "crm.lcd", Address: "127.0.1.1", Enabled: true},
-				{Name: "dashboard.crm.lcd", Address: "127.0.0.1", Port: 3000},
+				{Name: "crm.oo", Address: "127.0.1.1", Enabled: true},
+				{Name: "dashboard.crm.oo", Address: "127.0.0.1", Port: 3000},
 			},
 			want: caddyCheck.skip("no enabled domain has a port"),
 		},
 		{
 			name:   "not installed",
 			change: func(t *testing.T, m *mac) { t.Helper(); removeFile(t, m.p.Caddy) },
-			want:   caddyCheck.fail("not installed", "brew install caddy, then lcd setup"),
+			want:   caddyCheck.fail("not installed", "brew install caddy, then oo setup"),
 		},
 		{
-			name: "Homebrew's Caddyfile without lcd's import",
+			name: "Homebrew's Caddyfile without oo's import",
 			change: func(t *testing.T, m *mac) {
 				t.Helper()
 				writeFile(t, m.p.SystemCaddyfile, "localhost {\n\trespond \"hi\"\n}\n")
 			},
-			want: caddyCheck.fail("Homebrew's Caddyfile does not import lcd's", "lcd setup"),
+			want: caddyCheck.fail("Homebrew's Caddyfile does not import oo's", "oo setup"),
 		},
 		{
 			name: "brew fails",
@@ -524,12 +524,12 @@ func TestEnv_Run_Caddy(t *testing.T) {
 				m.fake.Fail(brewInfo(m.p, "caddy"), "Error: Formula caddy is not installed.")
 			},
 			want: caddyCheck.fail("read caddy status: {root}/opt/homebrew/bin/brew services info caddy --json: Error: Formula caddy is not installed.",
-				"lcd setup"),
+				"oo setup"),
 		},
 		{
 			name:   "not running",
 			change: func(_ *testing.T, m *mac) { m.fake.Set(brewInfo(m.p, "caddy"), brewJSON("caddy", false, "")) },
-			want:   caddyCheck.fail("not running", "lcd setup"),
+			want:   caddyCheck.fail("not running", "oo setup"),
 		},
 		{
 			name: "caddy rejects the config",
@@ -537,18 +537,18 @@ func TestEnv_Run_Caddy(t *testing.T) {
 				m.fake.Fail(validate(m.p), "2026/10/08 12:00:00.000\tINFO\tusing config from file\n"+
 					"Error: adapting config using caddyfile: Caddyfile:3: unrecognized directive: bogus")
 			},
-			want: caddyCheck.fail("caddy validate: adapting config using caddyfile: Caddyfile:3: unrecognized directive: bogus", "lcd apply"),
+			want: caddyCheck.fail("caddy validate: adapting config using caddyfile: Caddyfile:3: unrecognized directive: bogus", "oo apply"),
 		},
 		{
 			name:   "validate fails with several lines of output",
 			change: func(_ *testing.T, m *mac) { m.fake.Fail(validate(m.p), "line one\nline two") },
 			want: caddyCheck.fail("caddy validate: {root}/opt/homebrew/bin/caddy validate --config {root}/opt/homebrew/etc/Caddyfile"+
-				" --adapter caddyfile: line one; line two", "lcd apply"),
+				" --adapter caddyfile: line one; line two", "oo apply"),
 		},
 		{
 			name:   "another program has the port",
 			change: setLsof(nginxRow),
-			want:   caddyCheck.fail("port {port} is taken by nginx", "stop nginx, then lcd apply"),
+			want:   caddyCheck.fail("port {port} is taken by nginx", "stop nginx, then oo apply"),
 		},
 		{
 			name:   "caddy among several listeners",
@@ -558,12 +558,12 @@ func TestEnv_Run_Caddy(t *testing.T) {
 		{
 			name:   "nothing listens",
 			change: func(_ *testing.T, m *mac) { m.fake.Fail(lsof(m.p, m.env.HTTPPort), "") },
-			want:   caddyCheck.fail("nothing listens on port {port}", "lcd setup"),
+			want:   caddyCheck.fail("nothing listens on port {port}", "oo setup"),
 		},
 		{
 			name: "two sites",
 			domains: append(slices.Clone(healthyDomains),
-				store.Domain{Name: "api.crm.lcd", Address: "127.0.0.1", Port: 3001, Enabled: true}),
+				store.Domain{Name: "api.crm.oo", Address: "127.0.0.1", Port: 3001, Enabled: true}),
 			want: caddyCheck.pass("running, serves 2 sites"),
 		},
 	})
@@ -586,7 +586,7 @@ func TestEnv_Prerequisites(t *testing.T) {
 	t.Parallel()
 
 	m := newMac(t, healthyDomains)
-	m.fake.Fail(run.Line(m.p.Launchctl, "print", "system/io.lcd.loopback"), "Could not find service")
+	m.fake.Fail(run.Line(m.p.Launchctl, "print", "system/io.oo.loopback"), "Could not find service")
 	got := m.env.Prerequisites(t.Context(), m.domains)
 	if len(got) != 5 {
 		t.Fatalf("got %d checks, want checks 1 to 5", len(got))
@@ -606,8 +606,8 @@ func TestFailed(t *testing.T) {
 
 	ok := check.Check{ID: 1, OK: true}
 	skipped := check.Check{ID: 2, Skipped: true}
-	bad := check.Check{ID: 3, Detail: "missing", Fix: "lcd setup"}
-	worse := check.Check{ID: 4, Detail: "not running", Fix: "lcd setup"}
+	bad := check.Check{ID: 3, Detail: "missing", Fix: "oo setup"}
+	worse := check.Check{ID: 4, Detail: "not running", Fix: "oo setup"}
 	tests := []struct {
 		name   string
 		checks []check.Check
@@ -693,7 +693,7 @@ func newMac(t *testing.T, domains []store.Domain) *mac {
 	for _, label := range system.DnsmasqSystemLabels {
 		m.fake.Fail(launchctlPrint(p, label), `Could not find service "`+label+`" in domain for system`)
 	}
-	m.fake.Set(launchctlPrint(p, system.LoopbackLabel), "system/io.lcd.loopback = {\n\tstate = not running\n}\n")
+	m.fake.Set(launchctlPrint(p, system.LoopbackLabel), "system/io.oo.loopback = {\n\tstate = not running\n}\n")
 	m.fake.Set(run.Line(p.Ifconfig, "lo0"), lo0(store.OwnLast))
 	m.fake.Set(brewInfo(p, "dnsmasq"), brewJSON("dnsmasq", true, "tester"))
 	m.fake.Set(brewInfo(p, "caddy"), brewJSON("caddy", true, "tester"))
@@ -721,7 +721,7 @@ func (m *mac) expand(c check.Check) check.Check {
 }
 
 // writeConf returns a change that writes Homebrew's dnsmasq.conf from lines,
-// where {conf} stands for lcd's dnsmasq.conf.
+// where {conf} stands for oo's dnsmasq.conf.
 func writeConf(lines ...string) func(*testing.T, *mac) {
 	return func(t *testing.T, m *mac) {
 		t.Helper()
@@ -738,7 +738,7 @@ func brewInfo(p paths.Paths, service string) string {
 	return run.Line(p.Brew, "services", "info", service, "--json")
 }
 
-// brewJSON is brew services info --json output, trimmed to the fields lcd
+// brewJSON is brew services info --json output, trimmed to the fields oo
 // reads. An empty user is JSON null, as brew prints for a job that never ran.
 func brewJSON(service string, running bool, user string) string {
 	u, pid, status := "null", "null", "none"

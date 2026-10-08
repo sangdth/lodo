@@ -6,11 +6,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sangdth/lcd/internal/dnsmasq"
-	"github.com/sangdth/lcd/internal/paths"
-	"github.com/sangdth/lcd/internal/run"
-	"github.com/sangdth/lcd/internal/store"
-	"github.com/sangdth/lcd/internal/system"
+	"github.com/sangdth/oo/internal/dnsmasq"
+	"github.com/sangdth/oo/internal/paths"
+	"github.com/sangdth/oo/internal/run"
+	"github.com/sangdth/oo/internal/store"
+	"github.com/sangdth/oo/internal/system"
 )
 
 const (
@@ -21,10 +21,10 @@ const (
 func TestApply(t *testing.T) {
 	t.Parallel()
 
-	dnsOnly := []store.Domain{{Name: "crm.lcd", Address: "127.0.1.1", Enabled: true}}
+	dnsOnly := []store.Domain{{Name: "crm.oo", Address: "127.0.1.1", Enabled: true}}
 	withPort := []store.Domain{
-		{Name: "crm.lcd", Address: "127.0.1.1", Enabled: true},
-		{Name: "dashboard.crm.lcd", Address: "127.0.1.1", Port: 3000, Enabled: true},
+		{Name: "crm.oo", Address: "127.0.1.1", Enabled: true},
+		{Name: "dashboard.crm.oo", Address: "127.0.1.1", Port: 3000, Enabled: true},
 	}
 	tests := []struct {
 		name         string
@@ -36,7 +36,7 @@ func TestApply(t *testing.T) {
 		wantErrSubst string
 	}{
 		{name: "dns only, no caddy", domains: dnsOnly},
-		{name: "port without caddy set up", domains: withPort, wantErrSubst: "Caddy is not set up for lcd"},
+		{name: "port without caddy set up", domains: withPort, wantErrSubst: "Caddy is not set up for oo"},
 		{name: "port added", caddySetUp: true, domains: withPort, wantCaddy: []string{"validate", "restart"}},
 		{name: "ports unchanged, caddy running", caddySetUp: true, before: withPort, domains: withPort, caddyInfo: caddyRunning, wantCaddy: []string{"info"}},
 		{name: "ports unchanged, caddy stopped", caddySetUp: true, before: withPort, domains: withPort, caddyInfo: caddyStopped, wantCaddy: []string{"info", "validate", "restart"}},
@@ -80,7 +80,7 @@ func TestApply(t *testing.T) {
 func TestApply_StopsAtFirstFailure(t *testing.T) {
 	t.Parallel()
 
-	domains := []store.Domain{{Name: "crm.lcd", Address: "127.0.1.1", Enabled: true}}
+	domains := []store.Domain{{Name: "crm.oo", Address: "127.0.1.1", Enabled: true}}
 
 	t.Run("dnsmasq restart", func(t *testing.T) {
 		t.Parallel()
@@ -93,7 +93,7 @@ func TestApply_StopsAtFirstFailure(t *testing.T) {
 		if len(r.Calls()) != 1 {
 			t.Errorf("calls = %q, want only the restart", r.Calls())
 		}
-		assertFile(t, p.Resolvers, "crm.lcd\n") // files are written before any command
+		assertFile(t, p.Resolvers, "crm.oo\n") // files are written before any command
 	})
 	t.Run("resolver script", func(t *testing.T) {
 		t.Parallel()
@@ -109,7 +109,7 @@ func TestApply_StopsAtFirstFailure(t *testing.T) {
 func TestApply_BeforeSetup(t *testing.T) {
 	t.Parallel()
 
-	domains := []store.Domain{{Name: "crm.lcd", Address: "127.0.1.1", Enabled: true}}
+	domains := []store.Domain{{Name: "crm.oo", Address: "127.0.1.1", Enabled: true}}
 	tests := []struct {
 		name    string
 		prepare func(t *testing.T, p paths.Paths)
@@ -139,7 +139,7 @@ func TestApply_BeforeSetup(t *testing.T) {
 	}
 }
 
-// setUpMac is newMac after setup: Homebrew's dnsmasq.conf includes lcd's and
+// setUpMac is newMac after setup: Homebrew's dnsmasq.conf includes oo's and
 // the resolver script is installed.
 func setUpMac(t *testing.T, withCaddy bool) (paths.Paths, *run.Fake) {
 	t.Helper()

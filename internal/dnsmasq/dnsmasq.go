@@ -1,4 +1,4 @@
-// Package dnsmasq generates lcd's dnsmasq config and resolver list, and tails
+// Package dnsmasq generates oo's dnsmasq config and resolver list, and tails
 // dnsmasq's query log.
 package dnsmasq
 
@@ -6,17 +6,17 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/sangdth/lcd/internal/store"
+	"github.com/sangdth/oo/internal/store"
 )
 
-// ListenAddress is the address lcd's dnsmasq listens on.
+// ListenAddress is the address oo's dnsmasq listens on.
 const ListenAddress = "127.0.0.1"
 
-// Port is the port lcd's dnsmasq listens on. It is above 1024, so dnsmasq
+// Port is the port oo's dnsmasq listens on. It is above 1024, so dnsmasq
 // runs as the user, without root.
 const Port = 53535
 
-// Config returns lcd's dnsmasq config: log every query to logPath, and answer
+// Config returns oo's dnsmasq config: log every query to logPath, and answer
 // each enabled domain's name with its address, in store.Sort order. dnsmasq
 // answers a name from the most specific address= line that matches it, so a
 // subdomain with a line of its own gets its own address and an unlisted one

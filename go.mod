@@ -1,4 +1,4 @@
-module github.com/sangdth/lcd
+module github.com/sangdth/oo
 
 go 1.27.0
 

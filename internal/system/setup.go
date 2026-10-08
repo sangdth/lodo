@@ -10,19 +10,19 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/sangdth/lcd/internal/brew"
-	"github.com/sangdth/lcd/internal/caddy"
-	"github.com/sangdth/lcd/internal/fsutil"
-	"github.com/sangdth/lcd/internal/paths"
-	"github.com/sangdth/lcd/internal/run"
-	"github.com/sangdth/lcd/internal/store"
+	"github.com/sangdth/oo/internal/brew"
+	"github.com/sangdth/oo/internal/caddy"
+	"github.com/sangdth/oo/internal/fsutil"
+	"github.com/sangdth/oo/internal/paths"
+	"github.com/sangdth/oo/internal/run"
+	"github.com/sangdth/oo/internal/store"
 )
 
 // DnsmasqSystemLabels are the launchd labels a root dnsmasq job started with
-// `sudo brew services` can have. Such a job shadows lcd's user job.
+// `sudo brew services` can have. Such a job shadows oo's user job.
 var DnsmasqSystemLabels = []string{"homebrew.mxcl.dnsmasq", "sh.brew.dnsmasq"}
 
-// Setup installs everything lcd needs and asks for the password once, before
+// Setup installs everything oo needs and asks for the password once, before
 // it changes anything. It prints one line per step and stops at the first
 // failure, which it returns as a *StepError. Running it again repairs and
 // updates an existing setup.
@@ -34,12 +34,12 @@ func Setup(ctx context.Context, p paths.Paths, r run.Runner, out io.Writer) erro
 		return err
 	}
 	if _, err := Sudoers(p); err != nil {
-		return &StepError{Step: "check your user name", Err: err, Fix: "run lcd from an account with a plain short name"}
+		return &StepError{Step: "check your user name", Err: err, Fix: "run oo from an account with a plain short name"}
 	}
 
-	fmt.Fprintln(out, "lcd needs your password once, to install its root parts.")
+	fmt.Fprintln(out, "oo needs your password once, to install its root parts.")
 	if err := r.RunTTY(ctx, p.Sudo, "-v"); err != nil {
-		return &StepError{Step: "admin password", Err: err, Fix: "run lcd setup again and enter your password"}
+		return &StepError{Step: "admin password", Err: err, Fix: "run oo setup again and enter your password"}
 	}
 
 	if err := os.MkdirAll(p.Staging, 0o700); err != nil {
@@ -51,18 +51,18 @@ func Setup(ctx context.Context, p paths.Paths, r run.Runner, out io.Writer) erro
 		name, fix string
 		fn        func() (string, error)
 	}{
-		{"lcd's files in " + p.ConfigDir, "fix or remove " + p.DomainsJSON, func() (string, error) { return "", userFiles(p) }},
-		{"Homebrew's dnsmasq.conf includes lcd's", "check " + p.SystemConf + " is writable", func() (string, error) { return systemConf(p) }},
+		{"oo's files in " + p.ConfigDir, "fix or remove " + p.DomainsJSON, func() (string, error) { return "", userFiles(p) }},
+		{"Homebrew's dnsmasq.conf includes oo's", "check " + p.SystemConf + " is writable", func() (string, error) { return systemConf(p) }},
 		{"no root dnsmasq job", "sudo brew services stop dnsmasq", func() (string, error) { return stopSystemDnsmasq(ctx, p, r) }},
-		{"resolver script installed", "lcd setup", func() (string, error) { return "", installScript(ctx, p, r) }},
-		{"sudoers rule installed", "lcd setup", func() (string, error) { return "", installSudoers(ctx, p, r) }},
-		{"loopback addresses " + store.OwnAddress(store.OwnFirst) + "–" + store.OwnAddress(store.OwnLast) + " on lo0", "lcd setup", func() (string, error) { return "", installLoopback(ctx, p, r) }},
+		{"resolver script installed", "oo setup", func() (string, error) { return "", installScript(ctx, p, r) }},
+		{"sudoers rule installed", "oo setup", func() (string, error) { return "", installSudoers(ctx, p, r) }},
+		{"loopback addresses " + store.OwnAddress(store.OwnFirst) + "–" + store.OwnAddress(store.OwnLast) + " on lo0", "oo setup", func() (string, error) { return "", installLoopback(ctx, p, r) }},
 		{"no " + filepath.Join(p.ResolverDir, "local"), "sudo rm " + filepath.Join(p.ResolverDir, "local"), func() (string, error) { return removeResolverLocal(ctx, p, r) }},
 		{"dnsmasq runs as you on port 53535", "brew services restart dnsmasq", func() (string, error) {
 			return "", brew.Restart(ctx, r, p.Brew, "dnsmasq")
 		}},
-		{"Caddy serves lcd's sites on port 80", "brew services restart caddy", func() (string, error) { return "", setupCaddy(ctx, p, r) }},
-		{"sudo runs the resolver script without a password", "lcd setup", func() (string, error) {
+		{"Caddy serves oo's sites on port 80", "brew services restart caddy", func() (string, error) { return "", setupCaddy(ctx, p, r) }},
+		{"sudo runs the resolver script without a password", "oo setup", func() (string, error) {
 			_, err := r.Run(ctx, p.Sudo, "-n", "-k", p.Script)
 			return "", err
 		}},
@@ -101,7 +101,7 @@ func preflight(p paths.Paths) error {
 }
 
 func userFiles(p paths.Paths) error {
-	if err := os.MkdirAll(p.ConfigDir, 0o755); err != nil { //nolint:gosec // G301: ~/.config/lcd holds no secrets
+	if err := os.MkdirAll(p.ConfigDir, 0o755); err != nil { //nolint:gosec // G301: ~/.config/oo holds no secrets
 		return fmt.Errorf("create %s: %w", p.ConfigDir, err)
 	}
 	if !exists(p.DomainsJSON) {
@@ -118,7 +118,7 @@ func userFiles(p paths.Paths) error {
 }
 
 // systemConf backs up Homebrew's dnsmasq.conf once, then rewrites it to
-// include lcd's block.
+// include oo's block.
 func systemConf(p paths.Paths) (string, error) {
 	old, err := os.ReadFile(p.SystemConf)
 	if err != nil {
@@ -202,11 +202,11 @@ func removeResolverLocal(ctx context.Context, p paths.Paths, r run.Runner) (stri
 	return "removed it: it sent every .local name away from Bonjour", nil
 }
 
-// setupCaddy points Homebrew's Caddyfile at lcd's and restarts Caddy. Without
+// setupCaddy points Homebrew's Caddyfile at oo's and restarts Caddy. Without
 // Caddy installed it skips: only domains with a port need it.
 func setupCaddy(ctx context.Context, p paths.Paths, r run.Runner) error {
 	if !exists(p.Caddy) {
-		return skipped("Caddy is not installed; domains with a port need it: brew install caddy, then lcd setup")
+		return skipped("Caddy is not installed; domains with a port need it: brew install caddy, then oo setup")
 	}
 	old, err := os.ReadFile(p.SystemCaddyfile)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {

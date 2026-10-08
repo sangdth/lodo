@@ -11,10 +11,10 @@ import (
 
 	"github.com/charmbracelet/x/exp/golden"
 
-	"github.com/sangdth/lcd/internal/caddy"
-	"github.com/sangdth/lcd/internal/paths"
-	"github.com/sangdth/lcd/internal/run"
-	"github.com/sangdth/lcd/internal/store"
+	"github.com/sangdth/oo/internal/caddy"
+	"github.com/sangdth/oo/internal/paths"
+	"github.com/sangdth/oo/internal/run"
+	"github.com/sangdth/oo/internal/store"
 )
 
 // caddyBin is Homebrew's caddy. The test that runs it skips when it is
@@ -22,7 +22,7 @@ import (
 const caddyBin = "/opt/homebrew/bin/caddy"
 
 // lists are the domain lists the Config tests render. The sample is out of
-// order on purpose; only dashboard.crm.lcd and service.crm.lcd are enabled
+// order on purpose; only dashboard.crm.oo and service.crm.oo are enabled
 // with a port.
 var lists = []struct {
 	name    string
@@ -31,22 +31,22 @@ var lists = []struct {
 	{
 		name: "sample",
 		domains: []store.Domain{
-			{Name: "flowy.lcd", Address: "127.0.1.3", Enabled: true},
-			{Name: "service.crm.lcd", Address: "127.0.1.1", Port: 3002, Enabled: true},
-			{Name: "dashboard.crm.lcd", Address: "127.0.1.1", Port: 3000, Enabled: true},
-			{Name: "old.lcd", Address: "127.0.0.1"},
-			{Name: "docs.crm.lcd", Address: "127.0.1.1", Port: 3003},
-			{Name: "a.api.crm.lcd", Address: "127.0.1.1", Enabled: true},
-			{Name: "crm.lcd", Address: "127.0.1.1", Enabled: true},
-			{Name: "test.crm.lcd", Address: "127.0.1.4", Enabled: true},
-			{Name: "api.crm.lcd", Address: "127.0.1.1", Enabled: true},
+			{Name: "flowy.oo", Address: "127.0.1.3", Enabled: true},
+			{Name: "service.crm.oo", Address: "127.0.1.1", Port: 3002, Enabled: true},
+			{Name: "dashboard.crm.oo", Address: "127.0.1.1", Port: 3000, Enabled: true},
+			{Name: "old.oo", Address: "127.0.0.1"},
+			{Name: "docs.crm.oo", Address: "127.0.1.1", Port: 3003},
+			{Name: "a.api.crm.oo", Address: "127.0.1.1", Enabled: true},
+			{Name: "crm.oo", Address: "127.0.1.1", Enabled: true},
+			{Name: "test.crm.oo", Address: "127.0.1.4", Enabled: true},
+			{Name: "api.crm.oo", Address: "127.0.1.1", Enabled: true},
 		},
 	},
 	{
 		name: "no ports",
 		domains: []store.Domain{
-			{Name: "crm.lcd", Address: "127.0.1.1", Enabled: true},
-			{Name: "flowy.lcd", Address: "127.0.1.3", Enabled: true},
+			{Name: "crm.oo", Address: "127.0.1.1", Enabled: true},
+			{Name: "flowy.oo", Address: "127.0.1.3", Enabled: true},
 		},
 	},
 }
@@ -104,19 +104,19 @@ func TestValidate(t *testing.T) {
 		{
 			name: "caddy 2.11 logs the error as JSON", fail: true,
 			stderr: `{"level":"info","ts":1791468283.708788,"msg":"using config from file",` +
-				`"file":"/Users/tester/.config/lcd/Caddyfile"}` + "\n" +
+				`"file":"/Users/tester/.config/oo/Caddyfile"}` + "\n" +
 				`{"level":"error","ts":1791468283.709107,"msg":"adapting config using caddyfile: ` +
-				`/Users/tester/.config/lcd/Caddyfile:4: unrecognized directive: revers_proxy"}`,
+				`/Users/tester/.config/oo/Caddyfile:4: unrecognized directive: revers_proxy"}`,
 			wantErr: "caddy validate: adapting config using caddyfile: " +
-				"/Users/tester/.config/lcd/Caddyfile:4: unrecognized directive: revers_proxy",
+				"/Users/tester/.config/oo/Caddyfile:4: unrecognized directive: revers_proxy",
 		},
 		{
 			name: "plain Error line after JSON logs", fail: true,
 			stderr: `{"level":"info","ts":1791468324.516309,"msg":"using config from file",` +
-				`"file":"/Users/tester/.config/lcd/Caddyfile"}` + "\n" +
+				`"file":"/Users/tester/.config/oo/Caddyfile"}` + "\n" +
 				`{"level":"warn","ts":1791468324.516472,"msg":"no handler"}` + "\n" +
-				"Error: adapting config using caddyfile: ambiguous site definition: http://crm.lcd",
-			wantErr: "caddy validate: adapting config using caddyfile: ambiguous site definition: http://crm.lcd",
+				"Error: adapting config using caddyfile: ambiguous site definition: http://crm.oo",
+			wantErr: "caddy validate: adapting config using caddyfile: ambiguous site definition: http://crm.oo",
 		},
 		{
 			name: "no error message in stderr", fail: true,

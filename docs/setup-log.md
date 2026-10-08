@@ -1,8 +1,11 @@
 # Hand test on Sang's Mac, 2026-10-08
 
+The tool was named `lcd` and its names ended in `.lcd` when this ran. The prose uses today's names, `oo` and
+`.oo`; the command output in code blocks is kept as it was printed.
+
 macOS 27.0.1, dnsmasq 2.93, Caddy 2.11.6, Go 1.27.1. Step 2.6 of `docs/plan.md`.
 
-## `lcd setup`
+## `oo setup`
 
 Run by Sang in his terminal. One password prompt, every step passed:
 
@@ -41,7 +44,7 @@ labels; dnsmasq listens on `127.0.0.1:53535`; `sudo -n -k -l <script>` succeeds 
 ## Names
 
 `domains.json` held `crm.local`, `api.crm.local`, `flowy.local`, `test.flowy.local` and
-`dashboard.flowy.local` (port 3000). macOS loaded every `/etc/resolver` file with port 53535; the `# lcd`
+`dashboard.flowy.local` (port 3000). macOS loaded every `/etc/resolver` file with port 53535; the `# oo`
 comment line is accepted.
 
 | Name                    | Labels | macOS lookup     | Reached dnsmasq |
@@ -61,7 +64,7 @@ recipe (`/etc/resolver/flowy.local`) has the same problem.
 
 - `curl http://dashboard.flowy.local/` with a test server on `127.0.1.3:3000` answered through Caddy
   (`Via: 1.0 Caddy`).
-- With the route pointed at a free port, `lcd apply` reports `app down: nothing answers on 127.0.1.3:3998`.
+- With the route pointed at a free port, `oo apply` reports `app down: nothing answers on 127.0.1.3:3998`.
 - A Node app listening on `*:3000` answers on every loopback address, so it shadows a project's port 3000.
   Apps share a port across projects only when each binds its own address (`next dev -H 127.0.1.3`).
 
@@ -70,38 +73,38 @@ Caddy had not bound port 80 yet. The probe now retries refused connections for u
 
 ## Before setup
 
-Running `lcd apply` before `lcd setup` started a user dnsmasq against LocalDNS's config, which crash-looped
+Running `oo apply` before `oo setup` started a user dnsmasq against LocalDNS's config, which crash-looped
 on port 53. It was stopped with `brew services stop dnsmasq`; Homebrew had replaced the unused
 `~/Library/LaunchAgents/homebrew.mxcl.dnsmasq.plist` with `sh.brew.dnsmasq.plist` and then removed it.
 `apply` now refuses to run until setup has.
 
 ## Decision
 
-Names end in `.lcd` (`store.TLD`), Sang's choice after the finding above. `.dev` was ruled out first: the whole
+Names end in `.oo` (`store.TLD`), Sang's choice after the finding above. `.dev` was ruled out first: the whole
 TLD is on the HSTS preload list (hstspreload.org reports `dev` as preloaded) and `flowy.dev` is a registered
-domain. Public DNS answers `flowy.lcd` with NXDOMAIN; `.lcd`, `.internal` and `.test` have no public
+domain. Public DNS answers `flowy.oo` with NXDOMAIN; `.oo`, `.internal` and `.test` have no public
 nameservers.
 
-## Round trip with `.lcd`
+## Round trip with `.oo`
 
-Sang ran `lcd uninstall`, `lcd doctor` and `lcd setup` with `domains.json` holding `crm.lcd`, `api.crm.lcd`,
-`flowy.lcd`, `test.flowy.lcd` and `dashboard.flowy.lcd` (port 3998).
+Sang ran `oo uninstall`, `oo doctor` and `oo setup` with `domains.json` holding `crm.oo`, `api.crm.oo`,
+`flowy.oo`, `test.flowy.oo` and `dashboard.flowy.oo` (port 3998).
 
 - `uninstall`: every step passed. It removed the resolver files, loopback addresses, sudoers rule and script;
-  stopped dnsmasq and Caddy; restored `dnsmasq.conf` from the backup; removed lcd's `Caddyfile`.
-- `doctor` in between: checks 1–4 and 6–8 failed, check 5 passed, as expected for a Mac without lcd.
+  stopped dnsmasq and Caddy; restored `dnsmasq.conf` from the backup; removed oo's `Caddyfile`.
+- `doctor` in between: checks 1–4 and 6–8 failed, check 5 passed, as expected for a Mac without oo.
 - `setup` again: every step passed and made a fresh backup from the restored `dnsmasq.conf`.
 
 | Name                  | Labels | macOS lookup     | Through apps |
 | --------------------- | ------ | ---------------- | ------------ |
-| `crm.lcd`             | 2      | 127.0.1.1, 17 ms | 5 ms         |
-| `flowy.lcd`           | 2      | 127.0.1.3, 18 ms | 1 ms         |
-| `api.crm.lcd`         | 3      | 127.0.1.1, 15 ms |              |
-| `test.flowy.lcd`      | 3      | 127.0.1.3, 16 ms | 1 ms         |
-| `foo.flowy.lcd`       | 3      | 127.0.1.3, 70 ms | unlisted     |
-| `unknown.lcd`         | 2      | none, 0.3 s      | not listed   |
+| `crm.oo`             | 2      | 127.0.1.1, 17 ms | 5 ms         |
+| `flowy.oo`           | 2      | 127.0.1.3, 18 ms | 1 ms         |
+| `api.crm.oo`         | 3      | 127.0.1.1, 15 ms |              |
+| `test.flowy.oo`      | 3      | 127.0.1.3, 16 ms | 1 ms         |
+| `foo.flowy.oo`       | 3      | 127.0.1.3, 70 ms | unlisted     |
+| `unknown.oo`         | 2      | none, 0.3 s      | not listed   |
 
-With a test server on `127.0.1.3:3998`, `curl http://dashboard.flowy.lcd/` answered through Caddy
-(`Via: 1.0 Caddy`), `lcd apply` showed all five names passing, and `lcd doctor` passed all eight checks.
+With a test server on `127.0.1.3:3998`, `curl http://dashboard.flowy.oo/` answered through Caddy
+(`Via: 1.0 Caddy`), `oo apply` showed all five names passing, and `oo doctor` passed all eight checks.
 
-Two-label `.lcd` names work, so the hand test is done.
+Two-label `.oo` names work, so the hand test is done.

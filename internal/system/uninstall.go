@@ -10,30 +10,30 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/sangdth/lcd/internal/brew"
-	"github.com/sangdth/lcd/internal/fsutil"
-	"github.com/sangdth/lcd/internal/paths"
-	"github.com/sangdth/lcd/internal/run"
-	"github.com/sangdth/lcd/internal/store"
+	"github.com/sangdth/oo/internal/brew"
+	"github.com/sangdth/oo/internal/fsutil"
+	"github.com/sangdth/oo/internal/paths"
+	"github.com/sangdth/oo/internal/run"
+	"github.com/sangdth/oo/internal/store"
 )
 
 // Uninstall removes everything Setup installed and puts Homebrew's configs
-// back. It keeps ~/.config/lcd, so domains.json survives, and leaves dnsmasq
+// back. It keeps ~/.config/oo, so domains.json survives, and leaves dnsmasq
 // stopped. Every step tolerates a part that is already gone.
 func Uninstall(ctx context.Context, p paths.Paths, r run.Runner, out io.Writer) error {
 	s := steps{out: out}
-	fmt.Fprintln(out, "lcd needs your password to remove its root parts.")
+	fmt.Fprintln(out, "oo needs your password to remove its root parts.")
 	if err := r.RunTTY(ctx, p.Sudo, "-v"); err != nil {
-		return &StepError{Step: "admin password", Err: err, Fix: "run lcd uninstall again and enter your password"}
+		return &StepError{Step: "admin password", Err: err, Fix: "run oo uninstall again and enter your password"}
 	}
 	for _, step := range []struct {
 		name, fix string
 		fn        func() (string, error)
 	}{
-		{"lcd's /etc/resolver files removed", "lcd uninstall", func() (string, error) { return "", removeResolverFiles(ctx, p, r) }},
+		{"oo's /etc/resolver files removed", "oo uninstall", func() (string, error) { return "", removeResolverFiles(ctx, p, r) }},
 		{"dnsmasq stopped", "brew services stop dnsmasq", func() (string, error) { return "", brew.Stop(ctx, r, p.Brew, "dnsmasq") }},
 		{"Homebrew's dnsmasq.conf restored", "edit " + p.SystemConf + " by hand", func() (string, error) { return restoreSystemConf(p) }},
-		{"Caddy no longer serves lcd's sites", "edit " + p.SystemCaddyfile + " by hand", func() (string, error) { return restoreCaddy(ctx, p, r) }},
+		{"Caddy no longer serves oo's sites", "edit " + p.SystemCaddyfile + " by hand", func() (string, error) { return restoreCaddy(ctx, p, r) }},
 		{"loopback addresses removed", "sudo launchctl bootout system/" + LoopbackLabel, func() (string, error) { return "", removeLoopback(ctx, p, r) }},
 		{"sudoers rule and resolver script removed", "sudo rm " + p.Sudoers + " '" + p.Script + "'", func() (string, error) { return "", removeRootFiles(ctx, p, r) }},
 	} {
@@ -75,7 +75,7 @@ func restoreSystemConf(p paths.Paths) (string, error) {
 	if _, err := fsutil.WriteFile(p.SystemConf, []byte(StripSystemConf(string(old))), 0o644); err != nil {
 		return "", err
 	}
-	return "no backup: removed lcd's block", nil
+	return "no backup: removed oo's block", nil
 }
 
 func restoreCaddy(ctx context.Context, p paths.Paths, r run.Runner) (string, error) {
@@ -100,12 +100,12 @@ func restoreCaddy(ctx context.Context, p paths.Paths, r run.Runner) (string, err
 		if err := os.Remove(p.SystemCaddyfile); err != nil {
 			return "", fmt.Errorf("remove %s: %w", p.SystemCaddyfile, err)
 		}
-		return "stopped Caddy, removed lcd's " + filepath.Base(p.SystemCaddyfile), nil
+		return "stopped Caddy, removed oo's " + filepath.Base(p.SystemCaddyfile), nil
 	}
 	if _, err := fsutil.WriteFile(p.SystemCaddyfile, []byte(rest), 0o644); err != nil {
 		return "", err
 	}
-	return "stopped Caddy, removed lcd's import", nil
+	return "stopped Caddy, removed oo's import", nil
 }
 
 // removeLoopback unloads the job and takes the own block off lo0. Missing

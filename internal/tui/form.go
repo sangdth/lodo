@@ -8,7 +8,7 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/sangdth/lcd/internal/store"
+	"github.com/sangdth/oo/internal/store"
 )
 
 // The form's fields, in tab order.
@@ -71,7 +71,7 @@ func newInputs() [fieldCount]textinput.Model {
 		inputs[i].SetStyles(styles)
 	}
 	inputs[fieldName].SetWidth(40)
-	inputs[fieldName].Placeholder = "app.flowy.lcd"
+	inputs[fieldName].Placeholder = "app.flowy.oo"
 	inputs[fieldAddress].SetWidth(16)
 	inputs[fieldPort].SetWidth(6)
 	inputs[fieldPort].Placeholder = "none"

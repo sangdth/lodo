@@ -41,8 +41,8 @@
 
 # LocalDNS configuration
 
-# lcd
-conf-file=/fake/Users/tester/.config/lcd/dnsmasq.conf
+# oo
+conf-file=/fake/Users/tester/.config/oo/dnsmasq.conf
 listen-address=127.0.0.1
 port=53535
 bind-interfaces

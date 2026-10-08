@@ -8,8 +8,8 @@ import (
 
 	"github.com/charmbracelet/x/exp/golden"
 
-	"github.com/sangdth/lcd/internal/dnsmasq"
-	"github.com/sangdth/lcd/internal/store"
+	"github.com/sangdth/oo/internal/dnsmasq"
+	"github.com/sangdth/oo/internal/store"
 )
 
 // dnsmasqBin is Homebrew's dnsmasq. The test that runs it skips when it is
@@ -17,12 +17,12 @@ import (
 const dnsmasqBin = "/opt/homebrew/opt/dnsmasq/sbin/dnsmasq"
 
 // logPath is fixed so the goldens stay the same from run to run.
-const logPath = "/Users/tester/.config/lcd/dnsmasq.log"
+const logPath = "/Users/tester/.config/oo/dnsmasq.log"
 
 // lists are the domain lists every test here renders. The sample is out of
-// order on purpose; sorted and without the disabled old.lcd it is crm.lcd,
-// api.crm.lcd, a.api.crm.lcd, dashboard.crm.lcd, test.crm.lcd,
-// flowy.lcd.
+// order on purpose; sorted and without the disabled old.oo it is crm.oo,
+// api.crm.oo, a.api.crm.oo, dashboard.crm.oo, test.crm.oo,
+// flowy.oo.
 var lists = []struct {
 	name    string
 	domains []store.Domain
@@ -30,13 +30,13 @@ var lists = []struct {
 	{
 		name: "sample",
 		domains: []store.Domain{
-			{Name: "flowy.lcd", Address: "127.0.1.3", Enabled: true},
-			{Name: "dashboard.crm.lcd", Address: "127.0.1.1", Port: 3000, Enabled: true},
-			{Name: "old.lcd", Address: "127.0.0.1"},
-			{Name: "a.api.crm.lcd", Address: "127.0.1.1", Enabled: true},
-			{Name: "crm.lcd", Address: "127.0.1.1", Enabled: true},
-			{Name: "test.crm.lcd", Address: "127.0.1.4", Enabled: true},
-			{Name: "api.crm.lcd", Address: "127.0.1.1", Enabled: true},
+			{Name: "flowy.oo", Address: "127.0.1.3", Enabled: true},
+			{Name: "dashboard.crm.oo", Address: "127.0.1.1", Port: 3000, Enabled: true},
+			{Name: "old.oo", Address: "127.0.0.1"},
+			{Name: "a.api.crm.oo", Address: "127.0.1.1", Enabled: true},
+			{Name: "crm.oo", Address: "127.0.1.1", Enabled: true},
+			{Name: "test.crm.oo", Address: "127.0.1.4", Enabled: true},
+			{Name: "api.crm.oo", Address: "127.0.1.1", Enabled: true},
 		},
 	},
 	{name: "empty"},

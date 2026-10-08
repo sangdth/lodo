@@ -10,8 +10,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/sangdth/lcd/internal/check"
-	"github.com/sangdth/lcd/internal/store"
+	"github.com/sangdth/oo/internal/check"
+	"github.com/sangdth/oo/internal/store"
 )
 
 // Column widths, without the one-space padding the table adds on each side.
@@ -135,7 +135,7 @@ func mark(ok bool) string {
 
 // statusBar shows the system parts doctor checks, each with a dot.
 func (m Model) statusBar() string {
-	parts := []string{m.styles.title.Render("lcd")}
+	parts := []string{m.styles.title.Render("oo")}
 	for _, p := range statusParts {
 		parts = append(parts, p.label+" "+m.dot(p.id))
 	}
@@ -165,7 +165,7 @@ func (m Model) check(id int) (check.Check, bool) {
 }
 
 // statusLine says what runs, what a delete waits for, what failed, what was
-// just done, why the selected name fails, or which system part needs lcd
+// just done, why the selected name fails, or which system part needs oo
 // doctor, in that order.
 func (m Model) statusLine() string {
 	line := ""
@@ -197,7 +197,7 @@ func (m Model) problem() string {
 		}
 	}
 	if len(failed) > 0 {
-		return m.styles.bad.Render(strings.Join(failed, ", ") + " need attention: run lcd doctor")
+		return m.styles.bad.Render(strings.Join(failed, ", ") + " need attention: run oo doctor")
 	}
 	return ""
 }

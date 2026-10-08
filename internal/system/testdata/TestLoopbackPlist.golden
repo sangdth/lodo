@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>Label</key>
-	<string>io.lcd.loopback</string>
+	<string>io.oo.loopback</string>
 	<key>ProgramArguments</key>
 	<array>
 		<string>/bin/sh</string>

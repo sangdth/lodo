@@ -17,8 +17,8 @@ func TestDispatch(t *testing.T) {
 	}{
 		{name: "version", args: []string{"version"}, wantCode: 0, wantStdout: "dev\n"},
 		{name: "help", args: []string{"help"}, wantCode: 0, wantStdout: "Usage:"},
-		{name: "unknown command", args: []string{"frobnicate"}, wantCode: 2, wantStderr: `lcd: unknown command "frobnicate"`},
-		{name: "extra argument", args: []string{"doctor", "now"}, wantCode: 2, wantStderr: "lcd: doctor takes no arguments"},
+		{name: "unknown command", args: []string{"frobnicate"}, wantCode: 2, wantStderr: `oo: unknown command "frobnicate"`},
+		{name: "extra argument", args: []string{"doctor", "now"}, wantCode: 2, wantStderr: "oo: doctor takes no arguments"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

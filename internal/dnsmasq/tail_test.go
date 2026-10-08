@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sangdth/lcd/internal/dnsmasq"
+	"github.com/sangdth/oo/internal/dnsmasq"
 )
 
 func TestTail(t *testing.T) {

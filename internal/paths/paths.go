@@ -1,4 +1,4 @@
-// Package paths holds every file, directory and tool path lcd touches, so tests
+// Package paths holds every file, directory and tool path oo touches, so tests
 // can move all of them under one temporary directory.
 package paths
 
@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 )
 
-// Paths lists every file, directory and tool lcd reads, writes or runs.
+// Paths lists every file, directory and tool oo reads, writes or runs.
 // Default returns the real locations; ForTest moves all of them under one
 // directory.
 type Paths struct {
@@ -17,9 +17,9 @@ type Paths struct {
 	// Home is the user's home directory.
 	Home string
 
-	// lcd's own files, owned by the user.
+	// oo's own files, owned by the user.
 	ConfigDir   string
-	DomainsJSON string // the domain list, lcd's only source of truth
+	DomainsJSON string // the domain list, oo's only source of truth
 	DnsmasqConf string // generated: one address= line per enabled domain
 	Resolvers   string // generated: one enabled name per line, read by the root script
 	Caddyfile   string // generated: one site per enabled domain with a port
@@ -77,7 +77,7 @@ func ForTest(root string) Paths {
 
 func build(root, home, user string) Paths {
 	sys := func(p string) string { return filepath.Join(root, p) }
-	config := filepath.Join(home, ".config", "lcd")
+	config := filepath.Join(home, ".config", "oo")
 	etc := sys("/opt/homebrew/etc")
 	daemons := sys("/Library/LaunchDaemons")
 	return Paths{
@@ -93,14 +93,14 @@ func build(root, home, user string) Paths {
 		Staging:     filepath.Join(config, "staging"),
 
 		SystemConf:            filepath.Join(etc, "dnsmasq.conf"),
-		SystemConfBackup:      filepath.Join(etc, "dnsmasq.conf.before-lcd"),
+		SystemConfBackup:      filepath.Join(etc, "dnsmasq.conf.before-oo"),
 		SystemCaddyfile:       filepath.Join(etc, "Caddyfile"),
-		SystemCaddyfileBackup: filepath.Join(etc, "Caddyfile.before-lcd"),
+		SystemCaddyfileBackup: filepath.Join(etc, "Caddyfile.before-oo"),
 
 		LaunchDaemons: daemons,
-		LoopbackPlist: filepath.Join(daemons, "io.lcd.loopback.plist"),
-		Script:        sys("/Library/Application Support/lcd/apply-resolvers.sh"),
-		Sudoers:       sys("/etc/sudoers.d/lcd"),
+		LoopbackPlist: filepath.Join(daemons, "io.oo.loopback.plist"),
+		Script:        sys("/Library/Application Support/oo/apply-resolvers.sh"),
+		Sudoers:       sys("/etc/sudoers.d/oo"),
 		ResolverDir:   sys("/etc/resolver"),
 
 		Hosts: sys("/etc/hosts"),

@@ -6,7 +6,7 @@ import (
 	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/sangdth/lcd/internal/store"
+	"github.com/sangdth/oo/internal/store"
 )
 
 // Update handles one message.

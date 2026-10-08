@@ -1,4 +1,4 @@
-// Package tui is lcd's terminal UI: the domain list with each name's checks,
+// Package tui is oo's terminal UI: the domain list with each name's checks,
 // a status bar for the system parts, and the keys that change the list.
 package tui
 
@@ -7,12 +7,12 @@ import (
 	"errors"
 	"os"
 
-	"github.com/sangdth/lcd/internal/check"
-	"github.com/sangdth/lcd/internal/dnsmasq"
-	"github.com/sangdth/lcd/internal/paths"
-	"github.com/sangdth/lcd/internal/run"
-	"github.com/sangdth/lcd/internal/store"
-	"github.com/sangdth/lcd/internal/system"
+	"github.com/sangdth/oo/internal/check"
+	"github.com/sangdth/oo/internal/dnsmasq"
+	"github.com/sangdth/oo/internal/paths"
+	"github.com/sangdth/oo/internal/run"
+	"github.com/sangdth/oo/internal/store"
+	"github.com/sangdth/oo/internal/system"
 )
 
 // Backend is what the TUI reads, changes and checks. NewBackend returns the
@@ -57,13 +57,13 @@ func (b backend) Report(ctx context.Context, domains []store.Domain) ([]check.Ch
 	return b.env.Report(ctx, domains)
 }
 
-// PortsReady needs Caddy installed and Homebrew's Caddyfile importing lcd's.
+// PortsReady needs Caddy installed and Homebrew's Caddyfile importing oo's.
 func (b backend) PortsReady() error {
 	if _, err := os.Stat(b.paths.Caddy); err != nil {
-		return errors.New("caddy is not installed: brew install caddy, then lcd setup")
+		return errors.New("caddy is not installed: brew install caddy, then oo setup")
 	}
 	if !system.CaddySetUp(b.paths) {
-		return errors.New("caddy is not set up for lcd: run lcd setup")
+		return errors.New("caddy is not set up for oo: run oo setup")
 	}
 	return nil
 }

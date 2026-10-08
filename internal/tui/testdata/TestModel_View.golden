@@ -1,9 +1,9 @@
- [1mlcd[m   dnsmasq [32m●[m   loopback [32m●[m   resolvers [32m●[m   caddy [32m●[m
+ [1moo[m   dnsmasq [32m●[m   loopback [32m●[m   resolvers [32m●[m   caddy [32m●[m
  [1;90mname                              [m  [1;90maddress        [m  [1;90mport [m  [1;90mown[m  [1;90mcheck        [m 
-[1;38;5;212m ● crm.lcd                           127.0.1.1               own  dns ✓         [m
- ●   dashboard.crm.lcd               127.0.1.1        3000   own  dns ✗  http ✗ 
- ● flowy.lcd                         127.0.1.3               own  dns ✓         
- ○ old.lcd                           127.0.0.1                    –             
+[1;38;5;212m ● crm.oo                            127.0.1.1               own  dns ✓         [m
+ ●   dashboard.crm.oo                127.0.1.1        3000   own  dns ✗  http ✗ 
+ ● flowy.oo                          127.0.1.3               own  dns ✓         
+ ○ old.oo                            127.0.0.1                    –             
                                                                                 
                                                                                 
                                                                                 

@@ -9,9 +9,9 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/exp/golden"
 
-	"github.com/sangdth/lcd/internal/paths"
-	"github.com/sangdth/lcd/internal/run"
-	"github.com/sangdth/lcd/internal/store"
+	"github.com/sangdth/oo/internal/paths"
+	"github.com/sangdth/oo/internal/run"
+	"github.com/sangdth/oo/internal/store"
 )
 
 func TestForm_Prefill(t *testing.T) {
@@ -23,14 +23,14 @@ func TestForm_Prefill(t *testing.T) {
 	}
 	assertAddress(t, m, "127.0.1.2", "the lowest free own address")
 
-	m = typeText(m, "test.crm.lcd")
-	assertAddress(t, m, "127.0.1.1", "crm.lcd's address; next free: 127.0.1.2")
+	m = typeText(m, "test.crm.oo")
+	assertAddress(t, m, "127.0.1.1", "crm.oo's address; next free: 127.0.1.2")
 
 	m = typeText(send(m, "tab"), "") // into the address field
 	m = typeText(clearField(m), "127.0.1.9")
 	m = send(m, "shift+tab")
 	m = typeText(m, "x")
-	assertAddress(t, m, "127.0.1.9", "crm.lcd's address; next free: 127.0.1.2")
+	assertAddress(t, m, "127.0.1.9", "crm.oo's address; next free: 127.0.1.2")
 }
 
 func TestForm_PrefillWhenTheBlockIsFull(t *testing.T) {
@@ -38,7 +38,7 @@ func TestForm_PrefillWhenTheBlockIsFull(t *testing.T) {
 
 	var full []store.Domain
 	for i := store.OwnFirst; i <= store.OwnLast; i++ {
-		full = append(full, store.Domain{Name: "p" + string(rune('a'+i%26)) + strings.Repeat("x", i/26) + ".lcd", Address: store.OwnAddress(i)})
+		full = append(full, store.Domain{Name: "p" + string(rune('a'+i%26)) + strings.Repeat("x", i/26) + ".oo", Address: store.OwnAddress(i)})
 	}
 	m := send(ready(&fakeBackend{}, full), "a")
 	assertAddress(t, m, "127.0.0.1", "all own addresses are taken, so it shares 127.0.0.1")
@@ -49,17 +49,17 @@ func TestForm_Add(t *testing.T) {
 
 	b := &fakeBackend{}
 	m := send(ready(b, sample), "a")
-	m = typeText(m, "api.crm.lcd")
+	m = typeText(m, "api.crm.oo")
 	m = send(m, "enter")
 
-	want := store.Domain{Name: "api.crm.lcd", Address: "127.0.1.1", Enabled: true}
+	want := store.Domain{Name: "api.crm.oo", Address: "127.0.1.1", Enabled: true}
 	if len(b.saved) != 1 || !slices.Contains(b.saved[0], want) {
 		t.Fatalf("saved %v, want it to hold %+v", b.saved, want)
 	}
 	if m.mode != modeList {
 		t.Errorf("mode = %v after saving, want the list", m.mode)
 	}
-	if d, _ := m.selected(); d.Name != "api.crm.lcd" {
+	if d, _ := m.selected(); d.Name != "api.crm.oo" {
 		t.Errorf("cursor on %q after adding, want the new row", d.Name)
 	}
 }
@@ -74,27 +74,27 @@ func TestForm_Errors(t *testing.T) {
 		wantField int
 		wantMsg   string
 	}{
-		{name: "bad name", fields: [fieldCount]string{"Web.lcd"}, wantField: fieldName, wantMsg: "name must be lowercase"},
-		{name: "old ending", fields: [fieldCount]string{"web.local"}, wantField: fieldName, wantMsg: "name must end in .lcd"},
-		{name: "duplicate", fields: [fieldCount]string{"crm.lcd"}, wantField: fieldName, wantMsg: "crm.lcd is already listed"},
+		{name: "bad name", fields: [fieldCount]string{"Web.oo"}, wantField: fieldName, wantMsg: "name must be lowercase"},
+		{name: "old ending", fields: [fieldCount]string{"web.local"}, wantField: fieldName, wantMsg: "name must end in .oo"},
+		{name: "duplicate", fields: [fieldCount]string{"crm.oo"}, wantField: fieldName, wantMsg: "crm.oo is already listed"},
 		{
-			name: "another project's address", fields: [fieldCount]string{"web.lcd", "127.0.1.3"},
-			wantField: fieldAddress, wantMsg: "127.0.1.3 belongs to flowy.lcd",
+			name: "another project's address", fields: [fieldCount]string{"web.oo", "127.0.1.3"},
+			wantField: fieldAddress, wantMsg: "127.0.1.3 belongs to flowy.oo",
 		},
 		{
-			name: "bad address", fields: [fieldCount]string{"web.lcd", "10.0.0.1"},
+			name: "bad address", fields: [fieldCount]string{"web.oo", "10.0.0.1"},
 			wantField: fieldAddress, wantMsg: "address must be an IPv4 address in 127.0.0.0/8, like 127.0.1.3",
 		},
-		{name: "bad port", fields: [fieldCount]string{"web.lcd", "", "abc"}, wantField: fieldPort, wantMsg: "port must be a number"},
+		{name: "bad port", fields: [fieldCount]string{"web.oo", "", "abc"}, wantField: fieldPort, wantMsg: "port must be a number"},
 		{
-			name: "caddy's port", fields: [fieldCount]string{"web.lcd", "", "80"},
+			name: "caddy's port", fields: [fieldCount]string{"web.oo", "", "80"},
 			wantField: fieldPort, wantMsg: "port 80 is where Caddy listens; use the app's own port",
 		},
 		{
 			name:    "a port before caddy is ready",
-			backend: &fakeBackend{portsErr: errors.New("caddy is not installed: brew install caddy, then lcd setup")},
-			fields:  [fieldCount]string{"web.lcd", "", "3000"}, wantField: fieldPort,
-			wantMsg: "caddy is not installed: brew install caddy, then lcd setup",
+			backend: &fakeBackend{portsErr: errors.New("caddy is not installed: brew install caddy, then oo setup")},
+			fields:  [fieldCount]string{"web.oo", "", "3000"}, wantField: fieldPort,
+			wantMsg: "caddy is not installed: brew install caddy, then oo setup",
 		},
 	}
 	for _, tt := range tests {
@@ -130,9 +130,9 @@ func TestForm_Allowed(t *testing.T) {
 		fields [fieldCount]string
 		want   store.Domain
 	}{
-		{name: "subdomain shares its project's address", fields: [fieldCount]string{"test.crm.lcd"}, want: store.Domain{Name: "test.crm.lcd", Address: "127.0.1.1", Enabled: true}},
-		{name: "shared localhost", fields: [fieldCount]string{"web.lcd", "127.0.0.1"}, want: store.Domain{Name: "web.lcd", Address: "127.0.0.1", Enabled: true}},
-		{name: "a port", fields: [fieldCount]string{"web.lcd", "", "3000"}, want: store.Domain{Name: "web.lcd", Address: "127.0.1.2", Port: 3000, Enabled: true}},
+		{name: "subdomain shares its project's address", fields: [fieldCount]string{"test.crm.oo"}, want: store.Domain{Name: "test.crm.oo", Address: "127.0.1.1", Enabled: true}},
+		{name: "shared localhost", fields: [fieldCount]string{"web.oo", "127.0.0.1"}, want: store.Domain{Name: "web.oo", Address: "127.0.0.1", Enabled: true}},
+		{name: "a port", fields: [fieldCount]string{"web.oo", "", "3000"}, want: store.Domain{Name: "web.oo", Address: "127.0.1.2", Port: 3000, Enabled: true}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -151,18 +151,18 @@ func TestForm_Edit(t *testing.T) {
 
 	b := &fakeBackend{}
 	m := ready(b, sample)
-	m = send(send(m, "down"), "down") // flowy.lcd
+	m = send(send(m, "down"), "down") // flowy.oo
 	m = send(m, "e")
-	if got := m.form.inputs[fieldName].Value(); got != "flowy.lcd" {
+	if got := m.form.inputs[fieldName].Value(); got != "flowy.oo" {
 		t.Fatalf("name field = %q, want the selected name", got)
 	}
 	m = send(send(m, "tab"), "tab")
 	m = typeText(m, "3000")
 	m = send(m, "enter")
 
-	want := store.Domain{Name: "flowy.lcd", Address: "127.0.1.3", Port: 3000, Enabled: true}
+	want := store.Domain{Name: "flowy.oo", Address: "127.0.1.3", Port: 3000, Enabled: true}
 	if len(b.saved) != 1 || !slices.Contains(b.saved[0], want) || len(b.saved[0]) != len(sample) {
-		t.Errorf("saved %v, want flowy.lcd with port 3000 and nothing else changed", b.saved)
+		t.Errorf("saved %v, want flowy.oo with port 3000 and nothing else changed", b.saved)
 	}
 }
 
@@ -170,12 +170,12 @@ func TestForm_EditKeepsOff(t *testing.T) {
 	t.Parallel()
 
 	b := &fakeBackend{}
-	m := send(send(send(send(ready(b, sample), "down"), "down"), "down"), "e") // old.lcd, which is off
-	m = typeText(clearField(m), "older.lcd")
+	m := send(send(send(send(ready(b, sample), "down"), "down"), "down"), "e") // old.oo, which is off
+	m = typeText(clearField(m), "older.oo")
 	m = send(m, "enter")
-	want := store.Domain{Name: "older.lcd", Address: "127.0.0.1"}
+	want := store.Domain{Name: "older.oo", Address: "127.0.0.1"}
 	if len(b.saved) != 1 || !slices.Contains(b.saved[0], want) {
-		t.Errorf("saved %v, want old.lcd renamed, still off, at its address", b.saved)
+		t.Errorf("saved %v, want old.oo renamed, still off, at its address", b.saved)
 	}
 	if m.mode != modeList {
 		t.Errorf("mode = %v after saving the edit, want the list", m.mode)
@@ -186,7 +186,7 @@ func TestForm_EscCancels(t *testing.T) {
 	t.Parallel()
 
 	b := &fakeBackend{}
-	m := typeText(send(ready(b, sample), "a"), "web.lcd")
+	m := typeText(send(ready(b, sample), "a"), "web.oo")
 	m = send(m, "esc")
 	if m.mode != modeList || len(b.saved) != 0 {
 		t.Errorf("mode %v, saved %v after esc", m.mode, b.saved)
@@ -224,7 +224,7 @@ func TestForm_TypingQDoesNotQuit(t *testing.T) {
 func TestForm_View(t *testing.T) {
 	t.Parallel()
 
-	m := typeText(send(ready(&fakeBackend{}, sample), "a"), "test.crm.lcd")
+	m := typeText(send(ready(&fakeBackend{}, sample), "a"), "test.crm.oo")
 	m = typeText(send(send(m, "tab"), "tab"), "3001")
 	golden.RequireEqual(t, m.View().Content)
 	if h := strings.Count(m.View().Content, "\n") + 1; h != defaultHeight {
@@ -248,15 +248,15 @@ func TestConfirm(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			b := &fakeBackend{}
-			m := send(send(send(send(ready(b, sample), "down"), "down"), "down"), "d") // old.lcd
-			if got := strings.TrimSpace(ansi.Strip(m.statusLine())); got != "delete old.lcd? y/n" {
+			m := send(send(send(send(ready(b, sample), "down"), "down"), "down"), "d") // old.oo
+			if got := strings.TrimSpace(ansi.Strip(m.statusLine())); got != "delete old.oo? y/n" {
 				t.Errorf("status line = %q, want the question", got)
 			}
 			m = send(m, tt.key)
 			if m.mode != modeList {
 				t.Errorf("mode = %v after answering, want the list", m.mode)
 			}
-			gone := len(b.saved) == 1 && !slices.ContainsFunc(b.saved[0], func(d store.Domain) bool { return d.Name == "old.lcd" })
+			gone := len(b.saved) == 1 && !slices.ContainsFunc(b.saved[0], func(d store.Domain) bool { return d.Name == "old.oo" })
 			if gone != tt.wantGone || (!tt.wantGone && len(b.saved) != 0) {
 				t.Errorf("saved %v, want deleted = %v", b.saved, tt.wantGone)
 			}
@@ -308,10 +308,10 @@ func TestBackend_PortsReady(t *testing.T) {
 		t.Errorf("without caddy: %v", err)
 	}
 	writeTestFile(t, p.Caddy, "")
-	if err := b.PortsReady(); err == nil || !strings.Contains(err.Error(), "lcd setup") {
+	if err := b.PortsReady(); err == nil || !strings.Contains(err.Error(), "oo setup") {
 		t.Errorf("caddy not set up: %v", err)
 	}
-	writeTestFile(t, p.SystemCaddyfile, "# lcd\nimport "+p.Caddyfile+"\n")
+	writeTestFile(t, p.SystemCaddyfile, "# oo\nimport "+p.Caddyfile+"\n")
 	if err := b.PortsReady(); err != nil {
 		t.Errorf("caddy set up: %v", err)
 	}

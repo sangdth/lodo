@@ -1,4 +1,4 @@
-// Command lcd manages .lcd names on macOS through dnsmasq, /etc/resolver
+// Command oo manages .oo names on macOS through dnsmasq, /etc/resolver
 // files and Caddy.
 package main
 
@@ -10,23 +10,23 @@ import (
 	"os/signal"
 	"runtime/debug"
 
-	"github.com/sangdth/lcd/internal/paths"
-	"github.com/sangdth/lcd/internal/run"
+	"github.com/sangdth/oo/internal/paths"
+	"github.com/sangdth/oo/internal/run"
 )
 
 // Version is set at build time with -ldflags "-X main.Version=v1.2.3".
 var Version = "dev"
 
-const usage = `lcd manages .lcd names on macOS through dnsmasq.
+const usage = `oo manages .oo names on macOS through dnsmasq.
 
 Usage:
-  lcd            open the TUI: the list of names, their checks, and keys to change them
-  lcd setup      one-time system setup; asks for your password
-  lcd apply      write the configs from domains.json, reload, and check every name
-  lcd doctor     check every part and print what to fix
-  lcd uninstall  remove what setup installed; keeps domains.json
-  lcd version    print the version
-  lcd help       print this help
+  oo            open the TUI: the list of names, their checks, and keys to change them
+  oo setup      one-time system setup; asks for your password
+  oo apply      write the configs from domains.json, reload, and check every name
+  oo doctor     check every part and print what to fix
+  oo uninstall  remove what setup installed; keeps domains.json
+  oo version    print the version
+  oo help       print this help
 `
 
 func main() {
@@ -49,12 +49,12 @@ func dispatch(args []string, stdout, stderr io.Writer) int {
 		return 0
 	case "", "setup", "apply", "doctor", "uninstall":
 		if len(args) > 1 {
-			fmt.Fprintf(stderr, "lcd: %s takes no arguments\n\n%s", command, usage)
+			fmt.Fprintf(stderr, "oo: %s takes no arguments\n\n%s", command, usage)
 			return 2
 		}
 		return runApp(command, stdout, stderr)
 	default:
-		fmt.Fprintf(stderr, "lcd: unknown command %q\n\n%s", args[0], usage)
+		fmt.Fprintf(stderr, "oo: unknown command %q\n\n%s", args[0], usage)
 		return 2
 	}
 }
@@ -63,12 +63,12 @@ func dispatch(args []string, stdout, stderr io.Writer) int {
 // user.
 func runApp(command string, stdout, stderr io.Writer) int {
 	if os.Geteuid() == 0 {
-		fmt.Fprintln(stderr, "lcd: run lcd as your user, not with sudo; it asks for your password when it needs it")
+		fmt.Fprintln(stderr, "oo: run oo as your user, not with sudo; it asks for your password when it needs it")
 		return 2
 	}
 	p, err := paths.Default()
 	if err != nil {
-		fmt.Fprintf(stderr, "lcd: %v\n", err)
+		fmt.Fprintf(stderr, "oo: %v\n", err)
 		return 1
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)

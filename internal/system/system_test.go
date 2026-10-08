@@ -8,14 +8,14 @@ import (
 
 	"github.com/charmbracelet/x/exp/golden"
 
-	"github.com/sangdth/lcd/internal/caddy"
-	"github.com/sangdth/lcd/internal/dnsmasq"
-	"github.com/sangdth/lcd/internal/paths"
-	"github.com/sangdth/lcd/internal/store"
-	"github.com/sangdth/lcd/internal/system"
+	"github.com/sangdth/oo/internal/caddy"
+	"github.com/sangdth/oo/internal/dnsmasq"
+	"github.com/sangdth/oo/internal/paths"
+	"github.com/sangdth/oo/internal/store"
+	"github.com/sangdth/oo/internal/system"
 )
 
-const block = "# lcd\nconf-file=/fake/Users/tester/.config/lcd/dnsmasq.conf\nlisten-address=127.0.0.1\nport=53535\nbind-interfaces\n"
+const block = "# oo\nconf-file=/fake/Users/tester/.config/oo/dnsmasq.conf\nlisten-address=127.0.0.1\nport=53535\nbind-interfaces\n"
 
 func TestRewriteSystemConf(t *testing.T) {
 	t.Parallel()
@@ -28,12 +28,12 @@ func TestRewriteSystemConf(t *testing.T) {
 		{name: "empty file", old: "", want: block},
 		{name: "only comments", old: "# dnsmasq\n#port=5353\n", want: "# dnsmasq\n#port=5353\n\n" + block},
 		{
-			name: "replaces the options lcd owns",
+			name: "replaces the options oo owns",
 			old:  "no-resolv\nport=53\nlisten-address=127.0.0.1,10.0.0.1\n  conf-file = /old.conf\nbind-dynamic\nserver=1.1.1.1\n\n\n",
 			want: "no-resolv\nserver=1.1.1.1\n\n" + block,
 		},
-		{name: "already lcd's", old: "# dnsmasq\n\n" + block, want: "# dnsmasq\n\n" + block},
-		{name: "lcd's block in the middle", old: "a=1\n" + block + "b=2\n", want: "a=1\nb=2\n\n" + block},
+		{name: "already oo's", old: "# dnsmasq\n\n" + block, want: "# dnsmasq\n\n" + block},
+		{name: "oo's block in the middle", old: "a=1\n" + block + "b=2\n", want: "a=1\nb=2\n\n" + block},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -67,7 +67,7 @@ func TestStripSystemConf(t *testing.T) {
 		t.Errorf("StripSystemConf = %q, want %q", got, want)
 	}
 	if got := system.StripSystemConf(block); got != "" {
-		t.Errorf("StripSystemConf of lcd's block alone = %q, want empty", got)
+		t.Errorf("StripSystemConf of oo's block alone = %q, want empty", got)
 	}
 }
 
@@ -83,7 +83,7 @@ func TestRewriteSystemCaddyfile(t *testing.T) {
 	}{
 		{name: "no file", old: "", want: caddyBlock},
 		{name: "keeps other sites", old: site, want: site + "\n" + caddyBlock},
-		{name: "already lcd's", old: site + "\n" + caddyBlock, want: site + "\n" + caddyBlock},
+		{name: "already oo's", old: site + "\n" + caddyBlock, want: site + "\n" + caddyBlock},
 		{name: "moves the import to the end", old: caddyBlock + "\n" + site, want: site + "\n" + caddyBlock},
 	}
 	for _, tt := range tests {
@@ -108,15 +108,15 @@ func TestStripSystemCaddyfile(t *testing.T) {
 		t.Errorf("StripSystemCaddyfile = %q, want %q", got, site)
 	}
 	if got := system.StripSystemCaddyfile(system.CaddyBlock(fake), fake); got != "" {
-		t.Errorf("StripSystemCaddyfile of lcd's block alone = %q, want empty", got)
+		t.Errorf("StripSystemCaddyfile of oo's block alone = %q, want empty", got)
 	}
 }
 
 var sample = []store.Domain{
-	{Name: "crm.lcd", Address: "127.0.1.1", Enabled: true},
-	{Name: "dashboard.crm.lcd", Address: "127.0.1.1", Port: 3000, Enabled: true},
-	{Name: "flowy.lcd", Address: "127.0.1.3", Enabled: true},
-	{Name: "old.lcd", Address: "127.0.0.1"},
+	{Name: "crm.oo", Address: "127.0.1.1", Enabled: true},
+	{Name: "dashboard.crm.oo", Address: "127.0.1.1", Port: 3000, Enabled: true},
+	{Name: "flowy.oo", Address: "127.0.1.3", Enabled: true},
+	{Name: "old.oo", Address: "127.0.0.1"},
 }
 
 func TestWriteFiles(t *testing.T) {
@@ -150,8 +150,8 @@ func TestWriteFiles(t *testing.T) {
 		want    system.Changes
 	}{
 		{name: "same list", domains: sample, want: system.Changes{}},
-		{name: "port change", domains: withPort(sample, "dashboard.crm.lcd", 3001), want: system.Changes{Caddy: true}},
-		{name: "toggle", domains: toggled(withPort(sample, "dashboard.crm.lcd", 3001), "crm.lcd"), want: system.Changes{Dnsmasq: true, Resolvers: true}},
+		{name: "port change", domains: withPort(sample, "dashboard.crm.oo", 3001), want: system.Changes{Caddy: true}},
+		{name: "toggle", domains: toggled(withPort(sample, "dashboard.crm.oo", 3001), "crm.oo"), want: system.Changes{Dnsmasq: true, Resolvers: true}},
 	}
 	for _, s := range steps {
 		c, err := system.WriteFiles(p, s.domains)
@@ -165,7 +165,7 @@ func TestWriteFiles(t *testing.T) {
 }
 
 // TestSystemConf_DnsmasqAccepts runs the real dnsmasq syntax check on the
-// rewritten Homebrew config together with lcd's generated config.
+// rewritten Homebrew config together with oo's generated config.
 func TestSystemConf_DnsmasqAccepts(t *testing.T) {
 	t.Parallel()
 
