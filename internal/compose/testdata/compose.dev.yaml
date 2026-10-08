@@ -1,0 +1,83 @@
+# Shapes from the compose files in ~/Projects, gathered in one file. It is a
+# test fixture, not a stack to run: some host ports repeat.
+# Open http://localhost:3000 once the app is up; psql uses localhost:5432.
+name: flowy
+
+x-common: &common
+  restart: unless-stopped
+  environment:
+    TZ: UTC
+    APP_URL: http://localhost:3000 # x- blocks are never rewritten
+
+services:
+  postgres:
+    <<: *common
+    image: postgres:17-alpine
+    ports: ["5432:5432"]
+    environment:
+      POSTGRES_PASSWORD: postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h localhost -U postgres"]
+      interval: 5s
+
+  postgres-test:
+    image: postgres:17-alpine
+    ports:
+      - 5432:5432 # tests reach it on localhost:5432
+    tmpfs: /var/lib/postgresql/data
+
+  postgres-dev:
+    image: postgres:17-alpine
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+
+  postgres-bound:
+    image: postgres:17-alpine
+    ports:
+      - "${DOCKER_HOST_IP:-127.0.0.1}:5433:5432"
+
+  redis:
+    image: redis:8-alpine
+    command: redis-server --bind 127.0.0.1 --port 6379
+    ports:
+      - "127.0.0.1:6379:6379"
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    ports:
+      - '9000:9000'
+      - 9001:9001
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+
+  app:
+    build: .
+    ports:
+      - "3000"
+      - target: 3000
+        published: "3001"
+        host_ip: 127.0.0.1
+    environment:
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3000}
+      NEXT_PUBLIC_APP_URL: http://localhost:3000
+      API_URL: "https://localhost:8443/api"
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/flowy
+      MILVUS_HOST: 127.0.0.1
+    labels:
+      traefik.http.routers.app.rule: Host(`localhost`)
+
+  worker:
+    image: ghcr.io/flowy/worker:latest
+    environment:
+      - OLLAMA_ENDPOINT=http://localhost:11434
+      - CHROME_DEBUGGING_HOST=localhost
+      - "EVENTS_URL=ws://localhost:3000/events"
+    depends_on: [postgres, redis]
+
+  proxy:
+    image: nginx:alpine
+    ports:
+      - "0.0.0.0:8080:80"
+      - 8443:443/tcp
