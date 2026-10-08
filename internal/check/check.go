@@ -53,6 +53,7 @@ type Check struct {
 	Name    string
 	OK      bool
 	Skipped bool   // the check does not apply; nothing to fix
+	Off     bool   // the service was turned off on purpose; Off checks are also Skipped
 	Detail  string // one line: what was found
 	Fix     string // one line: what to run; empty when OK or Skipped
 }
@@ -139,6 +140,8 @@ func (e Env) checkDnsmasq(ctx context.Context, _ []store.Domain, _ []Result) Che
 	switch {
 	case err != nil:
 		return fail(oneLine(err.Error()), fixSetup)
+	case st.Off():
+		return off("turned off: no .oo name resolves until it is on")
 	case !st.Running:
 		return fail("not running", fixSetup)
 	case st.User != "" && st.User != p.User:
@@ -302,10 +305,15 @@ func (e Env) checkCaddy(ctx context.Context, domains []store.Domain, _ []Result)
 			sites++
 		}
 	}
+	p := e.Paths
 	if sites == 0 {
+		if installed(p.Caddy) && system.CaddySetUp(p) {
+			if st, err := brew.Info(ctx, e.Runner, p.Brew, "caddy"); err == nil && st.Off() {
+				return off(caddyOff)
+			}
+		}
 		return skip("no enabled domain has a port")
 	}
-	p := e.Paths
 	if !installed(p.Caddy) {
 		return fail("not installed", "brew install caddy, then oo setup")
 	}
@@ -316,6 +324,8 @@ func (e Env) checkCaddy(ctx context.Context, domains []store.Domain, _ []Result)
 	switch {
 	case err != nil:
 		return fail(oneLine(err.Error()), fixSetup)
+	case st.Off():
+		return off(caddyOff)
 	case !st.Running:
 		return fail("not running", fixSetup)
 	}
@@ -342,6 +352,9 @@ func (e Env) portOwner(ctx context.Context, sites int) Check {
 func pass(detail string) Check      { return Check{OK: true, Detail: detail} }
 func fail(detail, fix string) Check { return Check{Detail: detail, Fix: fix} }
 func skip(detail string) Check      { return Check{Skipped: true, Detail: detail} }
+func off(detail string) Check       { return Check{Skipped: true, Off: true, Detail: detail} }
+
+const caddyOff = "turned off: no http://name.oo reaches its port until it is on"
 
 // enabled returns the enabled domains in store.Sort order.
 func enabled(domains []store.Domain) []store.Domain {

@@ -65,6 +65,10 @@ func (c checkID) skip(detail string) check.Check {
 	return check.Check{ID: c.id, Name: c.name, Skipped: true, Detail: detail}
 }
 
+func (c checkID) off(detail string) check.Check {
+	return check.Check{ID: c.id, Name: c.name, Skipped: true, Off: true, Detail: detail}
+}
+
 func TestNewEnv(t *testing.T) {
 	t.Parallel()
 
@@ -150,6 +154,11 @@ func TestEnv_Run_Dnsmasq(t *testing.T) {
 			name:   "not running",
 			change: setBrew(false, "tester"),
 			want:   dnsmasqCheck.fail("not running", "oo setup"),
+		},
+		{
+			name:   "turned off",
+			change: func(_ *testing.T, m *mac) { m.fake.Set(brewInfo(m.p, "dnsmasq"), brewOffJSON("dnsmasq")) },
+			want:   dnsmasqCheck.off("turned off: no .oo name resolves until it is on"),
 		},
 		{
 			name:   "runs as another user",
@@ -506,6 +515,19 @@ func TestEnv_Run_Caddy(t *testing.T) {
 			want: caddyCheck.skip("no enabled domain has a port"),
 		},
 		{
+			name: "turned off, no port needs it",
+			domains: []store.Domain{
+				{Name: "crm.oo", Address: "127.0.1.1", Enabled: true},
+			},
+			change: func(_ *testing.T, m *mac) { m.fake.Set(brewInfo(m.p, "caddy"), brewOffJSON("caddy")) },
+			want:   caddyCheck.off("turned off: no http://name.oo reaches its port until it is on"),
+		},
+		{
+			name:   "turned off",
+			change: func(_ *testing.T, m *mac) { m.fake.Set(brewInfo(m.p, "caddy"), brewOffJSON("caddy")) },
+			want:   caddyCheck.off("turned off: no http://name.oo reaches its port until it is on"),
+		},
+		{
 			name:   "not installed",
 			change: func(t *testing.T, m *mac) { t.Helper(); removeFile(t, m.p.Caddy) },
 			want:   caddyCheck.fail("not installed", "brew install caddy, then oo setup"),
@@ -601,6 +623,16 @@ func TestEnv_Prerequisites(t *testing.T) {
 	}
 }
 
+func TestEnv_Prerequisites_DnsmasqOff(t *testing.T) {
+	t.Parallel()
+
+	m := newMac(t, healthyDomains)
+	m.fake.Set(brewInfo(m.p, "dnsmasq"), brewOffJSON("dnsmasq"))
+	if failed := check.Failed(m.env.Prerequisites(t.Context(), m.domains)); len(failed) != 0 {
+		t.Errorf("failed = %+v; a dnsmasq turned off must not keep the TUI shut", failed)
+	}
+}
+
 func TestFailed(t *testing.T) {
 	t.Parallel()
 
@@ -615,6 +647,7 @@ func TestFailed(t *testing.T) {
 	}{
 		{name: "none", checks: nil, want: nil},
 		{name: "passed and skipped", checks: []check.Check{ok, skipped}, want: nil},
+		{name: "turned off", checks: []check.Check{{ID: 1, Skipped: true, Off: true}}, want: nil},
 		{name: "failures in order", checks: []check.Check{ok, bad, skipped, worse}, want: []check.Check{bad, worse}},
 	}
 	for _, tt := range tests {
@@ -739,7 +772,8 @@ func brewInfo(p paths.Paths, service string) string {
 }
 
 // brewJSON is brew services info --json output, trimmed to the fields oo
-// reads. An empty user is JSON null, as brew prints for a job that never ran.
+// reads, for a registered job. An empty user is JSON null, as brew prints for
+// a job that never ran.
 func brewJSON(service string, running bool, user string) string {
 	u, pid, status := "null", "null", "none"
 	if user != "" {
@@ -748,8 +782,14 @@ func brewJSON(service string, running bool, user string) string {
 	if running {
 		pid, status = "42", "started"
 	}
-	return fmt.Sprintf(`[{"name":%q,"running":%t,"loaded":%t,"user":%s,"pid":%s,"status":%q}]`,
+	return fmt.Sprintf(`[{"name":%q,"running":%t,"loaded":%t,"user":%s,"pid":%s,"status":%q,"registered":true}]`,
 		service, running, running, u, pid, status)
+}
+
+// brewOffJSON is brew services info --json output for a job brew services
+// stop turned off: stopped and no longer registered.
+func brewOffJSON(service string) string {
+	return fmt.Sprintf(`[{"name":%q,"running":false,"loaded":false,"user":null,"pid":null,"status":"none","registered":false}]`, service)
 }
 
 // lo0 is ifconfig lo0 output on a Mac with the first n own addresses.
