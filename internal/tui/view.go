@@ -8,6 +8,7 @@ import (
 
 	"charm.land/bubbles/v2/table"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/sangdth/oo/internal/check"
@@ -23,6 +24,20 @@ const (
 	minNameWidth = 12
 	columns      = 5
 )
+
+// The modal takes 70% of the terminal's width, but never less than
+// minBoxWidth columns, so the table and the keys fit, and never more than the
+// terminal. It grows with the names up to 80% of the height; the log takes
+// all of that.
+const (
+	boxWidthPercent  = 70
+	boxHeightPercent = 80
+	minBoxWidth      = 84
+)
+
+// formHeight is the lines the form needs: a title between two blank lines,
+// and each field with a line for its error.
+const formHeight = 3 + 2*fieldCount
 
 // statusParts are the doctor checks the status bar shows, by ID.
 var statusParts = []struct {
@@ -43,8 +58,8 @@ var help = map[mode]string{
 	modeLog:     " l or esc back to the list  up/down scroll  q quit",
 }
 
-// View draws the status bar, the table or the form, the status line and the
-// keys.
+// View draws the status bar, a rule, the table or the form, the status line
+// and the keys in a bordered box at the middle of the terminal.
 func (m Model) View() tea.View {
 	body := m.table.View()
 	switch m.mode {
@@ -55,19 +70,21 @@ func (m Model) View() tea.View {
 	}
 	lines := []string{
 		m.statusBar(),
+		m.styles.dim.Render(strings.Repeat("─", m.innerWidth())),
 		body,
 		m.statusLine(),
 		m.styles.dim.Render(help[m.mode]),
 	}
-	v := tea.NewView(strings.Join(lines, "\n"))
+	box := m.styles.box.Width(m.boxWidth()).Render(strings.Join(lines, "\n"))
+	v := tea.NewView(lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box))
 	v.AltScreen = true
 	return v
 }
 
-// layout sizes the table to the terminal: the name column takes what the
-// fixed columns leave.
+// layout sizes the table to the box: the name column takes what the fixed
+// columns leave.
 func (m *Model) layout() {
-	name := max(m.width-addressWidth-portWidth-ownWidth-checkWidth-2*columns, minNameWidth)
+	name := max(m.innerWidth()-addressWidth-portWidth-ownWidth-checkWidth-2*columns, minNameWidth)
 	m.table.SetColumns([]table.Column{
 		{Title: "name", Width: name},
 		{Title: "address", Width: addressWidth},
@@ -75,17 +92,33 @@ func (m *Model) layout() {
 		{Title: "own", Width: ownWidth},
 		{Title: "check", Width: checkWidth},
 	})
-	m.table.SetWidth(m.width)
+	m.table.SetWidth(m.innerWidth())
 	m.table.SetHeight(m.bodyHeight())
 	m.table.SetRows(m.rows())
-	m.log.SetWidth(m.width)
-	m.log.SetHeight(m.bodyHeight() - 1) // the log's title takes a line
+	m.log.SetWidth(m.innerWidth())
+	m.log.SetHeight(m.logHeight() - 1) // the log's title takes a line
 }
 
-// bodyHeight is the lines the table or the form gets: the status bar, the
-// status line and the keys take three.
+// boxWidth is the modal's width with its border.
+func (m Model) boxWidth() int {
+	return min(max(m.width*boxWidthPercent/100, minBoxWidth), m.width)
+}
+
+// innerWidth is the columns inside the modal's border.
+func (m Model) innerWidth() int {
+	return max(m.boxWidth()-2, 1)
+}
+
+// bodyHeight is the lines the table gets: its header and one per name, at
+// least one row, at most the log's lines.
 func (m Model) bodyHeight() int {
-	return max(m.height-3, 3)
+	return min(max(len(m.domains), 1)+1, m.logHeight())
+}
+
+// logHeight is the most lines the body gets: the border takes two, and the
+// status bar, the rule under it, the status line and the keys take four.
+func (m Model) logHeight() int {
+	return max(m.height*boxHeightPercent/100-6, 3)
 }
 
 // rows renders one table row per domain.
@@ -93,7 +126,10 @@ func (m Model) rows() []table.Row {
 	rows := make([]table.Row, len(m.domains))
 	for i, d := range m.domains {
 		mark := "○"
-		if d.Enabled {
+		switch {
+		case m.spins(d):
+			mark = m.spinner.View()
+		case d.Enabled:
 			mark = "●"
 		}
 		indent := strings.Repeat("  ", strings.Count(d.Name, ".")-1)
@@ -108,6 +144,19 @@ func (m Model) rows() []table.Row {
 		rows[i] = table.Row{mark + " " + indent + d.Name, d.Address, port, own, m.checkCell(d)}
 	}
 	return rows
+}
+
+// spins says whether d's row shows the spinner: the name a change is for,
+// whether it is on or off, or every enabled name while the first check or a
+// reload runs.
+func (m Model) spins(d store.Domain) bool {
+	if !m.busy {
+		return false
+	}
+	if m.pending == "" {
+		return d.Enabled
+	}
+	return d.Name == m.pending
 }
 
 // checkCell says how a domain's probes went.
@@ -164,14 +213,12 @@ func (m Model) check(id int) (check.Check, bool) {
 	return check.Check{}, false
 }
 
-// statusLine says what runs, what a delete waits for, what failed, what was
-// just done, why the selected name fails, or which system part needs oo
-// doctor, in that order.
+// statusLine says what a delete waits for, what failed, what was just done,
+// why the selected name fails, or which system part needs oo doctor, in that
+// order.
 func (m Model) statusLine() string {
 	line := ""
 	switch {
-	case m.busy != "":
-		line = m.spinner.View() + " " + m.busy + "…"
 	case m.mode == modeConfirm:
 		line = m.styles.title.Render("delete " + m.target + "? y/n")
 	case m.err != nil:
@@ -181,7 +228,7 @@ func (m Model) statusLine() string {
 	default:
 		line = m.problem()
 	}
-	return ansi.Truncate(" "+line, m.width, "…")
+	return ansi.Truncate(" "+line, m.innerWidth(), "…")
 }
 
 func (m Model) problem() string {
@@ -202,8 +249,8 @@ func (m Model) problem() string {
 	return ""
 }
 
-// formView draws the add or edit form at the table's height, so the status
-// line and keys stay put.
+// formView draws the add or edit form at a fixed height, so the box stays put
+// while errors come and go.
 func (m Model) formView() string {
 	f := m.form
 	title := "Add a name"
@@ -214,16 +261,20 @@ func (m Model) formView() string {
 	labels := [fieldCount]string{"name", "address", "port"}
 	hints := [fieldCount]string{"", f.hint, m.portHint()}
 	for i := range fieldCount {
-		line := fmt.Sprintf(" %-8s %s", labels[i], f.inputs[i].View())
+		input := f.inputs[i].View()
+		if i == fieldName {
+			input = m.nameInput()
+		}
+		line := fmt.Sprintf(" %-8s %s", labels[i], input)
 		if hints[i] != "" {
 			line += "  " + m.styles.dim.Render(hints[i])
 		}
-		lines = append(lines, ansi.Truncate(line, m.width, "…"))
+		lines = append(lines, ansi.Truncate(line, m.innerWidth(), "…"))
 		if f.errs[i] != "" {
-			lines = append(lines, ansi.Truncate("          "+m.styles.bad.Render("✗ "+f.errs[i]), m.width, "…"))
+			lines = append(lines, ansi.Truncate("          "+m.styles.bad.Render("✗ "+f.errs[i]), m.innerWidth(), "…"))
 		}
 	}
-	for len(lines) < m.bodyHeight() {
+	for len(lines) < formHeight {
 		lines = append(lines, "")
 	}
 	return strings.Join(lines, "\n")
@@ -234,7 +285,7 @@ func (m Model) logView() string {
 	title := " " + m.styles.title.Render("dnsmasq query log")
 	if len(m.logLines) == 0 {
 		lines := []string{title, " " + m.styles.dim.Render("no log yet: dnsmasq writes a line for every query it answers")}
-		for len(lines) < m.bodyHeight() {
+		for len(lines) < m.logHeight() {
 			lines = append(lines, "")
 		}
 		return strings.Join(lines, "\n")
@@ -242,9 +293,21 @@ func (m Model) logView() string {
 	return title + "\n" + m.log.View()
 }
 
+// nameInput draws the name field as wide as its text, or its placeholder, and
+// the dimmed suffix after it, which can't be edited.
+func (m Model) nameInput() string {
+	in := m.form.inputs[fieldName]
+	width := ansi.StringWidth(in.Value())
+	if width == 0 {
+		width = ansi.StringWidth(in.Placeholder)
+	}
+	in.SetWidth(width)
+	return in.View() + m.styles.dim.Render(nameSuffix)
+}
+
 // portHint says what a port does for the name being typed.
 func (m Model) portHint() string {
-	name := cmp.Or(strings.TrimSpace(m.form.inputs[fieldName].Value()), "<name>")
+	name := cmp.Or(m.form.name(), "<name>")
 	port := strings.TrimSpace(m.form.inputs[fieldPort].Value())
 	if port == "" {
 		return "optional: Caddy then forwards http://" + name + " to this port"

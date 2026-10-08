@@ -19,6 +19,10 @@ const (
 	fieldCount
 )
 
+// nameSuffix ends every name. The form shows it after the name field, dimmed,
+// so only the labels before it are typed.
+const nameSuffix = "." + store.TLD
+
 // fieldIndex maps store's field names to the form's fields.
 var fieldIndex = map[string]int{
 	store.FieldName:    fieldName,
@@ -48,7 +52,7 @@ func newAddForm(domains []store.Domain) form {
 // newEditForm opens a form holding d. Its address stays as typed.
 func newEditForm(domains []store.Domain, d store.Domain) form {
 	f := form{editing: d.Name, original: d, inputs: newInputs(), addressTouched: true}
-	f.inputs[fieldName].SetValue(d.Name)
+	f.inputs[fieldName].SetValue(strings.TrimSuffix(d.Name, nameSuffix))
 	f.inputs[fieldAddress].SetValue(d.Address)
 	if d.Port > 0 {
 		f.inputs[fieldPort].SetValue(strconv.Itoa(d.Port))
@@ -64,14 +68,14 @@ func newInputs() [fieldCount]textinput.Model {
 	styles := textinput.DefaultDarkStyles()
 	styles.Cursor.Blink = false
 	var inputs [fieldCount]textinput.Model
-	for i, limit := range [fieldCount]int{store.MaxNameLen, len("127.255.255.255"), len("65535")} {
+	for i, limit := range [fieldCount]int{store.MaxNameLen - len(nameSuffix), len("127.255.255.255"), len("65535")} {
 		inputs[i] = textinput.New()
 		inputs[i].Prompt = ""
 		inputs[i].CharLimit = limit
 		inputs[i].SetStyles(styles)
 	}
-	inputs[fieldName].SetWidth(40)
-	inputs[fieldName].Placeholder = "app.flowy.oo"
+	inputs[fieldName].SetWidth(store.MaxNameLen) // never scrolls; formView draws it at the text's width
+	inputs[fieldName].Placeholder = "app.flowy"
 	inputs[fieldAddress].SetWidth(16)
 	inputs[fieldPort].SetWidth(6)
 	inputs[fieldPort].Placeholder = "none"
@@ -84,7 +88,7 @@ func (f *form) prefill(domains []store.Domain) {
 	if f.addressTouched {
 		return
 	}
-	name := strings.TrimSpace(f.inputs[fieldName].Value())
+	name := f.name()
 	free, freeErr := store.NextFree(domains)
 	parent, isSub := store.Parent(domains, name)
 	switch {
@@ -125,11 +129,21 @@ func (f form) domain() (store.Domain, error) {
 		enabled = f.original.Enabled
 	}
 	return store.Domain{
-		Name:    strings.TrimSpace(f.inputs[fieldName].Value()),
+		Name:    f.name(),
 		Address: strings.TrimSpace(f.inputs[fieldAddress].Value()),
 		Port:    port,
 		Enabled: enabled,
 	}, nil
+}
+
+// name is the typed labels with the suffix, or empty when none are typed. A
+// suffix typed out of habit is not doubled.
+func (f form) name() string {
+	labels := strings.TrimSuffix(strings.TrimSpace(f.inputs[fieldName].Value()), nameSuffix)
+	if labels == "" {
+		return ""
+	}
+	return labels + nameSuffix
 }
 
 // setError shows err under the field it concerns and moves the cursor there.

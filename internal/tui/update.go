@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"cmp"
 	"errors"
 
 	"charm.land/bubbles/v2/spinner"
@@ -17,15 +18,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.layout()
 		return m, nil
 	case reportMsg:
-		m.busy = ""
+		m.busy = false
 		m.setReport(msg.checks, msg.results)
 		return m, nil
 	case changedMsg:
-		m.busy, m.err = "", msg.err
+		m.busy, m.err = false, msg.err
 		if msg.stored {
 			m.domains = store.Sort(msg.domains)
 			m.setReport(msg.checks, msg.results)
 		}
+		m.table.SetRows(m.rows()) // the spinner leaves the rows
 		return m, nil
 	case logMsg:
 		if msg.session != m.logSession || m.mode != modeLog {
@@ -50,11 +52,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case spinner.TickMsg:
-		if m.busy == "" {
+		if !m.busy {
 			return m, nil // stop animating once idle
 		}
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
+		m.table.SetRows(m.rows())
 		return m, cmd
 	case tea.KeyPressMsg:
 		return m.key(msg)
@@ -82,7 +85,7 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if k == "l" {
 		return m.openLog() // reading the log is safe while a change runs
 	}
-	if m.busy == "" {
+	if !m.busy {
 		if next, cmd, ok := m.listKey(k); ok {
 			return next, cmd
 		}
@@ -98,7 +101,7 @@ func (m Model) listKey(k string) (Model, tea.Cmd, bool) {
 	case "q":
 		return m, tea.Quit, true
 	case "r":
-		next, cmd := m.start("applying", m.reload())
+		next, cmd := m.start("", m.reload())
 		return next, cmd, true
 	case "a":
 		m.mode, m.err, m.form = modeForm, nil, newAddForm(m.domains)
@@ -116,7 +119,7 @@ func (m Model) listKey(k string) (Model, tea.Cmd, bool) {
 			return m, nil, true
 		}
 		m.selectName = d.Name
-		started, cmd := m.start("applying", m.change(next))
+		started, cmd := m.start(d.Name, m.change(next))
 		return started, cmd, true
 	case "e":
 		m.mode, m.err, m.form = modeForm, nil, newEditForm(m.domains, d)
@@ -146,7 +149,7 @@ func (m Model) formKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 // submit checks the form against every rule and, when it passes, saves and
 // applies the new list.
 func (m Model) submit() (tea.Model, tea.Cmd) {
-	if m.busy != "" {
+	if m.busy {
 		m.form.setError(errors.New("a change is still running: press enter again in a moment"))
 		return m, nil
 	}
@@ -169,7 +172,7 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.mode, m.selectName = modeList, d.Name
-	return m.start("applying", m.change(next))
+	return m.start(cmp.Or(m.form.editing, d.Name), m.change(next))
 }
 
 // logKey scrolls the log; l or esc goes back to the list.
@@ -189,7 +192,7 @@ func (m Model) logKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 // confirmKey deletes the waiting name on y; any other key keeps it.
 func (m Model) confirmKey(k string) (tea.Model, tea.Cmd) {
 	m.mode = modeList
-	if k != "y" || m.busy != "" {
+	if k != "y" || m.busy {
 		return m, nil
 	}
 	next, err := store.Remove(m.domains, m.target)
@@ -197,5 +200,5 @@ func (m Model) confirmKey(k string) (tea.Model, tea.Cmd) {
 		m.err = err
 		return m, nil
 	}
-	return m.start("applying", m.change(next))
+	return m.start(m.target, m.change(next))
 }

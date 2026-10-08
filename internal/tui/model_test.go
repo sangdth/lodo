@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
+	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -26,15 +28,28 @@ func TestNew(t *testing.T) {
 
 	b := &fakeBackend{}
 	m := New(t.Context(), b, sample)
-	if m.busy != "checking" {
-		t.Errorf("busy = %q before the first report, want checking", m.busy)
+	if !m.busy {
+		t.Error("not busy before the first report")
 	}
 	if got := m.rows()[0][4]; got != "…" {
 		t.Errorf("check cell before the first report = %q, want …", got)
 	}
+	spinning := m.spinner.View() + " crm.oo"
+	if got := m.table.Rows()[0][0]; got != spinning {
+		t.Errorf("enabled row before the first report = %q, want %q", got, spinning)
+	}
+	if got := m.table.Rows()[3][0]; got != "○ old.oo" {
+		t.Errorf("disabled row before the first report = %q, want ○ old.oo", got)
+	}
+	if got := strings.TrimSpace(m.statusLine()); got != "" {
+		t.Errorf("status line while busy = %q, want empty", got)
+	}
 	m = settle(m, m.Init())
-	if m.busy != "" || b.reports != 1 || len(m.checks) != 8 || len(m.results) != 3 {
-		t.Errorf("after Init: busy %q, %d reports, %d checks, %d results", m.busy, b.reports, len(m.checks), len(m.results))
+	if m.busy || b.reports != 1 || len(m.checks) != 8 || len(m.results) != 3 {
+		t.Errorf("after Init: busy %v, %d reports, %d checks, %d results", m.busy, b.reports, len(m.checks), len(m.results))
+	}
+	if got := m.table.Rows()[0][0]; got != "● crm.oo" {
+		t.Errorf("enabled row after the first report = %q, want ● crm.oo", got)
 	}
 }
 
@@ -56,11 +71,50 @@ func TestModel_Toggle(t *testing.T) {
 	if len(b.applied) != 1 || !slices.Equal(b.applied[0], want) {
 		t.Errorf("applied %v, want %v", b.applied, want)
 	}
-	if m.domains[1].Enabled || m.busy != "" || m.err != nil {
-		t.Errorf("after the change: %+v, busy %q, err %v", m.domains[1], m.busy, m.err)
+	if m.domains[1].Enabled || m.busy || m.err != nil {
+		t.Errorf("after the change: %+v, busy %v, err %v", m.domains[1], m.busy, m.err)
 	}
 	if got := m.rows()[1][4]; got != "–" {
 		t.Errorf("check cell of a disabled name = %q, want –", got)
+	}
+}
+
+func TestModel_SpinnerOnTheChangedRow(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		keys  []string // keys that move to the row; the last key starts the change
+		row   int
+		label string
+	}{
+		{name: "turn a name off", keys: []string{"space"}, row: 0, label: "crm.oo"},
+		{name: "turn a name on", keys: []string{"down", "down", "down", "space"}, row: 3, label: "old.oo"},
+		{name: "delete a name", keys: []string{"down", "down", "d", "y"}, row: 2, label: "flowy.oo"},
+		{name: "reload", keys: []string{"r"}, row: -1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m := ready(&fakeBackend{}, sample)
+			last := len(tt.keys) - 1
+			for _, k := range tt.keys[:last] {
+				m = send(m, k)
+			}
+			next, _ := m.Update(press(tt.keys[last])) // the change has started, not landed
+			m = next.(Model)
+			spinner := m.spinner.View()
+			for i, row := range m.table.Rows() {
+				spinning := strings.HasPrefix(row[0], spinner)
+				want := i == tt.row || (tt.row < 0 && m.domains[i].Enabled)
+				if spinning != want {
+					t.Errorf("row %d %q spins: %v, want %v", i, row[0], spinning, want)
+				}
+			}
+			if tt.row >= 0 && !strings.HasSuffix(m.table.Rows()[tt.row][0], tt.label) {
+				t.Errorf("row %d = %q, want %s", tt.row, m.table.Rows()[tt.row][0], tt.label)
+			}
+		})
 	}
 }
 
@@ -69,8 +123,8 @@ func TestModel_ApplyFails(t *testing.T) {
 
 	b := &fakeBackend{applyErr: errBoom}
 	m := send(ready(b, sample), "space")
-	if m.err == nil || m.busy != "" {
-		t.Fatalf("err %v, busy %q; want the apply error and idle", m.err, m.busy)
+	if m.err == nil || m.busy {
+		t.Fatalf("err %v, busy %v; want the apply error and idle", m.err, m.busy)
 	}
 	if m.domains[0].Enabled {
 		t.Error("the saved toggle was dropped; it must stay so r can apply it again")
@@ -154,14 +208,50 @@ func TestModel_WindowSize(t *testing.T) {
 	t.Parallel()
 
 	m := ready(&fakeBackend{}, sample)
-	next, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
-	m = next.(Model)
-	if got := m.table.Columns()[0].Width; got != 120-addressWidth-portWidth-ownWidth-checkWidth-2*columns {
-		t.Errorf("name column = %d wide at 120 columns", got)
+	tests := []struct {
+		terminal, box int
+	}{
+		{terminal: 200, box: 140}, // 70%
+		{terminal: 100, box: minBoxWidth},
+		{terminal: 80, box: 80}, // narrower than the floor: the whole terminal
 	}
-	next, _ = m.Update(tea.WindowSizeMsg{Width: 20, Height: 2})
+	for _, tt := range tests {
+		next, _ := m.Update(tea.WindowSizeMsg{Width: tt.terminal, Height: 40})
+		got := next.(Model).table.Columns()[0].Width
+		if want := tt.box - 2 - addressWidth - portWidth - ownWidth - checkWidth - 2*columns; got != want {
+			t.Errorf("name column = %d wide at %d columns, want %d", got, tt.terminal, want)
+		}
+	}
+	next, _ := m.Update(tea.WindowSizeMsg{Width: 20, Height: 2})
 	if got := next.(Model).table.Columns()[0].Width; got != minNameWidth {
 		t.Errorf("name column = %d wide in a tiny terminal, want %d", got, minNameWidth)
+	}
+}
+
+func TestModel_BoxFitsTheNames(t *testing.T) {
+	t.Parallel()
+
+	many := make([]store.Domain, 40)
+	for i := range many {
+		many[i] = store.Domain{Name: "n" + strconv.Itoa(i) + ".oo", Address: "127.0.0.1"}
+	}
+	tests := []struct {
+		name    string
+		domains []store.Domain
+		want    int // rows the table shows, without its header
+	}{
+		{name: "no names", domains: nil, want: 1},
+		{name: "a few names", domains: sample, want: len(sample)},
+		{name: "more names than fit", domains: many, want: defaultHeight*boxHeightPercent/100 - 7},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m := ready(&fakeBackend{}, tt.domains)
+			if got := m.table.Height(); got != tt.want {
+				t.Errorf("table height = %d, want %d", got, tt.want)
+			}
+		})
 	}
 }
 

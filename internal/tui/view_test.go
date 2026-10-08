@@ -72,7 +72,7 @@ func TestModel_StatusLineFitsTheWidth(t *testing.T) {
 
 	b := &fakeBackend{failing: map[string]string{"crm.oo": strings.Repeat("very long detail ", 20)}}
 	m := ready(b, sample)
-	if w := ansi.StringWidth(m.statusLine()); w > m.width {
-		t.Errorf("status line is %d wide, terminal %d", w, m.width)
+	if w := ansi.StringWidth(m.statusLine()); w > m.innerWidth() {
+		t.Errorf("status line is %d wide, box %d inside", w, m.innerWidth())
 	}
 }

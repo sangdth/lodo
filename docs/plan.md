@@ -249,7 +249,7 @@ A failure at any step shows in the status line. The saved file stays as written;
 
 ```text
  Add domain
- Name     dashboard.crm.oo
+ Name     dashboard.crm .oo
  Address  127.0.1.1          crm.oo's address; next free: 127.0.1.4
  Port     3000               optional; http://dashboard.crm.oo then reaches 127.0.1.1:3000
  enter save   esc cancel
@@ -257,17 +257,23 @@ A failure at any step shows in the status line. The saved file stays as written;
 
 - **List:** a `bubbles/table` with name, address, port, own, on/off and the checks (dns, http). Up to 50
   rows, no filtering.
-- **Form:** three `textinput`s. Add prefills the address while you type the name: the parent's address when
+- **Form:** three `textinput`s. The name field takes the labels only; a dimmed `.oo` that can't be edited
+  follows it, and a `.oo` typed anyway is not doubled. Add prefills the address while you type the name: the parent's address when
   the name is a subdomain of a listed name, else the lowest free own address (`127.0.0.1`, with a note, when
   all 50 are taken). The hint names the next free own address so a subdomain can get its own. Typing in the
   address field stops the prefill. Port is optional; a port when `caddy` isn't installed says
   `brew install caddy`, then `oo setup`. Edit prefills the stored values. Validation errors show under the
   field.
+- **Spinner:** while a change runs, the changed row's mark spins, whether the name is on or off; the first
+  check and `r` spin every enabled row.
 - **Delete:** `d` asks `delete flowy.oo? y/n` in the status line.
 - **Copy env** puts `DOCKER_HOST_IP=127.0.1.3` on the clipboard (`pbcopy`).
 - **Log:** a `viewport` tailing `dnsmasq.log`, polled every 500 ms; `l` or `esc` returns.
 - **Status bar:** checks 1, 3, 4 and 8. `caddy` shows `off` when no row has a port. Any red one says "run
   `oo doctor`".
+- **Layout:** everything sits in one bordered box at the middle of the terminal: 70% of the width, at least
+  84 columns (the whole width on a narrower terminal). Its height fits the names, up to 80% of the
+  terminal; the log takes the full 80%.
 - Every change runs `apply` as a `tea.Cmd`, with a spinner while dnsmasq restarts. Errors show in the status
   line and never exit the app.
 

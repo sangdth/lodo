@@ -11,6 +11,7 @@ type styles struct {
 	ok    lipgloss.Style
 	bad   lipgloss.Style
 	dim   lipgloss.Style
+	box   lipgloss.Style
 	table table.Styles
 }
 
@@ -22,6 +23,7 @@ func newStyles() styles {
 		ok:    lipgloss.NewStyle().Foreground(lipgloss.Color("2")),
 		bad:   lipgloss.NewStyle().Foreground(lipgloss.Color("1")),
 		dim:   lipgloss.NewStyle().Foreground(lipgloss.Color("8")),
+		box:   lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("8")),
 		table: t,
 	}
 }

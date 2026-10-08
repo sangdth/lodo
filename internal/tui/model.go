@@ -60,7 +60,8 @@ type Model struct {
 
 	table   table.Model
 	spinner spinner.Model
-	busy    string // what runs now, such as "applying"; empty when idle
+	busy    bool   // a check or a change runs
+	pending string // the name the running change is for; empty for every enabled name
 	err     error  // the last failure, shown until the next change starts
 
 	width, height int
@@ -77,7 +78,7 @@ func New(ctx context.Context, b Backend, domains []store.Domain) Model {
 		spinner:  spinner.New(spinner.WithSpinner(spinner.MiniDot)),
 		log:      viewport.New(),
 		logEvery: logEvery,
-		busy:     "checking",
+		busy:     true,
 		width:    defaultWidth,
 		height:   defaultHeight,
 		styles:   newStyles(),
@@ -221,9 +222,11 @@ func (m *Model) appendLog(text string, offset int64) {
 	}
 }
 
-// start marks the model busy with what and runs cmd with the spinner going.
-func (m Model) start(what string, cmd tea.Cmd) (Model, tea.Cmd) {
-	m.busy, m.err = what, nil
+// start marks the model busy with a change to name, or to every enabled name
+// when name is empty, and runs cmd with the spinner going on its row.
+func (m Model) start(name string, cmd tea.Cmd) (Model, tea.Cmd) {
+	m.busy, m.pending, m.err = true, name, nil
+	m.table.SetRows(m.rows())
 	return m, tea.Batch(cmd, m.spinner.Tick)
 }
 
@@ -234,6 +237,7 @@ func (m *Model) setReport(checks []check.Check, results []check.Result) {
 	for _, r := range results {
 		m.results[r.Name] = r
 	}
+	m.table.SetHeight(m.bodyHeight()) // the box grows and shrinks with the names
 	m.table.SetRows(m.rows())
 	m.placeCursor()
 }

@@ -23,7 +23,7 @@ func TestForm_Prefill(t *testing.T) {
 	}
 	assertAddress(t, m, "127.0.1.2", "the lowest free own address")
 
-	m = typeText(m, "test.crm.oo")
+	m = typeText(m, "test.crm")
 	assertAddress(t, m, "127.0.1.1", "crm.oo's address; next free: 127.0.1.2")
 
 	m = typeText(send(m, "tab"), "") // into the address field
@@ -49,7 +49,7 @@ func TestForm_Add(t *testing.T) {
 
 	b := &fakeBackend{}
 	m := send(ready(b, sample), "a")
-	m = typeText(m, "api.crm.oo")
+	m = typeText(m, "api.crm")
 	m = send(m, "enter")
 
 	want := store.Domain{Name: "api.crm.oo", Address: "127.0.1.1", Enabled: true}
@@ -74,26 +74,29 @@ func TestForm_Errors(t *testing.T) {
 		wantField int
 		wantMsg   string
 	}{
-		{name: "bad name", fields: [fieldCount]string{"Web.oo"}, wantField: fieldName, wantMsg: "name must be lowercase"},
-		{name: "old ending", fields: [fieldCount]string{"web.local"}, wantField: fieldName, wantMsg: "name must end in .oo"},
-		{name: "duplicate", fields: [fieldCount]string{"crm.oo"}, wantField: fieldName, wantMsg: "crm.oo is already listed"},
+		{name: "bad name", fields: [fieldCount]string{"Web"}, wantField: fieldName, wantMsg: "name must be lowercase"},
 		{
-			name: "another project's address", fields: [fieldCount]string{"web.oo", "127.0.1.3"},
+			name: "a bad label", fields: [fieldCount]string{"web_app"},
+			wantField: fieldName, wantMsg: "name may use only a-z, 0-9 and '-' inside labels of 1-63 characters",
+		},
+		{name: "duplicate", fields: [fieldCount]string{"crm"}, wantField: fieldName, wantMsg: "crm.oo is already listed"},
+		{
+			name: "another project's address", fields: [fieldCount]string{"web", "127.0.1.3"},
 			wantField: fieldAddress, wantMsg: "127.0.1.3 belongs to flowy.oo",
 		},
 		{
-			name: "bad address", fields: [fieldCount]string{"web.oo", "10.0.0.1"},
+			name: "bad address", fields: [fieldCount]string{"web", "10.0.0.1"},
 			wantField: fieldAddress, wantMsg: "address must be an IPv4 address in 127.0.0.0/8, like 127.0.1.3",
 		},
-		{name: "bad port", fields: [fieldCount]string{"web.oo", "", "abc"}, wantField: fieldPort, wantMsg: "port must be a number"},
+		{name: "bad port", fields: [fieldCount]string{"web", "", "abc"}, wantField: fieldPort, wantMsg: "port must be a number"},
 		{
-			name: "caddy's port", fields: [fieldCount]string{"web.oo", "", "80"},
+			name: "caddy's port", fields: [fieldCount]string{"web", "", "80"},
 			wantField: fieldPort, wantMsg: "port 80 is where Caddy listens; use the app's own port",
 		},
 		{
 			name:    "a port before caddy is ready",
 			backend: &fakeBackend{portsErr: errors.New("caddy is not installed: brew install caddy, then oo setup")},
-			fields:  [fieldCount]string{"web.oo", "", "3000"}, wantField: fieldPort,
+			fields:  [fieldCount]string{"web", "", "3000"}, wantField: fieldPort,
 			wantMsg: "caddy is not installed: brew install caddy, then oo setup",
 		},
 	}
@@ -130,9 +133,9 @@ func TestForm_Allowed(t *testing.T) {
 		fields [fieldCount]string
 		want   store.Domain
 	}{
-		{name: "subdomain shares its project's address", fields: [fieldCount]string{"test.crm.oo"}, want: store.Domain{Name: "test.crm.oo", Address: "127.0.1.1", Enabled: true}},
-		{name: "shared localhost", fields: [fieldCount]string{"web.oo", "127.0.0.1"}, want: store.Domain{Name: "web.oo", Address: "127.0.0.1", Enabled: true}},
-		{name: "a port", fields: [fieldCount]string{"web.oo", "", "3000"}, want: store.Domain{Name: "web.oo", Address: "127.0.1.2", Port: 3000, Enabled: true}},
+		{name: "subdomain shares its project's address", fields: [fieldCount]string{"test.crm"}, want: store.Domain{Name: "test.crm.oo", Address: "127.0.1.1", Enabled: true}},
+		{name: "shared localhost", fields: [fieldCount]string{"web", "127.0.0.1"}, want: store.Domain{Name: "web.oo", Address: "127.0.0.1", Enabled: true}},
+		{name: "a port", fields: [fieldCount]string{"web", "", "3000"}, want: store.Domain{Name: "web.oo", Address: "127.0.1.2", Port: 3000, Enabled: true}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -153,8 +156,8 @@ func TestForm_Edit(t *testing.T) {
 	m := ready(b, sample)
 	m = send(send(m, "down"), "down") // flowy.oo
 	m = send(m, "e")
-	if got := m.form.inputs[fieldName].Value(); got != "flowy.oo" {
-		t.Fatalf("name field = %q, want the selected name", got)
+	if got := m.form.inputs[fieldName].Value(); got != "flowy" {
+		t.Fatalf("name field = %q, want the selected name without .oo", got)
 	}
 	m = send(send(m, "tab"), "tab")
 	m = typeText(m, "3000")
@@ -171,7 +174,7 @@ func TestForm_EditKeepsOff(t *testing.T) {
 
 	b := &fakeBackend{}
 	m := send(send(send(send(ready(b, sample), "down"), "down"), "down"), "e") // old.oo, which is off
-	m = typeText(clearField(m), "older.oo")
+	m = typeText(clearField(m), "older")
 	m = send(m, "enter")
 	want := store.Domain{Name: "older.oo", Address: "127.0.0.1"}
 	if len(b.saved) != 1 || !slices.Contains(b.saved[0], want) {
@@ -182,11 +185,45 @@ func TestForm_EditKeepsOff(t *testing.T) {
 	}
 }
 
+func TestForm_NameSuffix(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		typed string
+		want  string // the name field as drawn, without styles
+	}{
+		{name: "empty shows the placeholder", typed: "", want: "app.flowy .oo"},
+		{name: "labels", typed: "web", want: "web .oo"},
+		{name: "a suffix typed out of habit", typed: "web.oo", want: "web.oo .oo"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m := typeText(send(ready(&fakeBackend{}, sample), "a"), tt.typed)
+			if got := ansi.Strip(m.nameInput()); got != tt.want {
+				t.Errorf("name field = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestForm_SuffixTypedOutOfHabit(t *testing.T) {
+	t.Parallel()
+
+	b := &fakeBackend{}
+	m := send(typeText(send(ready(b, sample), "a"), "web.oo"), "enter")
+	want := store.Domain{Name: "web.oo", Address: "127.0.1.2", Enabled: true}
+	if len(b.saved) != 1 || !slices.Contains(b.saved[0], want) {
+		t.Errorf("saved %v, want it to hold %+v, not web.oo.oo; form errors %q", b.saved, want, m.form.errs)
+	}
+}
+
 func TestForm_EscCancels(t *testing.T) {
 	t.Parallel()
 
 	b := &fakeBackend{}
-	m := typeText(send(ready(b, sample), "a"), "web.oo")
+	m := typeText(send(ready(b, sample), "a"), "web")
 	m = send(m, "esc")
 	if m.mode != modeList || len(b.saved) != 0 {
 		t.Errorf("mode %v, saved %v after esc", m.mode, b.saved)
@@ -224,7 +261,7 @@ func TestForm_TypingQDoesNotQuit(t *testing.T) {
 func TestForm_View(t *testing.T) {
 	t.Parallel()
 
-	m := typeText(send(ready(&fakeBackend{}, sample), "a"), "test.crm.oo")
+	m := typeText(send(ready(&fakeBackend{}, sample), "a"), "test.crm")
 	m = typeText(send(send(m, "tab"), "tab"), "3001")
 	golden.RequireEqual(t, m.View().Content)
 	if h := strings.Count(m.View().Content, "\n") + 1; h != defaultHeight {
