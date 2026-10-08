@@ -22,9 +22,24 @@ type fakeBackend struct {
 	applyErr      error
 	failing       map[string]string // a name's probe detail when it fails
 	failingChecks map[int]string    // a check's detail when it fails
+	portsErr      error
+	copyErr       error
 	saved         [][]store.Domain
 	applied       [][]store.Domain
+	copied        []string
 	reports       int
+}
+
+func (f *fakeBackend) PortsReady() error { return f.portsErr }
+
+func (f *fakeBackend) Copy(_ context.Context, text string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.copyErr != nil {
+		return f.copyErr
+	}
+	f.copied = append(f.copied, text)
+	return nil
 }
 
 func (f *fakeBackend) Load() ([]store.Domain, error) {
@@ -134,10 +149,38 @@ func press(k string) tea.KeyPressMsg {
 		return tea.KeyPressMsg{Code: tea.KeySpace, Text: " "}
 	case "down":
 		return tea.KeyPressMsg{Code: tea.KeyDown}
+	case "up":
+		return tea.KeyPressMsg{Code: tea.KeyUp}
+	case "enter":
+		return tea.KeyPressMsg{Code: tea.KeyEnter}
+	case "esc":
+		return tea.KeyPressMsg{Code: tea.KeyEscape}
+	case "tab":
+		return tea.KeyPressMsg{Code: tea.KeyTab}
+	case "shift+tab":
+		return tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift}
+	case "backspace":
+		return tea.KeyPressMsg{Code: tea.KeyBackspace}
 	case "ctrl+c":
 		return tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}
 	}
 	return tea.KeyPressMsg{Code: []rune(k)[0], Text: k}
+}
+
+// typeText types s one key at a time.
+func typeText(m Model, s string) Model {
+	for _, r := range s {
+		m = send(m, string(r))
+	}
+	return m
+}
+
+// clearField empties the focused field.
+func clearField(m Model) Model {
+	for range 64 {
+		m = send(m, "backspace")
+	}
+	return m
 }
 
 // send presses a key and settles what it started.

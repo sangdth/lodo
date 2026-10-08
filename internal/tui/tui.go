@@ -4,6 +4,8 @@ package tui
 
 import (
 	"context"
+	"errors"
+	"os"
 
 	"github.com/sangdth/lcd/internal/check"
 	"github.com/sangdth/lcd/internal/paths"
@@ -23,6 +25,10 @@ type Backend interface {
 	Apply(ctx context.Context, domains []store.Domain) error
 	// Report runs the doctor checks and probes every enabled domain.
 	Report(ctx context.Context, domains []store.Domain) ([]check.Check, []check.Result)
+	// PortsReady says why a domain with a port can't work yet, or returns nil.
+	PortsReady() error
+	// Copy puts text on the clipboard.
+	Copy(ctx context.Context, text string) error
 }
 
 type backend struct {
@@ -46,4 +52,20 @@ func (b backend) Apply(ctx context.Context, domains []store.Domain) error {
 
 func (b backend) Report(ctx context.Context, domains []store.Domain) ([]check.Check, []check.Result) {
 	return b.env.Report(ctx, domains)
+}
+
+// PortsReady needs Caddy installed and Homebrew's Caddyfile importing lcd's.
+func (b backend) PortsReady() error {
+	if _, err := os.Stat(b.paths.Caddy); err != nil {
+		return errors.New("caddy is not installed: brew install caddy, then lcd setup")
+	}
+	if !system.CaddySetUp(b.paths) {
+		return errors.New("caddy is not set up for lcd: run lcd setup")
+	}
+	return nil
+}
+
+func (b backend) Copy(ctx context.Context, text string) error {
+	_, err := b.runner.RunInput(ctx, text, b.paths.Pbcopy)
+	return err
 }

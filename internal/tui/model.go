@@ -18,10 +18,25 @@ const (
 	defaultHeight = 24
 )
 
+// mode is what the keys act on.
+type mode int
+
+const (
+	modeList    mode = iota // the table
+	modeForm                // the add or edit form
+	modeConfirm             // a delete waiting for y
+)
+
 // Model is the TUI's state. Build it with New.
 type Model struct {
 	ctx     context.Context
 	backend Backend
+
+	mode       mode
+	form       form
+	target     string // the name a delete waits on
+	note       string // a short message, such as what copy env copied
+	selectName string // the name to put the cursor on once a change lands
 
 	domains []store.Domain          // in store.Sort order, as the table shows them
 	checks  []check.Check           // the last doctor run; nil until the first one finishes
@@ -78,6 +93,12 @@ type reportMsg struct {
 	results []check.Result
 }
 
+// copiedMsg is a finished copy to the clipboard.
+type copiedMsg struct {
+	text string
+	err  error
+}
+
 // changedMsg is a finished change. When stored is false nothing was saved and
 // the list stays as it was.
 type changedMsg struct {
@@ -124,6 +145,13 @@ func (m Model) reload() tea.Cmd {
 	}
 }
 
+func (m Model) copyText(text string) tea.Cmd {
+	ctx, b := m.ctx, m.backend
+	return func() tea.Msg {
+		return copiedMsg{text: text, err: b.Copy(ctx, text)}
+	}
+}
+
 // start marks the model busy with what and runs cmd with the spinner going.
 func (m Model) start(what string, cmd tea.Cmd) (Model, tea.Cmd) {
 	m.busy, m.err = what, nil
@@ -138,6 +166,21 @@ func (m *Model) setReport(checks []check.Check, results []check.Result) {
 		m.results[r.Name] = r
 	}
 	m.table.SetRows(m.rows())
+	m.placeCursor()
+}
+
+// placeCursor moves the cursor to the name a change asked for, and keeps it
+// on a row when rows went away.
+func (m *Model) placeCursor() {
+	for i, d := range m.domains {
+		if d.Name == m.selectName {
+			m.table.SetCursor(i)
+		}
+	}
+	m.selectName = ""
+	if n := len(m.domains); n > 0 && m.table.Cursor() >= n {
+		m.table.SetCursor(n - 1)
+	}
 }
 
 // selected returns the domain under the cursor.

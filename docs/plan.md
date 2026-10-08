@@ -76,6 +76,9 @@ Settled 2026-10-08. The steps below follow them.
 - **The table has its own key map:** the default binds `space` and `d` to paging.
 - **TUI snapshots golden `View().Content`,** not teatest's byte stream, which holds spinner frames and timing;
   one teatest test drives the real program loop.
+- **The form refuses a port until Caddy is ready** (installed, and Homebrew's Caddyfile imports lcd's), checked
+  only when the port is new or changed. Copy env pipes into `pbcopy` through `run.Runner.RunInput`. The form's
+  cursor doesn't blink, so it starts no timers.
 - **Golden files** use `github.com/charmbracelet/x/exp/golden`: `testdata/<TestName>.golden`, `-update` per package.
 - **`apply` refuses before setup:** until the script is installed and Homebrew's dnsmasq.conf includes lcd's,
   `system.Apply` returns `ErrNotSetUp` and changes nothing. Without it, `lcd apply` before setup started a user
@@ -245,7 +248,7 @@ A failure at any step shows in the status line. The saved file stays as written;
 ```text
  Add domain
  Name     dashboard.crm.lcd
- Address  127.0.1.1          crm.lcd's address; next free own address is 127.0.1.4
+ Address  127.0.1.1          crm.lcd's address; next free: 127.0.1.4
  Port     3000               optional; http://dashboard.crm.lcd then reaches 127.0.1.1:3000
  enter save   esc cancel
 ```

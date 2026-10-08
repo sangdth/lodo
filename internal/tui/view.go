@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"cmp"
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -33,13 +35,25 @@ var statusParts = []struct {
 	{8, "caddy"},
 }
 
-// View draws the status bar, the table, the status line and the keys.
+// The keys each mode takes, shown on the last line.
+var help = map[mode]string{
+	modeList:    " a add  e edit  d delete  space on/off  c copy env  r apply  q quit",
+	modeForm:    " enter save  tab next field  esc cancel",
+	modeConfirm: " y delete  any other key keeps it",
+}
+
+// View draws the status bar, the table or the form, the status line and the
+// keys.
 func (m Model) View() tea.View {
+	body := m.table.View()
+	if m.mode == modeForm {
+		body = m.formView()
+	}
 	lines := []string{
 		m.statusBar(),
-		m.table.View(),
+		body,
 		m.statusLine(),
-		m.styles.dim.Render(" space on/off  r apply  q quit"),
+		m.styles.dim.Render(help[m.mode]),
 	}
 	v := tea.NewView(strings.Join(lines, "\n"))
 	v.AltScreen = true
@@ -58,8 +72,14 @@ func (m *Model) layout() {
 		{Title: "check", Width: checkWidth},
 	})
 	m.table.SetWidth(m.width)
-	m.table.SetHeight(max(m.height-3, 3)) // the status bar, status line and keys take three lines
+	m.table.SetHeight(m.bodyHeight())
 	m.table.SetRows(m.rows())
+}
+
+// bodyHeight is the lines the table or the form gets: the status bar, the
+// status line and the keys take three.
+func (m Model) bodyHeight() int {
+	return max(m.height-3, 3)
 }
 
 // rows renders one table row per domain.
@@ -138,15 +158,20 @@ func (m Model) check(id int) (check.Check, bool) {
 	return check.Check{}, false
 }
 
-// statusLine says what runs, what failed, why the selected name fails, or
-// which system part needs lcd doctor, in that order.
+// statusLine says what runs, what a delete waits for, what failed, what was
+// just done, why the selected name fails, or which system part needs lcd
+// doctor, in that order.
 func (m Model) statusLine() string {
 	line := ""
 	switch {
 	case m.busy != "":
 		line = m.spinner.View() + " " + m.busy + "…"
+	case m.mode == modeConfirm:
+		line = m.styles.title.Render("delete " + m.target + "? y/n")
 	case m.err != nil:
 		line = m.styles.bad.Render("✗ " + oneLine(m.err.Error()))
+	case m.note != "":
+		line = m.styles.ok.Render(m.note)
 	default:
 		line = m.problem()
 	}
@@ -169,6 +194,44 @@ func (m Model) problem() string {
 		return m.styles.bad.Render(strings.Join(failed, ", ") + " need attention: run lcd doctor")
 	}
 	return ""
+}
+
+// formView draws the add or edit form at the table's height, so the status
+// line and keys stay put.
+func (m Model) formView() string {
+	f := m.form
+	title := "Add a name"
+	if f.editing != "" {
+		title = "Edit " + f.editing
+	}
+	lines := []string{"", " " + m.styles.title.Render(title), ""}
+	labels := [fieldCount]string{"name", "address", "port"}
+	hints := [fieldCount]string{"", f.hint, m.portHint()}
+	for i := range fieldCount {
+		line := fmt.Sprintf(" %-8s %s", labels[i], f.inputs[i].View())
+		if hints[i] != "" {
+			line += "  " + m.styles.dim.Render(hints[i])
+		}
+		lines = append(lines, ansi.Truncate(line, m.width, "…"))
+		if f.errs[i] != "" {
+			lines = append(lines, ansi.Truncate("          "+m.styles.bad.Render("✗ "+f.errs[i]), m.width, "…"))
+		}
+	}
+	for len(lines) < m.bodyHeight() {
+		lines = append(lines, "")
+	}
+	return strings.Join(lines, "\n")
+}
+
+// portHint says what a port does for the name being typed.
+func (m Model) portHint() string {
+	name := cmp.Or(strings.TrimSpace(m.form.inputs[fieldName].Value()), "<name>")
+	port := strings.TrimSpace(m.form.inputs[fieldPort].Value())
+	if port == "" {
+		return "optional: Caddy then forwards http://" + name + " to this port"
+	}
+	address := strings.TrimSpace(m.form.inputs[fieldAddress].Value())
+	return "http://" + name + " then reaches " + address + ":" + port
 }
 
 // oneLine joins the lines of a multi-line error.

@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 
@@ -12,7 +14,7 @@ import (
 func TestPress(t *testing.T) {
 	t.Parallel()
 
-	for _, k := range []string{"space", "down", "ctrl+c", "q", "r"} {
+	for _, k := range []string{"space", "down", "up", "enter", "esc", "tab", "shift+tab", "backspace", "ctrl+c", "q", "r"} {
 		if got := press(k).String(); got != k {
 			t.Errorf("press(%q).String() = %q", k, got)
 		}
@@ -166,4 +168,14 @@ func TestModel_WindowSize(t *testing.T) {
 func isQuit(msg tea.Msg) bool {
 	_, ok := msg.(tea.QuitMsg)
 	return ok
+}
+
+func writeTestFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
 }

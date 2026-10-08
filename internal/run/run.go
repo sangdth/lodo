@@ -5,6 +5,7 @@ package run
 import (
 	"bytes"
 	"context"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -16,6 +17,8 @@ type Runner interface {
 	// Run runs name with args and returns its standard output. A failed
 	// command returns an *Error carrying its standard error.
 	Run(ctx context.Context, name string, args ...string) (string, error)
+	// RunInput is Run with input on the command's standard input.
+	RunInput(ctx context.Context, input, name string, args ...string) (string, error)
 	// RunTTY runs name with args attached to the terminal, so sudo can ask
 	// for a password.
 	RunTTY(ctx context.Context, name string, args ...string) error
@@ -52,6 +55,15 @@ type Exec struct {
 
 // Run implements Runner.
 func (e Exec) Run(ctx context.Context, name string, args ...string) (string, error) {
+	return e.run(ctx, nil, name, args...)
+}
+
+// RunInput implements Runner.
+func (e Exec) RunInput(ctx context.Context, input, name string, args ...string) (string, error) {
+	return e.run(ctx, strings.NewReader(input), name, args...)
+}
+
+func (e Exec) run(ctx context.Context, stdin io.Reader, name string, args ...string) (string, error) {
 	if _, ok := ctx.Deadline(); !ok {
 		timeout := e.Timeout
 		if timeout == 0 {
@@ -63,6 +75,7 @@ func (e Exec) Run(ctx context.Context, name string, args ...string) (string, err
 	}
 	cmd := exec.CommandContext(ctx, name, args...) //nolint:gosec // G204: tools come from paths.Paths and arguments are passed separately, never through a shell
 	cmd.WaitDelay = time.Second
+	cmd.Stdin = stdin
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
