@@ -1,0 +1,23 @@
+[
+  {
+    "name": "caddy",
+    "service_name": "sh.brew.caddy",
+    "running": false,
+    "loaded": false,
+    "schedulable": false,
+    "pid": null,
+    "exit_code": null,
+    "user": null,
+    "status": "none",
+    "file": "/opt/homebrew/opt/caddy/sh.brew.caddy.plist",
+    "registered": false,
+    "loaded_file": null,
+    "command": "XDG_DATA_HOME=\"/opt/homebrew/var/lib\" HOME=\"/opt/homebrew/var/lib\" /opt/homebrew/opt/caddy/bin/caddy run --config /opt/homebrew/etc/Caddyfile",
+    "working_dir": null,
+    "root_dir": null,
+    "log_path": "/opt/homebrew/var/log/caddy.log",
+    "error_log_path": "/opt/homebrew/var/log/caddy.log",
+    "interval": null,
+    "cron": null
+  }
+]

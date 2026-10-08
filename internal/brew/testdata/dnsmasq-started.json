@@ -1,0 +1,23 @@
+[
+  {
+    "name": "dnsmasq",
+    "service_name": "sh.brew.dnsmasq",
+    "running": true,
+    "loaded": true,
+    "schedulable": false,
+    "pid": 4242,
+    "exit_code": null,
+    "user": "sang",
+    "status": "started",
+    "file": "/Users/sang/Library/LaunchAgents/homebrew.mxcl.dnsmasq.plist",
+    "registered": true,
+    "loaded_file": "/Users/sang/Library/LaunchAgents/homebrew.mxcl.dnsmasq.plist",
+    "command": "/opt/homebrew/opt/dnsmasq/sbin/dnsmasq --keep-in-foreground -C /opt/homebrew/etc/dnsmasq.conf -7 /opt/homebrew/etc/dnsmasq.d,\\*.conf",
+    "working_dir": null,
+    "root_dir": null,
+    "log_path": null,
+    "error_log_path": null,
+    "interval": null,
+    "cron": null
+  }
+]

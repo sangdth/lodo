@@ -1,0 +1,3 @@
+# lcd: lets tester run lcd's resolver script as root without a password.
+# Installed by `lcd setup`, removed by `lcd uninstall`.
+tester ALL=(root) NOPASSWD: /fake/Library/Application\ Support/lcd/apply-resolvers.sh ""

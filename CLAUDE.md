@@ -15,10 +15,24 @@ go run ./cmd/lcd doctor                   # run the CLI from source
 
 `-update` works per package: only packages with golden files define the flag.
 
+## Layout
+
+- `cmd/lcd`: subcommand dispatch and output. The only code that builds `paths.Default()` and `run.Exec`.
+- `internal/paths`: every file, tool and system path. `paths.ForTest(root)` moves all of them under `root`.
+- `internal/run`: the only code that runs commands. `run.Fake` records them in tests.
+- `internal/fsutil`: atomic writes that skip unchanged content.
+- `internal/store`: `domains.json` and every domain rule: names, addresses, ports, projects, the own block, order.
+- `internal/brew`, `internal/dnsmasq`, `internal/caddy`: `brew services`, the generated dnsmasq config and
+  resolver list, the generated Caddyfile.
+- `internal/system`: the root script, sudoers rule and loopback plist templates, and lcd's blocks in Homebrew's
+  dnsmasq.conf and Caddyfile.
+
 ## Rules
 
-- No test touches `/etc`, `/Library`, `/opt/homebrew`, `sudo` or the real `~/.config/lcd`. Tests build paths with
-  `paths.ForTest(t.TempDir())` and run commands through `run.Fake`.
+- No test changes the system: nothing writes to `/etc`, `/Library`, `/opt/homebrew` or the real `~/.config/lcd`,
+  and nothing runs `sudo` or starts a service. Tests build paths with `paths.ForTest(t.TempDir())` and run lcd's
+  commands through `run.Fake`. A few run `dnsmasq --test`, `caddy validate`, `visudo -c` and `plutil -lint`
+  read-only on generated files, and skip when the tool is missing.
 - Every external command goes through `run.Runner`, with the absolute tool path from `paths.Paths` and each
   argument passed separately. Nothing builds a shell command line from data.
 - The root script only creates `/etc/resolver` files named by lines matching `store.NamePattern`, with fixed

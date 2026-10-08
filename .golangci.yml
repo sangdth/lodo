@@ -11,11 +11,23 @@ linters:
     - unconvert
     - usestdlibvars
   settings:
+    errcheck:
+      # Terminal output: a failed write to stdout or stderr has no useful recovery.
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
     misspell:
       locale: US
     nolintlint:
       require-explanation: true
       require-specific: true
+  exclusions:
+    rules:
+      # Tests read and write their own temp files and run fixed tools.
+      - path: _test\.go
+        linters:
+          - gosec
 
 formatters:
   enable:
