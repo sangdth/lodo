@@ -82,7 +82,26 @@ TLD is on the HSTS preload list (hstspreload.org reports `dev` as preloaded) and
 domain. Public DNS answers `flowy.lcd` with NXDOMAIN; `.lcd`, `.internal` and `.test` have no public
 nameservers.
 
-## Still to do
+## Round trip with `.lcd`
 
-- `lcd uninstall`, then `lcd setup` again, which installs the script with the `.lcd` name check; then prove that
-  two-label `.lcd` names resolve.
+Sang ran `lcd uninstall`, `lcd doctor` and `lcd setup` with `domains.json` holding `crm.lcd`, `api.crm.lcd`,
+`flowy.lcd`, `test.flowy.lcd` and `dashboard.flowy.lcd` (port 3998).
+
+- `uninstall`: every step passed. It removed the resolver files, loopback addresses, sudoers rule and script;
+  stopped dnsmasq and Caddy; restored `dnsmasq.conf` from the backup; removed lcd's `Caddyfile`.
+- `doctor` in between: checks 1–4 and 6–8 failed, check 5 passed, as expected for a Mac without lcd.
+- `setup` again: every step passed and made a fresh backup from the restored `dnsmasq.conf`.
+
+| Name                  | Labels | macOS lookup     | Through apps |
+| --------------------- | ------ | ---------------- | ------------ |
+| `crm.lcd`             | 2      | 127.0.1.1, 17 ms | 5 ms         |
+| `flowy.lcd`           | 2      | 127.0.1.3, 18 ms | 1 ms         |
+| `api.crm.lcd`         | 3      | 127.0.1.1, 15 ms |              |
+| `test.flowy.lcd`      | 3      | 127.0.1.3, 16 ms | 1 ms         |
+| `foo.flowy.lcd`       | 3      | 127.0.1.3, 70 ms | unlisted     |
+| `unknown.lcd`         | 2      | none, 0.3 s      | not listed   |
+
+With a test server on `127.0.1.3:3998`, `curl http://dashboard.flowy.lcd/` answered through Caddy
+(`Via: 1.0 Caddy`), `lcd apply` showed all five names passing, and `lcd doctor` passed all eight checks.
+
+Two-label `.lcd` names work, so the hand test is done.
