@@ -80,7 +80,8 @@ func isLockFile(name string) bool {
 // It looks maxDepth folders down at most, and never in hidden folders,
 // node_modules or vendor. Files for development come first, then the plain
 // file, then other variants, and files for production last; a tie goes to
-// the shallower file, then to the path. A folder it can't read is skipped.
+// the shallower file, then to the path. A folder it can't read is skipped, and
+// so is a compose name that isn't a regular file once symlinks are followed.
 func Find(root string) ([]string, error) {
 	root, err := filepath.Abs(root)
 	if err != nil {
@@ -93,7 +94,8 @@ func Find(root string) ([]string, error) {
 	var found []match
 	// os.DirFS opens root through a symlink, so a project reached through a
 	// link is searched. WalkDir follows no symlink below root.
-	err = fs.WalkDir(os.DirFS(root), ".", func(p string, d fs.DirEntry, err error) error {
+	fsys := os.DirFS(root)
+	err = fs.WalkDir(fsys, ".", func(p string, d fs.DirEntry, err error) error {
 		depth := strings.Count(p, "/")
 		switch {
 		case p == ".":
@@ -106,7 +108,13 @@ func Find(root string) ([]string, error) {
 			}
 			return nil
 		}
-		if m := fileNameRE.FindStringSubmatch(d.Name()); m != nil {
+		m := fileNameRE.FindStringSubmatch(d.Name())
+		if m == nil {
+			return nil
+		}
+		// A symlink to a compose file counts; one to a folder, a device or
+		// a FIFO doesn't, since reading it fails or never ends.
+		if info, err := fs.Stat(fsys, p); err == nil && info.Mode().IsRegular() {
 			found = append(found, match{path: filepath.Join(root, filepath.FromSlash(p)), rank: rank(m[1]), depth: depth})
 		}
 		return nil

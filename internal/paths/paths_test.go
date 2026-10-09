@@ -20,13 +20,17 @@ func TestDefault(t *testing.T) {
 		t.Fatalf("user %q, home %q: want both set", p.User, p.Home)
 	}
 	want := map[string]string{
-		"DomainsJSON":   filepath.Join(p.Home, ".config/lodo/domains.json"),
-		"SystemConf":    "/opt/homebrew/etc/dnsmasq.conf",
-		"Script":        "/Library/Application Support/lodo/apply-resolvers.sh",
-		"Sudoers":       "/etc/sudoers.d/lodo",
-		"ResolverDir":   "/etc/resolver",
-		"LoopbackPlist": "/Library/LaunchDaemons/io.lodo.loopback.plist",
-		"Sudo":          "/usr/bin/sudo",
+		"DomainsJSON":    filepath.Join(p.Home, ".config/lodo/domains.json"),
+		"SystemConf":     "/opt/homebrew/etc/dnsmasq.conf",
+		"Script":         "/Library/Application Support/lodo/apply-resolvers.sh",
+		"Sudoers":        "/etc/sudoers.d/lodo",
+		"ResolverDir":    "/etc/resolver",
+		"LoopbackPlist":  "/Library/LaunchDaemons/io.lodo.loopback.plist",
+		"Sudo":           "/usr/bin/sudo",
+		"Security":       "/usr/bin/security",
+		"SystemKeychain": "/Library/Keychains/System.keychain",
+		"CaddyRoot":      "/opt/homebrew/var/lib/caddy/pki/authorities/local/root.crt",
+		"TrustedCA":      filepath.Join(p.Home, ".config/lodo/caddy-root.crt"),
 	}
 	v := reflect.ValueOf(p)
 	for field, path := range want {

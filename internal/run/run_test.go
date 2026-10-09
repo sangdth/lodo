@@ -3,6 +3,8 @@ package run_test
 import (
 	"context"
 	"errors"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -72,6 +74,23 @@ func TestExec_RunTimeoutUnwraps(t *testing.T) {
 	}
 }
 
+func TestExec_RunInput(t *testing.T) {
+	t.Parallel()
+
+	out, err := run.Exec{}.RunInput(context.Background(), "a\nb\n", "/usr/bin/wc", "-l")
+	if err != nil {
+		t.Fatalf("RunInput: %v", err)
+	}
+	if strings.TrimSpace(out) != "2" {
+		t.Errorf("out = %q, want 2 lines counted", out)
+	}
+
+	_, err = run.Exec{Timeout: 50 * time.Millisecond}.RunInput(context.Background(), "", "/bin/sleep", "5")
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("err = %v, want context.DeadlineExceeded in the chain", err)
+	}
+}
+
 func TestLine(t *testing.T) {
 	t.Parallel()
 
@@ -102,7 +121,20 @@ func TestFake(t *testing.T) {
 	if err := f.RunTTY(ctx, "sudo", "-v"); err != nil {
 		t.Errorf("RunTTY: %v", err)
 	}
-	want := []string{"brew services info dnsmasq --json", "sudo -n script", "unknown", "sudo -v"}
+	if _, err := f.RunInput(ctx, "a.test\n", "sudo", "-n", "script"); err == nil {
+		t.Error("RunInput: err nil, want the Fail answer")
+	}
+	_, _ = f.RunInput(ctx, "", "sudo", "-n", "script")
+	if got := f.Inputs("sudo -n script"); !slices.Equal(got, []string{"a.test\n", ""}) {
+		t.Errorf("Inputs = %q, want both inputs in order", got)
+	}
+	if got := f.Inputs("sudo -v"); got != nil {
+		t.Errorf("Inputs of a Run-only line = %q, want none", got)
+	}
+	want := []string{
+		"brew services info dnsmasq --json", "sudo -n script", "unknown", "sudo -v",
+		"sudo -n script", "sudo -n script",
+	}
 	got := f.Calls()
 	if len(got) != len(want) {
 		t.Fatalf("calls = %q, want %q", got, want)

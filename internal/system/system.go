@@ -36,30 +36,60 @@ func StripSystemConf(old string) string {
 	})
 }
 
-// RewriteSystemCaddyfile returns Homebrew's Caddyfile with lodo's import line
-// moved to a block at the end. It is idempotent.
+// RewriteSystemCaddyfile returns Homebrew's Caddyfile with lodo's global block
+// at the top and lodo's import line moved to a block at the end. Caddy allows
+// one global block, and only first, so a file with its own keeps it and gets
+// just the import. It is idempotent.
 func RewriteSystemCaddyfile(old string, p paths.Paths) string {
-	return appendBlock(StripSystemCaddyfile(old, p), CaddyBlock(p))
+	rest := StripSystemCaddyfile(old, p)
+	if hasGlobalBlock(rest) {
+		return appendBlock(rest, CaddyBlock(p))
+	}
+	return CaddyGlobalBlock + "\n" + appendBlock(rest, CaddyBlock(p))
 }
 
-// StripSystemCaddyfile returns Homebrew's Caddyfile without lodo's marker and
-// import line.
+// StripSystemCaddyfile returns Homebrew's Caddyfile without lodo's marker,
+// global block and import line.
 func StripSystemCaddyfile(old string, p paths.Paths) string {
 	importLine := "import " + p.Caddyfile
 	return strip(old, func(line string) bool { return line == importLine })
 }
 
-// strip drops lodo's marker lines and the lines drop selects (drop sees each
-// line trimmed of surrounding space), then blank lines at either end.
-func strip(old string, drop func(trimmed string) bool) string {
-	var kept []string
-	for line := range strings.Lines(old) {
-		line = strings.TrimRight(line, "\r\n")
+// hasGlobalBlock reports whether a Caddyfile starts with a global options
+// block: its first line that is not blank or a comment opens with {.
+func hasGlobalBlock(content string) bool {
+	for line := range strings.Lines(content) {
 		trimmed := strings.TrimSpace(line)
-		if trimmed == Marker || drop(trimmed) {
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
 			continue
 		}
-		kept = append(kept, line)
+		return strings.HasPrefix(trimmed, "{")
+	}
+	return false
+}
+
+// strip drops lodo's marker lines and the lines drop selects (drop sees each
+// line trimmed of surrounding space), then blank lines at either end. A
+// marker line right before a { line starts lodo's block, which strip drops
+// through the next } line.
+func strip(old string, drop func(trimmed string) bool) string {
+	var lines []string
+	for line := range strings.Lines(old) {
+		lines = append(lines, strings.TrimRight(line, "\r\n"))
+	}
+	var kept []string
+	for i := 0; i < len(lines); i++ {
+		trimmed := strings.TrimSpace(lines[i])
+		if trimmed == Marker {
+			if end := blockEnd(lines, i+1); end >= 0 {
+				i = end
+			}
+			continue
+		}
+		if drop(trimmed) {
+			continue
+		}
+		kept = append(kept, lines[i])
 	}
 	for len(kept) > 0 && strings.TrimSpace(kept[0]) == "" {
 		kept = kept[1:]
@@ -71,6 +101,20 @@ func strip(old string, drop func(trimmed string) bool) string {
 		return ""
 	}
 	return strings.Join(kept, "\n") + "\n"
+}
+
+// blockEnd returns the index of the } line that closes a block whose { line is
+// lines[start], or -1 when lines[start] is not { or nothing closes it.
+func blockEnd(lines []string, start int) int {
+	if start >= len(lines) || strings.TrimSpace(lines[start]) != "{" {
+		return -1
+	}
+	for i := start + 1; i < len(lines); i++ {
+		if strings.TrimSpace(lines[i]) == "}" {
+			return i
+		}
+	}
+	return -1
 }
 
 func appendBlock(content, block string) string {

@@ -392,6 +392,32 @@ func TestEnv_Run_Resolvers(t *testing.T) {
 			domains: healthyDomains[2:],
 			want:    resolversCheck.pass("0 files"),
 		},
+		{
+			name: "dnsmasq turned off, lodo's files removed",
+			change: func(t *testing.T, m *mac) {
+				t.Helper()
+				m.fake.Set(brewInfo(m.p, "dnsmasq"), brewOffJSON("dnsmasq"))
+				for _, name := range []string{"crm.test", "dashboard.crm.test"} {
+					removeFile(t, filepath.Join(m.p.ResolverDir, name))
+				}
+				writeFile(t, filepath.Join(m.p.ResolverDir, "other.test"), "nameserver 10.0.0.1\n")
+			},
+			want: resolversCheck.pass("none while dnsmasq is turned off"),
+		},
+		{
+			name:   "dnsmasq turned off, lodo's files left",
+			change: func(_ *testing.T, m *mac) { m.fake.Set(brewInfo(m.p, "dnsmasq"), brewOffJSON("dnsmasq")) },
+			want:   resolversCheck.off("dnsmasq turned off, but lodo apply should remove these: crm.test, dashboard.crm.test"),
+		},
+		{
+			name: "dnsmasq turned off, script out of date",
+			change: func(t *testing.T, m *mac) {
+				t.Helper()
+				m.fake.Set(brewInfo(m.p, "dnsmasq"), brewOffJSON("dnsmasq"))
+				writeFile(t, m.p.Script, "#!/bin/sh\nexit 0\n")
+			},
+			want: resolversCheck.fail("script out of date", "lodo setup"),
+		},
 	})
 }
 

@@ -43,18 +43,24 @@ func ResolverFile() string {
 	return Marker + "\n" + strings.Join(ResolverLines(), "\n") + "\n"
 }
 
-// Script returns the root resolver script for p.
+// MaxScriptInput is the most the resolver script reads on standard input: room
+// for over 4,000 names of store.MaxNameLen characters. It refuses a longer list.
+const MaxScriptInput = 1 << 20
+
+// Script returns the root resolver script for p. It reads the names on
+// standard input, as dnsmasq.ResolverList writes them.
 func Script(p paths.Paths) string {
 	return mustRender("apply-resolvers.sh.tmpl", struct {
-		List, ResolverDir, Pattern, Marker string
-		MaxLen                             int
-		Lines                              []string
+		ResolverDir, Pattern, Marker string
+		MaxLen, MaxInput, ReadInput  int
+		Lines                        []string
 	}{
-		List:        p.Resolvers,
 		ResolverDir: p.ResolverDir,
 		Pattern:     store.NamePattern,
 		Marker:      Marker,
 		MaxLen:      store.MaxNameLen,
+		MaxInput:    MaxScriptInput,
+		ReadInput:   MaxScriptInput + 1,
 		Lines:       ResolverLines(),
 	})
 }
@@ -82,10 +88,15 @@ func ConfBlock(p paths.Paths) string {
 		Marker, p.DnsmasqConf, dnsmasq.ListenAddress, dnsmasq.Port)
 }
 
-// CaddyBlock is lodo's block in Homebrew's Caddyfile.
+// CaddyBlock is lodo's import block at the end of Homebrew's Caddyfile.
 func CaddyBlock(p paths.Paths) string {
 	return Marker + "\nimport " + p.Caddyfile + "\n"
 }
+
+// CaddyGlobalBlock is lodo's global options block at the top of Homebrew's
+// Caddyfile. It turns Caddy's admin API off: lodo never uses it, and on
+// localhost:2019 any local user or web page could change Caddy's config.
+const CaddyGlobalBlock = Marker + "\n{\n\tadmin off\n}\n"
 
 // mustRender executes a template. The templates are fixed and every one runs
 // in the tests, so a failure here is a bug in lodo, not a runtime condition.

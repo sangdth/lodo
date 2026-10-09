@@ -13,6 +13,7 @@ type Fake struct {
 	mu      sync.Mutex
 	answers map[string]answer
 	calls   []string
+	inputs  map[string][]string
 }
 
 type answer struct {
@@ -22,7 +23,7 @@ type answer struct {
 
 // NewFake returns a Fake with no answers.
 func NewFake() *Fake {
-	return &Fake{answers: map[string]answer{}}
+	return &Fake{answers: map[string]answer{}, inputs: map[string][]string{}}
 }
 
 // Set makes the command line, as built by Line, succeed with out.
@@ -46,6 +47,14 @@ func (f *Fake) Calls() []string {
 	return slices.Clone(f.calls)
 }
 
+// Inputs returns the standard input of every RunInput of the command line,
+// as built by Line, in order.
+func (f *Fake) Inputs(line string) []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.inputs[line])
+}
+
 // Run implements Runner.
 func (f *Fake) Run(_ context.Context, name string, args ...string) (string, error) {
 	line := Line(name, args...)
@@ -54,6 +63,16 @@ func (f *Fake) Run(_ context.Context, name string, args ...string) (string, erro
 	f.calls = append(f.calls, line)
 	a := f.answers[line]
 	return a.out, a.err
+}
+
+// RunInput implements Runner. It records stdin for Inputs and answers like
+// Run.
+func (f *Fake) RunInput(ctx context.Context, stdin, name string, args ...string) (string, error) {
+	line := Line(name, args...)
+	f.mu.Lock()
+	f.inputs[line] = append(f.inputs[line], stdin)
+	f.mu.Unlock()
+	return f.Run(ctx, name, args...)
 }
 
 // RunTTY implements Runner.

@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/charmbracelet/x/exp/golden"
@@ -75,16 +76,21 @@ func TestRewriteSystemCaddyfile(t *testing.T) {
 	t.Parallel()
 
 	caddyBlock := system.CaddyBlock(fake)
+	global := system.CaddyGlobalBlock
 	site := "example.com {\n\trespond \"hi\"\n}\n"
+	userGlobal := "# mine\n{\n\temail me@example.com\n}\n\n" + site
 	tests := []struct {
 		name string
 		old  string
 		want string
 	}{
-		{name: "no file", old: "", want: caddyBlock},
-		{name: "keeps other sites", old: site, want: site + "\n" + caddyBlock},
-		{name: "already lodo's", old: site + "\n" + caddyBlock, want: site + "\n" + caddyBlock},
-		{name: "moves the import to the end", old: caddyBlock + "\n" + site, want: site + "\n" + caddyBlock},
+		{name: "no file", old: "", want: global + "\n" + caddyBlock},
+		{name: "keeps other sites", old: site, want: global + "\n" + site + "\n" + caddyBlock},
+		{name: "already lodo's", old: global + "\n" + site + "\n" + caddyBlock, want: global + "\n" + site + "\n" + caddyBlock},
+		{name: "moves the import to the end", old: caddyBlock + "\n" + site, want: global + "\n" + site + "\n" + caddyBlock},
+		{name: "moves the global block to the top", old: site + "\n" + global, want: global + "\n" + site + "\n" + caddyBlock},
+		{name: "keeps the user's global block", old: userGlobal, want: userGlobal + "\n" + caddyBlock},
+		{name: "user's global block after lodo's", old: global + "\n" + userGlobal, want: userGlobal + "\n" + caddyBlock},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -103,12 +109,56 @@ func TestRewriteSystemCaddyfile(t *testing.T) {
 func TestStripSystemCaddyfile(t *testing.T) {
 	t.Parallel()
 
+	caddyBlock := system.CaddyBlock(fake)
+	global := system.CaddyGlobalBlock
 	site := "example.com {\n\trespond \"hi\"\n}\n"
-	if got := system.StripSystemCaddyfile(site+"\n"+system.CaddyBlock(fake), fake); got != site {
-		t.Errorf("StripSystemCaddyfile = %q, want %q", got, site)
+	userGlobal := "{\n\temail me@example.com\n}\n"
+	tests := []struct {
+		name string
+		old  string
+		want string
+	}{
+		{name: "import block", old: site + "\n" + caddyBlock, want: site},
+		{name: "lodo's blocks alone", old: global + "\n" + caddyBlock, want: ""},
+		{name: "both blocks around a site", old: global + "\n" + site + "\n" + caddyBlock, want: site},
+		{name: "keeps the user's global block", old: userGlobal + "\n" + site + "\n" + caddyBlock, want: userGlobal + "\n" + site},
+		{name: "marker before a site keeps the site", old: "# lodo\n" + site, want: site},
+		{name: "unclosed block after a marker stays", old: "# lodo\n{\n\tadmin off\n", want: "{\n\tadmin off\n"},
 	}
-	if got := system.StripSystemCaddyfile(system.CaddyBlock(fake), fake); got != "" {
-		t.Errorf("StripSystemCaddyfile of lodo's block alone = %q, want empty", got)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := system.StripSystemCaddyfile(tt.old, fake); got != tt.want {
+				t.Errorf("StripSystemCaddyfile =\n%q\nwant\n%q", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestSystemCaddyfile_CaddyAccepts runs caddy adapt on rewritten Caddyfiles,
+// which checks lodo's global block parses and comes first. HOME and the XDG
+// directories point at a temp dir, so caddy writes nothing real.
+func TestSystemCaddyfile_CaddyAccepts(t *testing.T) {
+	t.Parallel()
+
+	const caddyBin = "/opt/homebrew/bin/caddy"
+	if _, err := exec.LookPath(caddyBin); err != nil {
+		t.Skipf("caddy is not installed: %v", err)
+	}
+	for _, old := range []string{"", "example.com {\n\trespond \"hi\"\n}\n", "{\n\temail me@example.com\n}\n"} {
+		dir := t.TempDir()
+		p := paths.ForTest(dir)
+		writeFile(t, p.Caddyfile, "")
+		writeFile(t, p.SystemCaddyfile, system.RewriteSystemCaddyfile(old, p))
+		cmd := exec.CommandContext(t.Context(), caddyBin, "adapt", "--config", p.SystemCaddyfile, "--adapter", "caddyfile")
+		cmd.Env = append(os.Environ(), "HOME="+dir, "XDG_DATA_HOME="+dir, "XDG_CONFIG_HOME="+dir)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Errorf("caddy adapt of %q: %v\n%s", old, err, out)
+		}
+		if old == "" && !strings.Contains(string(out), `"admin":{"disabled":true}`) {
+			t.Errorf("caddy adapt of lodo's Caddyfile does not turn admin off:\n%s", out)
+		}
 	}
 }
 

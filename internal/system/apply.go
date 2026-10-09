@@ -10,6 +10,7 @@ import (
 
 	"github.com/sangdth/lodo/internal/brew"
 	"github.com/sangdth/lodo/internal/caddy"
+	"github.com/sangdth/lodo/internal/dnsmasq"
 	"github.com/sangdth/lodo/internal/paths"
 	"github.com/sangdth/lodo/internal/run"
 	"github.com/sangdth/lodo/internal/store"
@@ -22,9 +23,10 @@ var ErrNotSetUp = errors.New("lodo is not set up: run lodo setup")
 // Apply makes the running system match domains: it writes the generated
 // files, restarts dnsmasq, runs the resolver script through sudo (which also
 // flushes the DNS cache), and restarts Caddy when its sites changed or it
-// stopped. A service turned off with SetService stays off. Before setup it
-// returns ErrNotSetUp and touches nothing. The caller probes the names
-// afterward.
+// stopped. A service turned off with SetService stays off; with dnsmasq off
+// the script gets no names, so no /etc/resolver file points at its port.
+// Before setup it returns ErrNotSetUp and touches nothing. The caller probes
+// the names afterward.
 func Apply(ctx context.Context, p paths.Paths, r run.Runner, domains []store.Domain) error {
 	if !SetupDone(p) {
 		return ErrNotSetUp
@@ -33,15 +35,27 @@ func Apply(ctx context.Context, p paths.Paths, r run.Runner, domains []store.Dom
 	if err != nil {
 		return err
 	}
+	names := ""
 	if !turnedOff(ctx, p, r, "dnsmasq") {
 		if err := brew.Restart(ctx, r, p.Brew, "dnsmasq"); err != nil {
 			return err
 		}
+		names = dnsmasq.ResolverList(domains)
 	}
-	if _, err := r.Run(ctx, p.Sudo, "-n", p.Script); err != nil {
-		return fmt.Errorf("update %s: %w", p.ResolverDir, err)
+	if err := runScript(ctx, p, r, names); err != nil {
+		return err
 	}
 	return applyCaddy(ctx, p, r, domains, changes.Caddy)
+}
+
+// runScript runs the resolver script through sudo with names, as
+// dnsmasq.ResolverList writes them, on its standard input. An empty names
+// removes every file the script wrote.
+func runScript(ctx context.Context, p paths.Paths, r run.Runner, names string) error {
+	if _, err := r.RunInput(ctx, names, p.Sudo, "-n", p.Script); err != nil {
+		return fmt.Errorf("update %s: %w", p.ResolverDir, err)
+	}
+	return nil
 }
 
 // errCaddyNotSetUp means a domain has a port but setup never pointed
@@ -82,13 +96,18 @@ var Services = []string{"dnsmasq", "caddy"}
 
 // SetService turns a service on or off. On validates Caddy's config first,
 // then starts the service and registers it to start at login; off stops and
-// unregisters it, which Apply and lodo doctor read as turned off.
+// unregisters it, which Apply and lodo doctor read as turned off. dnsmasq's
+// resolver files follow it: off removes them before it stops, so no account's
+// .test lookups go to a port nobody holds, and on writes them once it runs.
 func SetService(ctx context.Context, p paths.Paths, r run.Runner, service string, on bool) error {
 	if !SetupDone(p) {
 		return ErrNotSetUp
 	}
 	if !slices.Contains(Services, service) {
 		return fmt.Errorf("unknown service %q", service)
+	}
+	if service == "dnsmasq" {
+		return setDnsmasq(ctx, p, r, on)
 	}
 	if !on {
 		return brew.Stop(ctx, r, p.Brew, service)
@@ -102,6 +121,25 @@ func SetService(ctx context.Context, p paths.Paths, r run.Runner, service string
 		}
 	}
 	return brew.Restart(ctx, r, p.Brew, service)
+}
+
+// setDnsmasq turns dnsmasq off after removing lodo's resolver files, or on
+// before writing them for the enabled names in domains.json.
+func setDnsmasq(ctx context.Context, p paths.Paths, r run.Runner, on bool) error {
+	if !on {
+		if err := runScript(ctx, p, r, ""); err != nil {
+			return err
+		}
+		return brew.Stop(ctx, r, p.Brew, "dnsmasq")
+	}
+	domains, err := store.Load(p.DomainsJSON)
+	if err != nil {
+		return err
+	}
+	if err := brew.Restart(ctx, r, p.Brew, "dnsmasq"); err != nil {
+		return err
+	}
+	return runScript(ctx, p, r, dnsmasq.ResolverList(domains))
 }
 
 // turnedOff reports whether service was turned off. When brew can't say, it

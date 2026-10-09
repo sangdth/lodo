@@ -1,32 +1,37 @@
 #!/bin/sh
-# lodo: writes one /etc/resolver file per name in the user's resolver list.
-# Installed by `lodo setup`, run as root through /etc/sudoers.d/lodo, removed by
-# `lodo uninstall`. It only creates files named by lines that match the name
-# pattern, always with the same content, and only deletes files whose first
-# line is the marker. It never prints a line it read from the list.
+# lodo: writes one /etc/resolver file per name it reads on standard input, one
+# name per line. Installed by `lodo setup`, run as root through
+# /etc/sudoers.d/lodo, removed by `lodo uninstall`. It reads the names from no
+# path: it copies at most 1048576 bytes of standard input, which its
+# caller opened, into its own temporary directory and reads only that copy.
+# It only creates files named by lines that match the name pattern, always with
+# the same content, and only deletes files whose first line is the marker. An
+# empty input deletes every file it wrote. It never prints a line it read from
+# its input.
 set -eu
 PATH=/usr/bin:/bin:/usr/sbin:/sbin
 LC_ALL=C
 export PATH LC_ALL
 umask 022
 
-list='/fake/Users/tester/.config/lodo/resolvers'
 dir='/fake/etc/resolver'
 pattern='[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*\.test'
 marker='# lodo'
-
-if [ -L "$list" ] || [ ! -f "$list" ]; then
-	echo "lodo: $list is missing or not a regular file" >&2
-	exit 1
-fi
 
 /bin/mkdir -p "$dir"
 work=$(/usr/bin/mktemp -d /tmp/lodo.XXXXXX)
 trap '/bin/rm -rf "$work"' EXIT
 
+# One byte past the cap tells a list that is too long from one that fits.
+/usr/bin/head -c 1048577 > "$work/list"
+if [ "$(/usr/bin/wc -c < "$work/list")" -gt 1048576 ]; then
+	echo "lodo: the name list is longer than 1048576 bytes" >&2
+	exit 1
+fi
+
 # Valid names only. grep exits 1 when no line matches, which is fine.
-/usr/bin/grep -E -x -e "$pattern" "$list" > "$work/names" || [ $? -eq 1 ]
-skipped=$(/usr/bin/grep -c -v -E -x -e "$pattern" "$list" || [ $? -eq 1 ])
+/usr/bin/grep -E -x -e "$pattern" "$work/list" > "$work/names" || [ $? -eq 1 ]
+skipped=$(/usr/bin/grep -c -v -E -x -e "$pattern" "$work/list" || [ $? -eq 1 ])
 
 written=0
 while IFS= read -r name; do

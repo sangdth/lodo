@@ -3,6 +3,7 @@ package system_test
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 
@@ -80,6 +81,13 @@ func TestApply(t *testing.T) {
 			}
 			assertCalls(t, r.Calls(), want)
 			assertFile(t, p.Resolvers, dnsmasq.ResolverList(tt.domains))
+			wantInput := dnsmasq.ResolverList(tt.domains)
+			if tt.dnsmasqInfo == dnsmasqOff {
+				wantInput = "" // no resolver file may point at a port dnsmasq left
+			}
+			if got := r.Inputs(run.Line(p.Sudo, "-n", p.Script)); !slices.Equal(got, []string{wantInput}) {
+				t.Errorf("resolver script input = %q, want %q", got, wantInput)
+			}
 		})
 	}
 }
@@ -116,14 +124,19 @@ func TestApply_StopsAtFirstFailure(t *testing.T) {
 func TestSetService(t *testing.T) {
 	t.Parallel()
 
+	domains := []store.Domain{
+		{Name: "crm.test", Address: "127.0.1.1", Enabled: true},
+		{Name: "old.test", Address: "127.0.1.2"},
+	}
 	tests := []struct {
-		name    string
-		service string
-		on      bool
-		want    []string
+		name      string
+		service   string
+		on        bool
+		want      []string
+		wantInput []string // the resolver script's standard input, per run
 	}{
-		{name: "dnsmasq off", service: "dnsmasq", want: []string{"services stop dnsmasq"}},
-		{name: "dnsmasq on", service: "dnsmasq", on: true, want: []string{"services restart dnsmasq"}},
+		{name: "dnsmasq off removes resolver files first", service: "dnsmasq", want: []string{"script", "services stop dnsmasq"}, wantInput: []string{""}},
+		{name: "dnsmasq on writes resolver files after", service: "dnsmasq", on: true, want: []string{"services restart dnsmasq", "script"}, wantInput: []string{"crm.test\n"}},
 		{name: "caddy off", service: "caddy", want: []string{"services stop caddy"}},
 		{name: "caddy on validates first", service: "caddy", on: true, want: []string{"validate", "services restart caddy"}},
 	}
@@ -132,20 +145,38 @@ func TestSetService(t *testing.T) {
 			t.Parallel()
 			p, r := setUpMac(t, true)
 			writeFile(t, p.SystemCaddyfile, system.CaddyBlock(p))
+			if err := store.Save(p.DomainsJSON, domains); err != nil {
+				t.Fatal(err)
+			}
 			if err := system.SetService(context.Background(), p, r, tt.service, tt.on); err != nil {
 				t.Fatal(err)
 			}
 			var want []string
 			for _, w := range tt.want {
-				if w == "validate" {
+				switch w {
+				case "validate":
 					want = append(want, caddyCall(p, "validate"))
-					continue
+				case "script":
+					want = append(want, run.Line(p.Sudo, "-n", p.Script))
+				default:
+					want = append(want, run.Line(p.Brew, strings.Fields(w)...))
 				}
-				want = append(want, run.Line(p.Brew, strings.Fields(w)...))
 			}
 			assertCalls(t, r.Calls(), want)
+			if got := r.Inputs(run.Line(p.Sudo, "-n", p.Script)); !slices.Equal(got, tt.wantInput) {
+				t.Errorf("resolver script input = %q, want %q", got, tt.wantInput)
+			}
 		})
 	}
+	t.Run("dnsmasq stays on when the resolver files stay", func(t *testing.T) {
+		t.Parallel()
+		p, r := setUpMac(t, false)
+		r.Fail(run.Line(p.Sudo, "-n", p.Script), "sudo: a password is required")
+		if err := system.SetService(context.Background(), p, r, "dnsmasq", false); err == nil {
+			t.Fatal("err = nil, want the script's failure")
+		}
+		assertCalls(t, r.Calls(), []string{run.Line(p.Sudo, "-n", p.Script)})
+	})
 	t.Run("refuses before setup", func(t *testing.T) {
 		t.Parallel()
 		p, r := newMac(t, false)

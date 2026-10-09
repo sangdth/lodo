@@ -33,7 +33,7 @@ func Uninstall(ctx context.Context, p paths.Paths, r run.Runner, out io.Writer) 
 		{"lodo's /etc/resolver files removed", "lodo uninstall", func() (string, error) { return "", removeResolverFiles(ctx, p, r) }},
 		{"dnsmasq stopped", "brew services stop dnsmasq", func() (string, error) { return "", brew.Stop(ctx, r, p.Brew, "dnsmasq") }},
 		{"Homebrew's dnsmasq.conf restored", "edit " + p.SystemConf + " by hand", func() (string, error) { return restoreSystemConf(p) }},
-		{"Caddy's local CA no longer trusted", "caddy untrust", func() (string, error) { return untrustCaddy(ctx, p, r), nil }},
+		{"Caddy's local CA no longer trusted", "sudo security remove-trusted-cert -d " + p.TrustedCA, func() (string, error) { return "", untrustCaddy(ctx, p, r) }},
 		{"Caddy no longer serves lodo's sites", "edit " + p.SystemCaddyfile + " by hand", func() (string, error) { return restoreCaddy(ctx, p, r) }},
 		{"loopback addresses removed", "sudo launchctl bootout system/" + LoopbackLabel, func() (string, error) { return "", removeLoopback(ctx, p, r) }},
 		{"sudoers rule and resolver script removed", "sudo rm " + p.Sudoers + " '" + p.Script + "'", func() (string, error) { return "", removeRootFiles(ctx, p, r) }},
@@ -46,16 +46,13 @@ func Uninstall(ctx context.Context, p paths.Paths, r run.Runner, out io.Writer) 
 	return nil
 }
 
-// removeResolverFiles empties the resolver list and runs the script, which
-// deletes every file it wrote and flushes the cache.
+// removeResolverFiles runs the script with no names, so it deletes every file
+// it wrote and flushes the cache.
 func removeResolverFiles(ctx context.Context, p paths.Paths, r run.Runner) error {
 	if !exists(p.Script) {
 		return nil
 	}
-	if _, err := fsutil.WriteFile(p.Resolvers, nil, 0o644); err != nil {
-		return err
-	}
-	_, err := r.Run(ctx, p.Sudo, "-n", p.Script)
+	_, err := r.RunInput(ctx, "", p.Sudo, "-n", p.Script)
 	return err
 }
 
@@ -79,17 +76,20 @@ func restoreSystemConf(p paths.Paths) (string, error) {
 	return "no backup: removed lodo's block", nil
 }
 
-// untrustCaddy removes Caddy's local root certificate from the System keychain
-// when lodo set Caddy up. caddy untrust fails for a root that was never
-// trusted, which is fine: there is nothing to remove.
-func untrustCaddy(ctx context.Context, p paths.Paths, r run.Runner) string {
-	if !exists(p.Caddy) || !CaddySetUp(p) {
-		return ""
+// untrustCaddy removes the root setup trusted from the System keychain, then
+// the copy that records it. A failure warns and keeps the copy, so the rest of
+// uninstall still runs and the hand fix still names a file.
+func untrustCaddy(ctx context.Context, p paths.Paths, r run.Runner) error {
+	if !exists(p.TrustedCA) {
+		return skipped("lodo never trusted a CA")
 	}
-	if err := r.RunTTY(ctx, p.Caddy, "untrust"); err != nil {
-		return "caddy untrust failed, so it likely was never trusted"
+	if err := r.RunTTY(ctx, p.Sudo, p.Security, "remove-trusted-cert", "-d", p.TrustedCA); err != nil {
+		return warning(fmt.Sprintf("%v; remove it by hand: sudo security remove-trusted-cert -d %s", err, p.TrustedCA))
 	}
-	return ""
+	if err := os.Remove(p.TrustedCA); err != nil {
+		return warning(fmt.Sprintf("untrusted, but %v; delete it by hand", err))
+	}
+	return nil
 }
 
 func restoreCaddy(ctx context.Context, p paths.Paths, r run.Runner) (string, error) {

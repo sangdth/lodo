@@ -3,11 +3,12 @@ package compose
 import (
 	"encoding/json"
 	"maps"
-	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
+
+	"github.com/sangdth/lodo/internal/fsutil"
 )
 
 // Fix is a line that starts next dev on every address, with -H added so it
@@ -35,8 +36,8 @@ var shellScriptRE = regexp.MustCompile(`(?:^|[\s"'=])(?:\./)?((?:[\w.-]+/)*[\w.-
 // is a variable stays: the project sets it. NextDev only reads; a file it
 // can't read has no fixes.
 func NextDev(path, address string) []Fix {
-	root := projectDir(path)
-	data, err := os.ReadFile(filepath.Join(root, "package.json")) //nolint:gosec // G304: the project's own package.json
+	root := ProjectDir(path)
+	data, err := fsutil.ReadRegular(filepath.Join(root, "package.json"), fsutil.MaxProjectFile)
 	if err != nil {
 		return nil
 	}
@@ -56,7 +57,7 @@ func NextDev(path, address string) []Fix {
 		}
 	}
 	for _, rel := range slices.Sorted(maps.Keys(scripts)) {
-		data, err := os.ReadFile(filepath.Join(root, rel)) //nolint:gosec // G304: a script the project's package.json runs
+		data, err := fsutil.ReadRegular(filepath.Join(root, rel), fsutil.MaxProjectFile)
 		if err == nil {
 			fixes = append(fixes, fixLines(filepath.ToSlash(rel), string(data), address, true)...)
 		}
@@ -114,9 +115,9 @@ func isFixedHost(value string) bool {
 	return value != "" && !strings.ContainsAny(value, `$'"`)
 }
 
-// projectDir returns the git root above the file at path, or its folder
-// outside a repository.
-func projectDir(path string) string {
+// ProjectDir returns the git root above the file at path, or its folder
+// outside a repository: the project the compose file at path belongs to.
+func ProjectDir(path string) string {
 	if root, ok := gitRoot(filepath.Dir(path)); ok {
 		return root
 	}
