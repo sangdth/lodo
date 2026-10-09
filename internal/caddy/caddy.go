@@ -14,14 +14,21 @@ import (
 
 // Config returns lodo's Caddyfile: one site per enabled domain with a port, in
 // store.Sort order, that forwards http://<name> to <address>:<port>. The
-// http:// prefix keeps Caddy on port 80, without automatic HTTPS. With no such
-// domain it is the header line alone, which Caddy takes as a config with no
-// sites.
+// http:// prefix keeps Caddy on port 80, without automatic HTTPS. A domain with
+// HTTPS on lists both http://<name> and https://<name> in one site with tls
+// internal, so Caddy serves both, with a certificate from its local CA and no
+// redirect from one to the other. With no such domain it is the header line
+// alone, which Caddy takes as a config with no sites.
 func Config(domains []store.Domain) string {
 	var b strings.Builder
 	b.WriteString(store.GeneratedHeader)
 	for _, d := range store.Sort(domains) {
-		if d.Enabled && d.Port > 0 {
+		switch {
+		case !d.Enabled || d.Port == 0:
+		case d.HTTPS:
+			fmt.Fprintf(&b, "\nhttp://%s, https://%s {\n\ttls internal\n\treverse_proxy %s:%d\n}\n",
+				d.Name, d.Name, d.Address, d.Port)
+		default:
 			fmt.Fprintf(&b, "\nhttp://%s {\n\treverse_proxy %s:%d\n}\n", d.Name, d.Address, d.Port)
 		}
 	}

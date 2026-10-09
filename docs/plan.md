@@ -36,7 +36,8 @@ Settled 2026-10-08. The steps below follow them.
   (`blog.test`), and any name in a project may share its own-block address. Editing or deleting a parent leaves
   its subdomains as they are.
 - **Ports:** a row has an optional port. With one, lodo writes a Caddy site
-  `http://<name> { reverse_proxy <address>:<port> }` and restarts Caddy as the user. HTTP only; HTTPS stays out.
+  `http://<name> { reverse_proxy <address>:<port> }` and restarts Caddy as the user. HTTPS is per row, opt-in
+  (`s`), from Caddy's local CA.
   Caddy is needed only when a row has a port. Apps listen on their project's address.
 - **Stack:** Charm v2 modules under their `charm.land` import paths.
 - **Repo:** module `github.com/sangdth/lodo`; `master` holds the initial commit, work happens on `sang-dev`.
@@ -212,6 +213,11 @@ http://dashboard.blog.test {
 import /Users/<user>/.config/lodo/Caddyfile
 ```
 
+A row with HTTPS on lists both addresses, `http://media.test, https://media.test`, with `tls internal`: Caddy
+serves both from one site with a certificate from its local CA, and doesn't redirect HTTP to HTTPS, because the
+site names its `http://` address itself. `setup` runs `caddy trust` once such a row exists, and `uninstall`
+runs `caddy untrust`.
+
 The `http://` prefix keeps Caddy on port 80 with no automatic HTTPS (`caddy adapt` shows one server on `:80`
 and no TLS app). The upstream is the row's address and port, so apps listen on their project's address:
 `next dev -H 127.0.1.1`, Vite `--host 127.0.1.1`, Docker ports on `DOCKER_HOST_IP`. An app on `*:3000` answers
@@ -278,6 +284,10 @@ A failure at any step shows in the status line. The saved file stays as written;
   with `--env-file`, else the project root's (`compose.EnvFile`, `compose.SetEnv`). A `.env` git tracks is
   refused; the compose path is still saved. The question's `y`, `l` in the preview, and a form save that changes
   a linked name's compose file or address link too. Linking saves without an apply.
+- **HTTPS** (`s`): turns HTTPS on or off for the selected name and applies, like `space`. A name without a port
+  is refused: `https needs a port`. The `https` column shows `✓`; the check cell adds `https ✓` or `https ✗`
+  from a probe of `https://<name>` with normal certificate checks, so an untrusted root fails it with
+  "run lodo setup". With HTTPS on, the compose rewrite turns `http://localhost:<port>` into `https://<name>`.
 - **Log:** a `viewport` tailing `dnsmasq.log`, polled every 500 ms; `g` or `esc` returns.
 - **Compose:** started in a project that no listed name links yet (any name whose compose file sits inside the
   project counts), lodo asks once, after the first check, about the best compose file for the name the project's
@@ -602,6 +612,18 @@ healthchecks, `${VAR:-http://localhost:3000}` defaults, comments); the prompt's 
 preview; the form's compose field. lodo never writes a project file: the preview only shows the result.
 
 Commits: one per step group.
+
+### Phase 8: HTTPS
+
+| Step | Work                                                                                                       |
+| ---- | ---------------------------------------------------------------------------------------------------------- |
+| 8.1  | `store`: `Domain.HTTPS`, only with a port; port 443 is refused like 80                                    |
+| 8.2  | `caddy.Config`: `http://<name>, https://<name>` with `tls internal` for HTTPS rows                          |
+| 8.3  | `setup` runs `caddy trust` when a row has HTTPS; `uninstall` runs `caddy untrust`                          |
+| 8.4  | probes: `https://<name>` on port 443 with certificate checks; doctor and the check cell show it            |
+| 8.5  | TUI: box at 80% width, an `https` column, `s` toggles; compose URLs on an HTTPS port become `https://`     |
+| 8.6  | README: HTTPS, trust, Firefox, sign-in callbacks and Google's public suffix rule                           |
+
 ## Tests
 
 - `go test -race ./...`, table-driven, `t.TempDir()` for every path, `run.Fake` for every command.
@@ -650,8 +672,9 @@ Commits: one per step group.
 
 ## Out of scope for v1
 
-- HTTPS. Sites are `http://` on port 80; `https://` with mkcert certificates is v2. Rows without a port are
-  reached at `http://<name>:<port>`.
+- HTTPS for rows without a port. They are reached at `http://<name>:<port>`.
+- Names under a domain the user owns, such as `app.dev.example.com`, for providers like Google that refuse
+  `.test` callbacks.
 - Migrating or cleaning up localdns.
 - Intel Homebrew (`/usr/local`) and Linux.
 - Non-interactive `lodo add` / `lodo rm`. `lodo apply` on a hand-edited `domains.json` covers scripts for now.

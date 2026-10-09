@@ -19,24 +19,27 @@ import (
 
 // Column widths, without the one-space padding the table adds on each side.
 // The name column fits its longest row; the compose column takes the rest.
+// The check column widens to secureWidth only while a name has HTTPS on.
 const (
 	addressWidth    = 15
 	portWidth       = 5
+	httpsWidth      = 5
 	ownWidth        = 3
-	checkWidth      = 13
+	checkWidth      = 13 // dns ✓  http ✓
+	secureWidth     = 22 // dns ✓  http ✓  https ✓
 	minNameWidth    = 12
 	minComposeWidth = 8
-	columns         = 6
+	columns         = 7
 )
 
-// The modal takes 70% of the terminal's width, but never less than
+// The modal takes 80% of the terminal's width, but never less than
 // minBoxWidth columns, so the table and the keys fit, and never more than the
 // terminal. It grows with the names up to 80% of the height; the log takes
 // all of that.
 const (
-	boxWidthPercent  = 70
+	boxWidthPercent  = 80
 	boxHeightPercent = 80
-	minBoxWidth      = 84
+	minBoxWidth      = 91
 )
 
 // formHeight is the lines the form needs: a title between two blank lines,
@@ -88,7 +91,7 @@ const servicesHelp = " ←/→ or h/l pick  space on/off  tab back to the names\
 
 // The keys each mode takes, shown on the last lines.
 var help = map[mode]string{
-	modeList:    " a sub  e edit  d del  space on/off  l link  p preview\n g log  r apply  tab top  q quit",
+	modeList:    " a sub  e edit  d del  space on/off  l link  p preview\n s https  g log  r apply  tab top  q quit",
 	modeForm:    " enter save  tab next field  esc cancel\n",
 	modeConfirm: " y delete  any other key keeps it\n",
 	modeLog:     " g or esc back to the list  ↑/↓ scroll\n q quit",
@@ -157,7 +160,7 @@ func (m Model) widths() (name, compose int) {
 	for _, d := range m.listed() {
 		name = max(name, ansi.StringWidth(indent(d)+"● "+d.Name))
 	}
-	room := m.innerWidth() - addressWidth - portWidth - ownWidth - checkWidth - 2*columns
+	room := m.innerWidth() - addressWidth - portWidth - httpsWidth - ownWidth - m.checkWidth() - 2*columns
 	compose = room - name
 	if compose < minComposeWidth {
 		compose = minComposeWidth
@@ -174,9 +177,10 @@ func (m *Model) layout() {
 		{Title: "name", Width: name},
 		{Title: "address", Width: addressWidth},
 		{Title: "port", Width: portWidth},
+		{Title: "https", Width: httpsWidth},
 		{Title: "compose", Width: compose},
 		{Title: "own", Width: ownWidth},
-		{Title: "check", Width: checkWidth},
+		{Title: "check", Width: m.checkWidth()},
 	})
 	m.table.SetWidth(m.innerWidth())
 	m.table.SetHeight(m.bodyHeight())
@@ -185,6 +189,14 @@ func (m *Model) layout() {
 	m.log.SetHeight(m.logHeight() - 1) // the log's title takes a line
 	m.preview.SetWidth(m.innerWidth())
 	m.preview.SetHeight(m.logHeight() - 2) // the preview's title and .env line take two
+}
+
+// checkWidth fits the check cell: wider while a listed name has HTTPS on.
+func (m Model) checkWidth() int {
+	if slices.ContainsFunc(m.listed(), func(d store.Domain) bool { return d.HTTPS }) {
+		return secureWidth
+	}
+	return checkWidth
 }
 
 // boxWidth is the modal's width with its border.
@@ -227,17 +239,21 @@ func (m Model) rows() []table.Row {
 		if d.Port > 0 {
 			port = strconv.Itoa(d.Port)
 		}
+		https := ""
+		if d.HTTPS {
+			https = "✓"
+		}
 		own := ""
 		if store.IsOwn(d.Address) {
 			own = "own"
 		}
-		rows[i] = table.Row{indent(d) + mark + " " + d.Name, d.Address, port, m.composeCell(d, composeWidth), own, m.checkCell(d)}
+		rows[i] = table.Row{indent(d) + mark + " " + d.Name, d.Address, port, https, m.composeCell(d, composeWidth), own, m.checkCell(d)}
 	}
 	add := addRowText
 	if !m.onAddRow() {
 		add = m.styles.dim.Render(add)
 	}
-	return append(rows, table.Row{add, "", "", "", "", ""})
+	return append(rows, table.Row{add, "", "", "", "", "", ""})
 }
 
 // indent moves a subdomain's row in by two columns per label under its
@@ -271,6 +287,9 @@ func (m Model) checkCell(d store.Domain) string {
 	cell := "dns " + mark(r.Direct && r.System)
 	if d.Port > 0 {
 		cell += "  http " + mark(r.HTTP)
+	}
+	if r.Secure {
+		cell += "  https " + mark(r.HTTPS)
 	}
 	return cell
 }

@@ -65,6 +65,11 @@ func TestFormatResults(t *testing.T) {
 			{Name: "crm.test", Address: "127.0.1.1", Direct: true, System: true},
 			{Name: "dashboard.crm.test", Address: "127.0.1.1", Port: 3000, Direct: true, System: true, Detail: "app down: nothing answers on 127.0.1.1:3000"},
 			{Name: "flowy.test", Address: "127.0.1.3", Direct: true, Detail: "macOS: no address"},
+			{Name: "secure.crm.test", Address: "127.0.1.1", Port: 3004, Direct: true, System: true, HTTP: true, Secure: true, HTTPS: true},
+			{
+				Name: "shop.crm.test", Address: "127.0.1.1", Port: 3005, Direct: true, System: true, HTTP: true, Secure: true,
+				Detail: "https: Caddy's certificate isn't trusted: run lodo setup",
+			},
 		}},
 	}
 	for _, tt := range tests {

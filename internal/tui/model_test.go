@@ -33,7 +33,7 @@ func TestNew(t *testing.T) {
 	if !m.busy {
 		t.Error("not busy before the first report")
 	}
-	if got := m.rows()[0][5]; got != "…" {
+	if got := m.rows()[0][6]; got != "…" {
 		t.Errorf("check cell before the first report = %q, want …", got)
 	}
 	spinning := m.spinner.View() + " crm.test"
@@ -76,7 +76,7 @@ func TestModel_Toggle(t *testing.T) {
 	if m.domains[1].Enabled || m.busy || m.err != nil {
 		t.Errorf("after the change: %+v, busy %v, err %v", m.domains[1], m.busy, m.err)
 	}
-	if got := m.rows()[1][5]; got != "–" {
+	if got := m.rows()[1][6]; got != "–" {
 		t.Errorf("check cell of a disabled name = %q, want –", got)
 	}
 }
@@ -247,7 +247,7 @@ func TestModel_AddRow(t *testing.T) {
 	if got := m.keys(); got != addRowHelp {
 		t.Errorf("keys = %q, want the add row's", got)
 	}
-	for _, k := range []string{"e", "d", "l"} {
+	for _, k := range []string{"e", "d", "l", "s"} {
 		if got := send(m, k); got.mode != modeList || got.note != "" {
 			t.Errorf("%s on the add row: mode %v, note %q; want nothing", k, got.mode, got.note)
 		}
@@ -568,22 +568,24 @@ func TestModel_WindowSize(t *testing.T) {
 	t.Parallel()
 
 	m := ready(&fakeBackend{}, sample)
-	tests := []struct {
-		terminal, box int
-	}{
-		{terminal: 200, box: 140}, // 70%
-		{terminal: 100, box: minBoxWidth},
-		{terminal: 80, box: 80}, // narrower than the floor: the whole terminal
-	}
 	longest := ansi.StringWidth("  ● dashboard.crm.test")
+	fixed := addressWidth + portWidth + httpsWidth + ownWidth + checkWidth + 2*columns
+	tests := []struct {
+		terminal, box, name int
+	}{
+		{terminal: 200, box: 160, name: longest}, // 80%
+		{terminal: 120, box: 96, name: longest},
+		{terminal: 100, box: minBoxWidth, name: longest},                // the floor still fits a 22-character name
+		{terminal: 80, box: 80, name: 80 - 2 - fixed - minComposeWidth}, // narrower than the floor: the whole terminal
+	}
 	for _, tt := range tests {
 		next, _ := m.Update(tea.WindowSizeMsg{Width: tt.terminal, Height: 40})
 		cols := next.(Model).table.Columns()
-		if cols[0].Width != longest {
-			t.Errorf("name column = %d wide at %d columns, want %d, the longest row", cols[0].Width, tt.terminal, longest)
+		if cols[0].Width != tt.name {
+			t.Errorf("name column = %d wide at %d columns, want %d", cols[0].Width, tt.terminal, tt.name)
 		}
-		if want := tt.box - 2 - longest - addressWidth - portWidth - ownWidth - checkWidth - 2*columns; cols[3].Width != want {
-			t.Errorf("compose column = %d wide at %d columns, want %d, the rest", cols[3].Width, tt.terminal, want)
+		if want := tt.box - 2 - tt.name - fixed; cols[4].Width != want {
+			t.Errorf("compose column = %d wide at %d columns, want %d, the rest", cols[4].Width, tt.terminal, want)
 		}
 	}
 	next, _ := m.Update(tea.WindowSizeMsg{Width: 20, Height: 2})
@@ -631,5 +633,84 @@ func writeTestFile(t *testing.T, path, content string) {
 	}
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestModel_HTTPSKey(t *testing.T) {
+	t.Parallel()
+
+	b := &fakeBackend{}
+	m := send(ready(b, sample), "down") // dashboard.crm.test, on port 3000
+	next, _ := m.Update(press("s"))     // the change has started, not landed
+	started := next.(Model)
+	if !started.busy || !strings.HasPrefix(strings.TrimLeft(started.table.Rows()[1][0], " "), started.spinner.View()) {
+		t.Errorf("after s: busy %v, row %q; want the spinner on dashboard.crm.test", started.busy, started.table.Rows()[1][0])
+	}
+
+	m = send(m, "s")
+	want := slices.Clone(sample)
+	want[1].HTTPS = true
+	if len(b.saved) != 1 || !slices.Equal(b.saved[0], want) {
+		t.Errorf("saved %v, want %v", b.saved, want)
+	}
+	if len(b.applied) != 1 || !slices.Equal(b.applied[0], want) {
+		t.Errorf("applied %v, want %v", b.applied, want)
+	}
+	if !m.domains[1].HTTPS || m.busy || m.err != nil {
+		t.Errorf("after the change: %+v, busy %v, err %v", m.domains[1], m.busy, m.err)
+	}
+	if got := m.rows()[1][3]; got != "✓" {
+		t.Errorf("https cell = %q, want ✓", got)
+	}
+	if got := m.rows()[1][6]; got != "dns ✓  http ✓  https ✓" {
+		t.Errorf("check cell = %q, want the https probe after http", got)
+	}
+	if got := m.table.Columns()[6].Width; got != secureWidth {
+		t.Errorf("check column = %d wide, want %d while a name has https on", got, secureWidth)
+	}
+
+	m = send(m, "s")
+	if m.domains[1].HTTPS || len(b.applied) != 2 || m.rows()[1][3] != "" || m.rows()[1][6] != "dns ✓  http ✓" {
+		t.Errorf("after s again: %+v, applied %d, row %q; want https off", m.domains[1], len(b.applied), m.rows()[1])
+	}
+}
+
+func TestModel_HTTPSKeyNeedsAPort(t *testing.T) {
+	t.Parallel()
+
+	b := &fakeBackend{}
+	m := send(ready(b, sample), "s") // crm.test has no port
+	if m.busy || len(b.saved) != 0 || m.domains[0].HTTPS {
+		t.Errorf("s without a port: busy %v, saved %d, %+v; want nothing changed", m.busy, len(b.saved), m.domains[0])
+	}
+	if got := strings.TrimSpace(ansi.Strip(m.statusLine())); got != "✗ https needs a port: Caddy serves only names with one" {
+		t.Errorf("status line = %q, want the reason", got)
+	}
+}
+
+func TestModel_HTTPSCheckCell(t *testing.T) {
+	t.Parallel()
+
+	domains := slices.Clone(sample)
+	domains[1].HTTPS = true
+	tests := []struct {
+		name    string
+		backend *fakeBackend
+		want    string
+	}{
+		{name: "passes", backend: &fakeBackend{}, want: "dns ✓  http ✓  https ✓"},
+		{name: "fails", backend: &fakeBackend{failing: map[string]string{"dashboard.crm.test": "https: bad certificate"}}, want: "dns ✗  http ✗  https ✗"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m := ready(tt.backend, domains)
+			if got := m.rows()[1][6]; got != tt.want {
+				t.Errorf("check cell = %q, want %q", got, tt.want)
+			}
+			if got := m.rows()[0][6]; got != "dns ✓" {
+				t.Errorf("check cell without https = %q, want dns only", got)
+			}
+		})
 	}
 }

@@ -49,6 +49,8 @@ stops the commit.
   argument passed separately. Nothing builds a shell command line from data.
 - The root script only creates `/etc/resolver` files named by lines matching `store.NamePattern`, with fixed
   content, and only deletes files that start with lodo's marker line. Changes to it keep those three properties.
+- Setup trusts Caddy's local CA (`caddy trust`) only when a name has HTTPS on, and uninstall untrusts it: a
+  trusted root signs certificates for any site.
 - The TUI writes one project file: the `.env` a linked compose file runs with, only its `DOCKER_HOST_IP`
   lines, through `fsutil`, and never one that git tracks. Everything else in a project stays read-only.
 - Names end in `.test`, from `store.TLD`. macOS sends a name with one label before `.local` to Bonjour only, so

@@ -3,6 +3,7 @@ package check
 
 import (
 	"context"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -25,25 +26,29 @@ import (
 
 // Env holds what the checks and probes need: lodo's paths, the runner for
 // commands, and where dnsmasq and Caddy listen. NewEnv returns the values for
-// this Mac; tests point DNS and HTTPPort at local servers and RootUID at their
-// own uid.
+// this Mac; tests point DNS, HTTPPort and HTTPSPort at local servers, RootCAs
+// at their test certificate and RootUID at their own uid.
 type Env struct {
-	Paths    paths.Paths
-	Runner   run.Runner
-	DNS      string // dnsmasq's address, host:port
-	HTTPPort int    // the port Caddy listens on
-	RootUID  uint32 // the uid that must own the resolver script: 0, or the test user's uid in tests
+	Paths     paths.Paths
+	Runner    run.Runner
+	DNS       string         // dnsmasq's address, host:port
+	HTTPPort  int            // the port Caddy listens on
+	HTTPSPort int            // the port Caddy serves HTTPS on
+	RootCAs   *x509.CertPool // the CAs the HTTPS probe trusts; nil means this Mac's
+	RootUID   uint32         // the uid that must own the resolver script: 0, or the test user's uid in tests
 }
 
 // NewEnv returns the Env for this Mac: dnsmasq on 127.0.0.1:53535, Caddy on
-// port 80, and a resolver script that root owns.
+// ports 80 and 443, the certificates macOS trusts, and a resolver script that
+// root owns.
 func NewEnv(p paths.Paths, r run.Runner) Env {
 	return Env{
-		Paths:    p,
-		Runner:   r,
-		DNS:      net.JoinHostPort(dnsmasq.ListenAddress, strconv.Itoa(dnsmasq.Port)),
-		HTTPPort: store.ProxyPort,
-		RootUID:  0,
+		Paths:     p,
+		Runner:    r,
+		DNS:       net.JoinHostPort(dnsmasq.ListenAddress, strconv.Itoa(dnsmasq.Port)),
+		HTTPPort:  store.ProxyPort,
+		HTTPSPort: store.TLSPort,
+		RootUID:   0,
 	}
 }
 

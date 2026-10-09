@@ -3,6 +3,8 @@ package check
 import (
 	"cmp"
 	"context"
+	"crypto/tls"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -33,12 +35,14 @@ type Result struct {
 	Direct  bool   // dnsmasq answered with Address
 	System  bool   // macOS resolved Name to Address
 	HTTP    bool   // Caddy reached the app; only when Port > 0
+	Secure  bool   // the domain has HTTPS on, so the HTTPS probe applies
+	HTTPS   bool   // Caddy reached the app over HTTPS with a certificate macOS trusts; only when Secure
 	Detail  string // why probes failed, joined with "; "; empty when all passed
 }
 
 // OK reports whether every probe that applies to the domain passed.
 func (r Result) OK() bool {
-	return r.Direct && r.System && (r.Port == 0 || r.HTTP)
+	return r.Direct && r.System && (r.Port == 0 || r.HTTP) && (!r.Secure || r.HTTPS)
 }
 
 // Probe checks every enabled domain, all domains at once: dnsmasq answers
@@ -58,10 +62,11 @@ func (e Env) Probe(ctx context.Context, domains []store.Domain) []Result {
 	return results
 }
 
-// probe runs one domain's probes, one after another. Each probe returns what
-// went wrong, or "" when it passed. inHosts are the addresses the hosts file
-// lists for the name: macOS and dnsmasq both answer from it first, so an entry
-// with another address explains a failed lookup better than the lookup does.
+// probe runs one domain's probes: the lookups one after the other, then HTTP
+// and HTTPS together. Each probe returns what went wrong, or "" when it
+// passed. inHosts are the addresses the hosts file lists for the name: macOS
+// and dnsmasq both answer from it first, so an entry with another address
+// explains a failed lookup better than the lookup does.
 func (e Env) probe(ctx context.Context, d store.Domain, inHosts []string) Result {
 	direct := e.probeDirect(ctx, d.Name, d.Address)
 	sys := e.probeSystem(ctx, d.Name, d.Address)
@@ -69,11 +74,16 @@ func (e Env) probe(ctx context.Context, d store.Domain, inHosts []string) Result
 	if (direct != "" || sys != "") && len(inHosts) > 0 && !slices.Contains(inHosts, d.Address) {
 		lookups = []string{e.Paths.Hosts + " maps " + d.Name + " to " + strings.Join(inHosts, ", ") + ": remove that line"}
 	}
-	var web string
+	var web, secure string
+	var wg sync.WaitGroup
 	if d.Port > 0 {
-		web = e.probeHTTP(ctx, d)
+		wg.Go(func() { web = e.probeHTTP(ctx, d) })
 	}
-	problems := slices.DeleteFunc(append(lookups, web), func(s string) bool { return s == "" })
+	if d.HTTPS {
+		wg.Go(func() { secure = e.probeHTTPS(ctx, d) })
+	}
+	wg.Wait()
+	problems := slices.DeleteFunc(append(lookups, web, secure), func(s string) bool { return s == "" })
 	return Result{
 		Name:    d.Name,
 		Address: d.Address,
@@ -81,6 +91,8 @@ func (e Env) probe(ctx context.Context, d store.Domain, inHosts []string) Result
 		Direct:  direct == "",
 		System:  sys == "",
 		HTTP:    d.Port > 0 && web == "",
+		Secure:  d.HTTPS,
+		HTTPS:   d.HTTPS && secure == "",
 		Detail:  strings.Join(problems, "; "),
 	}
 }
@@ -178,41 +190,76 @@ func ipAddresses(out string) []string {
 
 // probeHTTP asks for http://<name>/ on the domain's address and HTTP port,
 // as a browser would after resolving the name, and reads from the answer
-// whether Caddy reached the app. While nothing accepts the connection it
-// retries every retryEvery for up to httpWindow: apply may have just
-// restarted Caddy, which needs a moment to listen again.
+// whether Caddy reached the app.
 func (e Env) probeHTTP(ctx context.Context, d store.Domain) string {
+	return e.probeWeb(ctx, d, "http", e.HTTPPort, nil)
+}
+
+// probeHTTPS asks for https://<name>/ on the domain's address and HTTPS port,
+// verifying Caddy's certificate against the CAs macOS trusts, and reads the
+// answer as probeHTTP does.
+func (e Env) probeHTTPS(ctx context.Context, d store.Domain) string {
+	tlsConfig := &tls.Config{RootCAs: e.RootCAs, MinVersion: tls.VersionTLS12}
+	if p := e.probeWeb(ctx, d, "https", e.HTTPSPort, tlsConfig); p != "" {
+		return "https: " + p
+	}
+	return ""
+}
+
+// probeWeb asks for <scheme>://<name>/ on the domain's address and port, and
+// reads from the answer whether Caddy reached the app. While the connection
+// or handshake fails it retries every retryEvery for up to httpWindow: apply
+// may have just restarted Caddy, which needs a moment to listen again. An
+// untrusted certificate ends it at once.
+func (e Env) probeWeb(ctx context.Context, d store.Domain, scheme string, port int, tlsConfig *tls.Config) string {
 	ctx, cancel := context.WithTimeout(ctx, httpWindow)
 	defer cancel()
-	caddyAddr := net.JoinHostPort(d.Address, strconv.Itoa(e.HTTPPort))
+	caddyAddr := net.JoinHostPort(d.Address, strconv.Itoa(port))
 	client := &http.Client{
 		Transport: &http.Transport{
 			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 				var dialer net.Dialer
 				return dialer.DialContext(ctx, "tcp", caddyAddr)
 			},
+			TLSClientConfig:   tlsConfig,
 			DisableKeepAlives: true,
 		},
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
 	retry := time.NewTicker(retryEvery)
 	defer retry.Stop()
+	problem := "nothing answers on " + caddyAddr + ": is Caddy running?"
 	for {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+d.Name+"/", nil)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, scheme+"://"+d.Name+"/", nil)
 		if err != nil {
 			return oneLine(err.Error())
 		}
 		resp, err := client.Do(req)
 		if err == nil {
 			_ = resp.Body.Close() // only the status and headers matter
-			return httpProblem(resp.StatusCode, resp.Header, d, e.HTTPPort)
+			return httpProblem(resp.StatusCode, resp.Header, d, port)
+		}
+		if _, ok := errors.AsType[*tls.CertificateVerificationError](err); ok {
+			return "Caddy's certificate isn't trusted: run lodo setup"
+		}
+		// A refused connection keeps the default problem. Another failure, such
+		// as a handshake Caddy ends because it has no certificate for the name,
+		// is reported as is, unless ctx cut the attempt short.
+		if !isDialError(err) && ctx.Err() == nil {
+			problem = oneLine(err.Error())
 		}
 		select {
 		case <-ctx.Done():
-			return "nothing answers on " + caddyAddr + ": is Caddy running?"
+			return problem
 		case <-retry.C:
 		}
 	}
+}
+
+// isDialError reports whether err is a failure to connect, not one after.
+func isDialError(err error) bool {
+	op, ok := errors.AsType[*net.OpError](err)
+	return ok && op.Op == "dial"
 }
 
 // httpProblem reads who answered on the HTTP port. Caddy 2.11 adds a Via

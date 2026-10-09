@@ -22,8 +22,9 @@ import (
 const caddyBin = "/opt/homebrew/bin/caddy"
 
 // lists are the domain lists the Config tests render. The sample is out of
-// order on purpose; only dashboard.crm.test and service.crm.test are enabled
-// with a port.
+// order on purpose; only dashboard.crm.test, service.crm.test and
+// secure.crm.test are enabled with a port, and secure.crm.test has HTTPS on;
+// old-secure.crm.test has HTTPS on but is disabled.
 var lists = []struct {
 	name    string
 	domains []store.Domain
@@ -35,6 +36,8 @@ var lists = []struct {
 			{Name: "service.crm.test", Address: "127.0.1.1", Port: 3002, Enabled: true},
 			{Name: "dashboard.crm.test", Address: "127.0.1.1", Port: 3000, Enabled: true},
 			{Name: "old.test", Address: "127.0.0.1"},
+			{Name: "secure.crm.test", Address: "127.0.1.1", Port: 3004, Enabled: true, HTTPS: true},
+			{Name: "old-secure.crm.test", Address: "127.0.1.1", Port: 3005, HTTPS: true},
 			{Name: "docs.crm.test", Address: "127.0.1.1", Port: 3003},
 			{Name: "a.api.crm.test", Address: "127.0.1.1", Enabled: true},
 			{Name: "crm.test", Address: "127.0.1.1", Enabled: true},

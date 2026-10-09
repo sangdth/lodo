@@ -18,6 +18,7 @@ import (
 type Values struct {
 	Domain string         // the project's name, such as flowy.test
 	Names  map[int]string // names Caddy serves on the project's address, by port: 3000 → dashboard.flowy.test
+	Secure map[int]bool   // the ports in Names whose name Caddy also serves over HTTPS
 }
 
 // Kind says what a Change rewrote.
@@ -336,10 +337,20 @@ func isLoopback(addr string) bool {
 	return addr == "127.0.0.1" || addr == "localhost"
 }
 
+// secureScheme is the TLS form of http or ws.
+func secureScheme(scheme string) string {
+	if strings.EqualFold(scheme, "ws") {
+		return "wss"
+	}
+	return "https"
+}
+
 // pointURLs returns s with each localhost URL in it pointing at the project,
 // and false when s has none. An http or ws URL on a port Caddy serves a name
-// for gets that name without the port, since Caddy serves it on port 80. Any
-// other URL gets the project's name and keeps its port.
+// for gets that name without the port, since Caddy serves it on port 80;
+// when that name has HTTPS on, the URL becomes https or wss, which Caddy
+// serves on port 443. Any other URL gets the project's name and keeps its
+// port.
 func pointURLs(s string, v Values) (string, bool) {
 	var b strings.Builder
 	last := 0
@@ -354,6 +365,9 @@ func pointURLs(s string, v Values) (string, bool) {
 		plain := strings.EqualFold(scheme, "http") || strings.EqualFold(scheme, "ws")
 		if n, err := strconv.Atoi(port); plain && err == nil && v.Names[n] != "" {
 			host, port = v.Names[n], ""
+			if v.Secure[n] {
+				scheme = secureScheme(scheme)
+			}
 		}
 		b.WriteString(s[last:m[0]])
 		b.WriteString(scheme + "://" + host)

@@ -33,6 +33,7 @@ func Uninstall(ctx context.Context, p paths.Paths, r run.Runner, out io.Writer) 
 		{"lodo's /etc/resolver files removed", "lodo uninstall", func() (string, error) { return "", removeResolverFiles(ctx, p, r) }},
 		{"dnsmasq stopped", "brew services stop dnsmasq", func() (string, error) { return "", brew.Stop(ctx, r, p.Brew, "dnsmasq") }},
 		{"Homebrew's dnsmasq.conf restored", "edit " + p.SystemConf + " by hand", func() (string, error) { return restoreSystemConf(p) }},
+		{"Caddy's local CA no longer trusted", "caddy untrust", func() (string, error) { return untrustCaddy(ctx, p, r), nil }},
 		{"Caddy no longer serves lodo's sites", "edit " + p.SystemCaddyfile + " by hand", func() (string, error) { return restoreCaddy(ctx, p, r) }},
 		{"loopback addresses removed", "sudo launchctl bootout system/" + LoopbackLabel, func() (string, error) { return "", removeLoopback(ctx, p, r) }},
 		{"sudoers rule and resolver script removed", "sudo rm " + p.Sudoers + " '" + p.Script + "'", func() (string, error) { return "", removeRootFiles(ctx, p, r) }},
@@ -76,6 +77,19 @@ func restoreSystemConf(p paths.Paths) (string, error) {
 		return "", err
 	}
 	return "no backup: removed lodo's block", nil
+}
+
+// untrustCaddy removes Caddy's local root certificate from the System keychain
+// when lodo set Caddy up. caddy untrust fails for a root that was never
+// trusted, which is fine: there is nothing to remove.
+func untrustCaddy(ctx context.Context, p paths.Paths, r run.Runner) string {
+	if !exists(p.Caddy) || !CaddySetUp(p) {
+		return ""
+	}
+	if err := r.RunTTY(ctx, p.Caddy, "untrust"); err != nil {
+		return "caddy untrust failed, so it likely was never trusted"
+	}
+	return ""
 }
 
 func restoreCaddy(ctx context.Context, p paths.Paths, r run.Runner) (string, error) {

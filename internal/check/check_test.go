@@ -87,6 +87,12 @@ func TestNewEnv(t *testing.T) {
 	if e.HTTPPort != 80 {
 		t.Errorf("HTTPPort = %d, want 80", e.HTTPPort)
 	}
+	if e.HTTPSPort != 443 {
+		t.Errorf("HTTPSPort = %d, want 443", e.HTTPSPort)
+	}
+	if e.RootCAs != nil {
+		t.Errorf("RootCAs = %v, want nil, the CAs macOS trusts", e.RootCAs)
+	}
 	if e.RootUID != 0 {
 		t.Errorf("RootUID = %d, want 0", e.RootUID)
 	}

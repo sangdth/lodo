@@ -137,14 +137,17 @@ func (f *fakeBackend) Report(_ context.Context, domains []store.Domain) ([]check
 			continue
 		}
 		ports = ports || d.Port > 0
-		r := check.Result{Name: d.Name, Address: d.Address, Port: d.Port, Direct: true, System: true, HTTP: d.Port > 0}
+		r := check.Result{
+			Name: d.Name, Address: d.Address, Port: d.Port, Direct: true, System: true,
+			HTTP: d.Port > 0, Secure: d.HTTPS, HTTPS: d.HTTPS,
+		}
 		switch detail, ok := f.failing[d.Name]; {
 		case f.off["dnsmasq"]:
-			r.Direct, r.System, r.HTTP, r.Detail = false, false, false, "dnsmasq: no answer"
+			r.Direct, r.System, r.HTTP, r.HTTPS, r.Detail = false, false, false, false, "dnsmasq: no answer"
 		case ok:
-			r.System, r.HTTP, r.Detail = false, false, detail
+			r.System, r.HTTP, r.HTTPS, r.Detail = false, false, false, detail
 		case f.off["caddy"] && d.Port > 0:
-			r.HTTP, r.Detail = false, "http: connection refused"
+			r.HTTP, r.HTTPS, r.Detail = false, false, "http: connection refused"
 		}
 		results = append(results, r)
 	}
