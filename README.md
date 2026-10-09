@@ -5,6 +5,8 @@ project gets its own loopback address, like `127.0.1.3`, and a name that ends in
 listens on `127.0.1.3:5432` while blog's listens on `127.0.1.1:5432`. lodo is a terminal app: it keeps the list
 of names and makes dnsmasq, macOS's `/etc/resolver` files and, for names with a port, Caddy follow it.
 
+![lodo's terminal app listing two names, each with its address, port, compose file and checks](docs/images/lodo-screenshot.png)
+
 ```text
 media.test -> 127.0.1.3 -> 127.0.1.3:5432 (Postgres), 127.0.1.3:3000 (Next)
 blog.test  -> 127.0.1.1 -> 127.0.1.1:5432 (Postgres)
