@@ -2,6 +2,7 @@ package check_test
 
 import (
 	"context"
+	"crypto/x509"
 	"encoding/binary"
 	"net"
 	"net/http"
@@ -41,6 +42,14 @@ func TestResult_OK(t *testing.T) {
 		{name: "macOS failed", result: check.Result{Direct: true}, want: false},
 		{name: "port, caddy reached the app", result: check.Result{Port: 3000, Direct: true, System: true, HTTP: true}, want: true},
 		{name: "port, caddy did not reach the app", result: check.Result{Port: 3000, Direct: true, System: true}, want: false},
+		{
+			name:   "https, both probes passed",
+			result: check.Result{Port: 3000, Direct: true, System: true, HTTP: true, Secure: true, HTTPS: true}, want: true,
+		},
+		{
+			name:   "https, the https probe failed",
+			result: check.Result{Port: 3000, Direct: true, System: true, HTTP: true, Secure: true}, want: false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -413,6 +422,119 @@ func TestEnv_Probe_StopsWhenContextEnds(t *testing.T) {
 	}
 }
 
+// TestEnv_Probe_HTTPS runs the HTTPS probe against a TLS stand-in for Caddy.
+// Its name fits httptest's certificate, which RootCAs trusts unless the case
+// says otherwise; nothing reads this Mac's keychain.
+func TestEnv_Probe_HTTPS(t *testing.T) {
+	t.Parallel()
+
+	secure := store.Domain{Name: "secure.example.com", Address: "127.0.0.1", Port: 3000, Enabled: true, HTTPS: true}
+	tests := []struct {
+		name      string
+		caddy     http.HandlerFunc // the TLS stand-in for Caddy; nil means it reached the app
+		untrusted bool             // RootCAs does not hold the stand-in's certificate
+		down      bool             // nothing listens on the HTTPS port
+		want      check.Result     // {port} in Detail stands for the HTTPS port
+	}{
+		{
+			name: "caddy reached the app over https",
+			want: check.Result{HTTP: true, HTTPS: true},
+		},
+		{
+			name:      "the certificate is not trusted",
+			untrusted: true,
+			want:      check.Result{HTTP: true, Detail: "https: Caddy's certificate isn't trusted: run lodo setup"},
+		},
+		{
+			name:  "caddy has no site for the name",
+			caddy: respond(http.StatusOK, "Server", "Caddy"),
+			want:  check.Result{HTTP: true, Detail: "https: caddy has no site for secure.example.com: run lodo apply"},
+		},
+		{
+			name:  "the app is down",
+			caddy: respond(http.StatusBadGateway, "Server", "Caddy"),
+			want:  check.Result{HTTP: true, Detail: "https: app down: nothing answers on 127.0.0.1:3000"},
+		},
+		{
+			name: "nothing listens on the https port",
+			down: true,
+			want: check.Result{HTTP: true, Detail: "https: nothing answers on 127.0.0.1:{port}: is Caddy running?"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			e, fake := newProbeEnv(t)
+			e.DNS = startDNS(t, fromMap(map[string]string{secure.Name: secure.Address}))
+			fake.Set(dscacheutil(e.Paths, secure.Name), macOSOutput(secure.Name, secure.Address))
+			e.HTTPPort = startHTTP(t, respond(http.StatusOK, "Via", "1.1 Caddy"))
+			e.RootCAs = x509.NewCertPool()
+			if !tt.down {
+				h := tt.caddy
+				if h == nil {
+					h = respond(http.StatusOK, "Server", "Caddy", "Via", "1.1 Caddy")
+				}
+				srv := httptest.NewTLSServer(h)
+				t.Cleanup(srv.Close)
+				e.HTTPSPort = srv.Listener.Addr().(*net.TCPAddr).Port
+				if !tt.untrusted {
+					e.RootCAs.AddCert(srv.Certificate())
+				}
+			}
+			ctx := t.Context()
+			if tt.down {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithTimeout(ctx, 300*time.Millisecond)
+				defer cancel()
+			}
+
+			got := e.Probe(ctx, []store.Domain{secure})
+			want := tt.want
+			want.Name, want.Address, want.Port = secure.Name, secure.Address, secure.Port
+			want.Direct, want.System, want.Secure = true, true, true
+			want.Detail = strings.ReplaceAll(want.Detail, "{port}", strconv.Itoa(e.HTTPSPort))
+			if !slices.Equal(got, []check.Result{want}) {
+				t.Errorf("Probe =\n%+v\nwant\n%+v", got, []check.Result{want})
+			}
+		})
+	}
+}
+
+// TestEnv_Probe_HTTPSRequest checks the HTTPS probe sends GET / for the name,
+// with the name as Host and as the TLS server name.
+func TestEnv_Probe_HTTPSRequest(t *testing.T) {
+	t.Parallel()
+
+	secure := store.Domain{Name: "secure.example.com", Address: "127.0.0.1", Port: 3000, Enabled: true, HTTPS: true}
+	e, fake := newProbeEnv(t)
+	e.DNS = startDNS(t, fromMap(map[string]string{secure.Name: secure.Address}))
+	fake.Set(dscacheutil(e.Paths, secure.Name), macOSOutput(secure.Name, secure.Address))
+	e.HTTPPort = startHTTP(t, respond(http.StatusOK, "Via", "1.1 Caddy"))
+	var mu sync.Mutex
+	var requests []string
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		requests = append(requests, r.Method+" "+r.Host+" "+r.TLS.ServerName+" "+r.URL.Path)
+		mu.Unlock()
+		w.Header().Set("Via", "1.1 Caddy")
+	}))
+	t.Cleanup(srv.Close)
+	e.HTTPSPort = srv.Listener.Addr().(*net.TCPAddr).Port
+	e.RootCAs = x509.NewCertPool()
+	e.RootCAs.AddCert(srv.Certificate())
+
+	got := e.Probe(t.Context(), []store.Domain{secure})
+	if len(got) != 1 || !got[0].HTTPS {
+		t.Errorf("Probe = %+v, want the HTTPS probe to pass", got)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if want := []string{"GET secure.example.com secure.example.com /"}; !slices.Equal(requests, want) {
+		t.Errorf("requests = %q, want %q", requests, want)
+	}
+}
+
 // newProbeEnv returns an Env whose commands go to a fake, and whose dnsmasq
 // and Caddy are down until the test starts stand-ins for them.
 func newProbeEnv(t *testing.T) (check.Env, *run.Fake) {
@@ -421,6 +543,7 @@ func newProbeEnv(t *testing.T) (check.Env, *run.Fake) {
 	e := check.NewEnv(paths.ForTest(t.TempDir()), fake)
 	e.DNS = closedUDP(t)
 	e.HTTPPort = closedTCP(t)
+	e.HTTPSPort = closedTCP(t)
 	return e, fake
 }
 

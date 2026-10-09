@@ -78,20 +78,21 @@ dnsmasq off no `.test` name resolves.
 `●` marks a name that is on, `○` one that is off. Each change saves `domains.json`, applies it and checks every
 name. The status line at the bottom, above the key help, says what failed, or why the selected name fails.
 
-| Key         | What it does                                     |
-| ----------- | ------------------------------------------------ |
-| `a`         | add a subdomain of the selected name             |
-| `A`         | add a name; also `enter` on `Add new domain`     |
-| `e`         | edit the selected name                           |
-| `d`         | delete it and its subdomains; `y` confirms       |
-| `space`     | turn it on or off                                |
-| `l`         | link it to the project's compose file and `.env` |
+| Key         | What it does                                       |
+| ----------- | -------------------------------------------------- |
+| `a`         | add a subdomain of the selected name               |
+| `A`         | add a name; also `enter` on `Add new domain`       |
+| `e`         | edit the selected name                             |
+| `d`         | delete it and its subdomains; `y` confirms         |
+| `space`     | turn it on or off                                  |
+| `s`         | turn HTTPS on or off; the name needs a port        |
+| `l`         | link it to the project's compose file and `.env`   |
 | `p`         | preview the compose file, as lodo would change it  |
-| `g`         | show dnsmasq's query log; `g` or `esc` goes back |
-| `r`         | read `domains.json` again and apply it           |
-| `tab`       | move the keys to Caddy and dnsmasq, and back     |
-| `q`         | quit; `ctrl+c` quits from anywhere               |
-| `up` `down` | move; `j` and `k` work too                       |
+| `g`         | show dnsmasq's query log; `g` or `esc` goes back   |
+| `r`         | read `domains.json` again and apply it             |
+| `tab`       | move the keys to Caddy and dnsmasq, and back       |
+| `q`         | quit; `ctrl+c` quits from anywhere                 |
+| `up` `down` | move; `j` and `k` work too                         |
 
 In the add or edit form, `enter` saves, `tab` goes to the next field (`shift+tab` back) and `esc` cancels. While
 you type a new name, the form fills in the address: the parent's address for a subdomain of a listed name, else
@@ -126,6 +127,45 @@ becomes the name's, and `DOCKER_HOST_IP=<address>` goes into the `.env` that fil
 tracks alone: this Mac's address doesn't belong in a shared file. The question's `y`, `l` in the preview, and a
 form save that changes a linked name's compose file or address do the same.
 
+### HTTPS
+
+`s` turns HTTPS on for a name with a port: Caddy then also serves `https://<name>`, with a certificate from its
+own local certificate authority, and `http://<name>` keeps working. The `https` column marks it, and the check
+column adds `https ✓` once a request over HTTPS reaches the app.
+
+Browsers accept the certificate once macOS trusts Caddy's root. After you turn on the first HTTPS name, run
+`lodo setup` again: it runs `caddy trust`, which adds the root to the System keychain and asks for your
+password. Until then the name's check says `https: Caddy's certificate isn't trusted: run lodo setup`.
+
+- Safari and Chrome use the keychain. Firefox on macOS reads its roots too, through Settings → Privacy &
+  Security → Certificates, "Allow Firefox to automatically trust third-party root certificates you install".
+  Firefox's HTTPS-Only Mode then reaches the name instead of showing "Secure Site Not Available".
+- The root's private key lives in `~/Library/Application Support/Caddy`. Whatever can read it can sign a
+  certificate this Mac trusts, for any site, which is why lodo trusts it only once a name uses HTTPS.
+  `lodo uninstall` removes the trust with `caddy untrust`.
+
+### Sign-in callbacks
+
+An OAuth provider sends the browser back to a callback URL on your app. With HTTPS on, a local app gets the same
+shape of URL as production, and `Secure` cookies work:
+
+1. Turn HTTPS on for the name, say `app.blog.test`.
+2. Point the app at it: `BETTER_AUTH_URL=https://app.blog.test` for Better Auth, `AUTH_URL` (or `NEXTAUTH_URL`)
+   for Auth.js. A value left at `http://localhost:3000` sends the browser back to `localhost` after sign-in.
+3. Register the callback with the provider: `https://app.blog.test/api/auth/callback/github` for Better Auth
+   and Auth.js; other libraries use their own path.
+
+Providers check callback URLs differently. A GitHub OAuth app takes any URL, so the `.test` callback works.
+**Google refuses it:** its redirect URIs must use a host whose top-level domain is on the public suffix list,
+and `.test` never is. Only `localhost` is exempt. For Google sign-in, either:
+
+- run the sign-in on `localhost`: callback `http://localhost:3000/api/auth/callback/google`, the app's URL set
+  to `http://localhost:3000`, and the app opened there while you work on sign-in. The app has to answer on
+  `127.0.0.1` for that, so it shares port 3000 with every other project;
+- or use a name under a domain you own, such as `app.dev.example.com`. Google only checks the URL's text and
+  never visits it, so the name doesn't need a public DNS record. lodo serves only `.test` names, so such a name
+  needs its own DNS and certificate setup.
+
 ### Rules
 
 - **Names end in `.test`.** macOS sends a name like `media.local`, with one label before `.local`, to Bonjour
@@ -135,8 +175,8 @@ form save that changes a linked name's compose file or address do the same.
   is on, an unlisted `foo.blog.test` resolves to its address anyway, and so does a listed one you turn off.
 - **An own address belongs to one project.** The own block is `127.0.1.1`–`127.0.1.50`. `127.0.0.1`, or any
   other address in `127.0.0.0/8`, can be shared.
-- **A port makes `http://<name>` reach `<address>:<port>`** through Caddy on port 80. HTTP only. Port 80 itself
-  is refused, because Caddy listens there.
+- **A port makes `http://<name>` reach `<address>:<port>`** through Caddy on port 80, and `https://<name>` too,
+  on port 443, once HTTPS is on. Ports 80 and 443 themselves are refused, because Caddy listens there.
 - **Apps listen on their project's address**, for example `next dev -H 127.0.1.3` or `vite --host 127.0.1.3`.
 - **Docker:** publish ports as `"${DOCKER_HOST_IP:-127.0.0.1}:5432:5432"`, which `p` shows on the project's
   compose file, and `l` writes `DOCKER_HOST_IP=127.0.1.3` into the project's `.env`, so each project's Postgres
@@ -182,8 +222,9 @@ fails. The list does the same after every change. It refuses to run before `lodo
   that match the name rule, and only deletes files that start with lodo's marker line, `# lodo`.
 - **The loopback LaunchDaemon**, `io.lodo.loopback`, adds `127.0.1.1`–`127.0.1.50` to `lo0` at every boot. macOS
   has only `127.0.0.1` by default.
-- **Caddy** runs as you on port 80. Homebrew's `Caddyfile` imports `~/.config/lodo/Caddyfile`, which has one
-  `http://<name>` site per enabled name with a port, forwarding to `<address>:<port>`.
+- **Caddy** runs as you on port 80, and on 443 for HTTPS names. Homebrew's `Caddyfile` imports
+  `~/.config/lodo/Caddyfile`, which has one `http://<name>` site per enabled name with a port, forwarding to
+  `<address>:<port>`; an HTTPS name's site also lists `https://<name>`.
 - **`~/.config/lodo/domains.json`** is the only source of truth. lodo rewrites its generated files from it on
   every change.
 

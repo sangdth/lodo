@@ -225,6 +225,46 @@ func TestRewrite_URLs(t *testing.T) {
 	}
 }
 
+// TestRewrite_SecureURLs checks that an http or ws URL on a port whose name
+// has HTTPS on becomes https or wss, without the port, and that nothing else
+// changes scheme.
+func TestRewrite_SecureURLs(t *testing.T) {
+	t.Parallel()
+
+	values := compose.Values{
+		Domain: "flowy.test",
+		Names:  map[int]string{3000: "dashboard.flowy.test", 4000: "api.flowy.test"},
+		Secure: map[int]bool{3000: true},
+	}
+	tests := []struct {
+		name  string
+		value string
+		want  string
+	}{
+		{name: "http to https", value: "http://localhost:3000/login", want: "https://dashboard.flowy.test/login"},
+		{name: "ws to wss", value: "ws://127.0.0.1:3000/socket", want: "wss://dashboard.flowy.test/socket"},
+		{name: "upper case scheme", value: "WS://localhost:3000", want: "wss://dashboard.flowy.test"},
+		{name: "name without https", value: "http://localhost:4000", want: "http://api.flowy.test"},
+		{name: "port without a name", value: "http://localhost:8080", want: "http://flowy.test:8080"},
+		{name: "https keeps its port", value: "https://localhost:3000", want: "https://flowy.test:3000"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			src := yml("services:", "  app:", "    environment:", "      APP_URL: "+tt.value)
+			out, changes, err := compose.Rewrite([]byte(src), values)
+			if err != nil {
+				t.Fatalf("Rewrite: %v", err)
+			}
+			checkRewrite(t, []byte(src), out, changes)
+			if want := yml("services:", "  app:", "    environment:", "      APP_URL: "+tt.want); string(out) != want {
+				t.Errorf("Rewrite =\n%s\nwant\n%s", out, want)
+			}
+		})
+	}
+}
+
 // TestRewrite_Tokens checks that a URL edit keeps its token's style, and that
 // a token Rewrite can't place exactly stays as it is.
 func TestRewrite_Tokens(t *testing.T) {

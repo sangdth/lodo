@@ -179,6 +179,9 @@ func (m Model) listKey(k string) (Model, tea.Cmd, bool) {
 		m.selectName = d.Name
 		started, cmd := m.start(d.Name, m.change(next))
 		return started, cmd, true
+	case "s":
+		next, cmd := m.toggleHTTPS(d)
+		return next, cmd, true
 	case "a":
 		return m.openAdd(d.Name), nil, true
 	case "e":
@@ -191,6 +194,20 @@ func (m Model) listKey(k string) (Model, tea.Cmd, bool) {
 		return next, cmd, true
 	}
 	return m, nil, false
+}
+
+// toggleHTTPS turns HTTPS on or off for d and applies the list. store
+// refuses it for a name without a port.
+func (m Model) toggleHTTPS(d store.Domain) (Model, tea.Cmd) {
+	changed := d
+	changed.HTTPS = !d.HTTPS
+	next, err := store.Update(m.domains, d.Name, changed)
+	if err != nil {
+		m.err = err
+		return m, nil
+	}
+	m.selectName = d.Name
+	return m.start(d.Name, m.change(next))
 }
 
 // serviceKey handles the keys while they act on the status bar's services:

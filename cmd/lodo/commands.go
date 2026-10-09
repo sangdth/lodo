@@ -149,7 +149,8 @@ func formatChecks(checks []check.Check) string {
 	return b.String()
 }
 
-// formatResults renders one line per probed name.
+// formatResults renders one line per probed name. A name with HTTPS on says
+// so after its port, since its line covers the HTTPS probe too.
 func formatResults(results []check.Result) string {
 	if len(results) == 0 {
 		return "no enabled domains\n"
@@ -160,6 +161,9 @@ func formatResults(results []check.Result) string {
 		targets[i] = r.Address
 		if r.Port > 0 {
 			targets[i] += fmt.Sprintf(" port %d", r.Port)
+		}
+		if r.Secure {
+			targets[i] += ", https"
 		}
 		nameWidth = max(nameWidth, len(r.Name))
 		targetWidth = max(targetWidth, len(targets[i]))

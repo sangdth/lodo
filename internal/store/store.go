@@ -45,6 +45,9 @@ const (
 // ProxyPort is where Caddy listens. A domain forwards to any other port.
 const ProxyPort = 80
 
+// TLSPort is where Caddy serves HTTPS, for domains with HTTPS on.
+const TLSPort = 443
+
 // Version is the domains.json format this build reads and writes.
 const Version = 1
 
@@ -68,6 +71,7 @@ type Domain struct {
 	Port    int    `json:"port,omitempty"`
 	Enabled bool   `json:"enabled"`
 	Compose string `json:"compose,omitempty"` // an absolute path, NoCompose, or empty before lodo asked
+	HTTPS   bool   `json:"https,omitempty"`   // Caddy also serves https://<name>, with a certificate from its local CA
 }
 
 // NoCompose is a domain's compose value once the user said its project has no
@@ -132,6 +136,8 @@ func ValidatePort(port int) error {
 		return fieldErr(FieldPort, "port must be between 1 and 65535")
 	case port == ProxyPort:
 		return fieldErr(FieldPort, "port 80 is where Caddy listens; use the app's own port")
+	case port == TLSPort:
+		return fieldErr(FieldPort, "port 443 is where Caddy serves HTTPS; use the app's own port")
 	}
 	return nil
 }
@@ -261,6 +267,9 @@ func check(others []Domain, d Domain) error {
 	}
 	if err := ValidateCompose(d.Compose); err != nil {
 		return err
+	}
+	if d.HTTPS && d.Port == 0 {
+		return fieldErr(FieldPort, "https needs a port: Caddy serves only names with one")
 	}
 	for _, o := range others {
 		if o.Name == d.Name {

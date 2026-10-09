@@ -57,16 +57,17 @@ func (m Model) readPreview(owner store.Domain) tea.Cmd {
 	}
 }
 
-// composeValues are what owner's compose file gets: owner's name, and the
-// names Caddy serves on owner's address, by port.
+// composeValues are what owner's compose file gets: owner's name, the names
+// Caddy serves on owner's address, by port, and which of them have HTTPS on.
 func (m Model) composeValues(owner store.Domain) compose.Values {
-	names := map[int]string{}
+	names, secure := map[int]string{}, map[int]bool{}
 	for _, d := range m.domains {
 		if d.Enabled && d.Port > 0 && d.Address == owner.Address && store.Project(d.Name) == store.Project(owner.Name) {
 			names[d.Port] = d.Name
+			secure[d.Port] = d.HTTPS
 		}
 	}
-	return compose.Values{Domain: owner.Name, Names: names}
+	return compose.Values{Domain: owner.Name, Names: names, Secure: secure}
 }
 
 // composeOwner returns the name whose compose file d uses: its own, or its

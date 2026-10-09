@@ -151,9 +151,9 @@ func (f form) domain() (store.Domain, error) {
 	if err != nil {
 		return store.Domain{}, err
 	}
-	enabled := true
+	enabled, https := true, false
 	if f.editing != "" {
-		enabled = f.original.Enabled
+		enabled, https = f.original.Enabled, f.original.HTTPS
 	}
 	return store.Domain{
 		Name:    f.name(),
@@ -161,6 +161,7 @@ func (f form) domain() (store.Domain, error) {
 		Port:    port,
 		Enabled: enabled,
 		Compose: f.compose(),
+		HTTPS:   https,
 	}, nil
 }
 

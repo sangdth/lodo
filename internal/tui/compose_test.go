@@ -346,6 +346,18 @@ func TestPreview_SubdomainUsesItsProjectsFile(t *testing.T) {
 	}
 }
 
+func TestPreview_HTTPSName(t *testing.T) {
+	t.Parallel()
+
+	domains := slices.Clone(sample)
+	domains[0].Compose = flowyDev
+	domains[1].HTTPS = true                                 // dashboard.crm.test
+	m := send(send(ready(inFlowy(), domains), "down"), "p") // dashboard.crm.test, on port 3000
+	if content := ansi.Strip(m.preview.GetContent()); !strings.Contains(content, "APP_URL: https://dashboard.crm.test") {
+		t.Errorf("preview:\n%s\nwant localhost:3000 sent to https://dashboard.crm.test", content)
+	}
+}
+
 // devFix is a package.json line NextDev would fix for flowy.test.
 var devFix = []compose.Fix{{File: "package.json", Line: 6, Old: `    "dev": "next dev",`, New: `    "dev": "next dev -H 127.0.1.3",`}}
 
@@ -424,16 +436,16 @@ func TestColumns(t *testing.T) {
 	for _, c := range m.table.Columns() {
 		titles = append(titles, c.Title)
 	}
-	if want := []string{"name", "address", "port", "compose", "own", "check"}; !slices.Equal(titles, want) {
+	if want := []string{"name", "address", "port", "https", "compose", "own", "check"}; !slices.Equal(titles, want) {
 		t.Errorf("columns = %q, want %q", titles, want)
 	}
 	if got, want := m.table.Columns()[0].Width, ansi.StringWidth("  ● dashboard.crm.test"); got != want {
 		t.Errorf("name column = %d wide, want %d, the longest row", got, want)
 	}
-	if got := m.table.Rows()[2][3]; got != "~/Projects/flowy/compose.dev.yaml" {
+	if got := m.table.Rows()[2][4]; got != "~/Projects/flowy/compose.dev.yaml" {
 		t.Errorf("flowy.test's compose cell = %q, want the path from home", got)
 	}
-	if got := m.table.Rows()[3][3]; got != "–" {
+	if got := m.table.Rows()[3][4]; got != "–" {
 		t.Errorf("old.test's compose cell = %q, want – for no", got)
 	}
 }

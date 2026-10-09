@@ -8,7 +8,9 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"time"
 
 	"github.com/sangdth/lodo/internal/brew"
 	"github.com/sangdth/lodo/internal/caddy"
@@ -62,6 +64,7 @@ func Setup(ctx context.Context, p paths.Paths, r run.Runner, out io.Writer) erro
 			return "", brew.Restart(ctx, r, p.Brew, "dnsmasq")
 		}},
 		{"Caddy serves lodo's sites on port 80", "brew services restart caddy", func() (string, error) { return "", setupCaddy(ctx, p, r) }},
+		{"Caddy's local CA trusted for HTTPS names", "caddy trust", func() (string, error) { return "", trustCaddy(ctx, p, r) }},
 		{"sudo runs the resolver script without a password", "lodo setup", func() (string, error) {
 			_, err := r.Run(ctx, p.Sudo, "-n", "-k", p.Script)
 			return "", err
@@ -225,6 +228,42 @@ func setupCaddy(ctx context.Context, p paths.Paths, r run.Runner) error {
 	}
 	return brew.Restart(ctx, r, p.Brew, "caddy")
 }
+
+// trustCaddy adds Caddy's local root certificate to the System keychain, so
+// browsers trust the certificates tls internal makes. caddy trust fetches the
+// root from Caddy's admin API, so Caddy must be running, and runs sudo itself,
+// which Setup's sudo -v already covered. It skips unless an enabled domain has
+// HTTPS on.
+func trustCaddy(ctx context.Context, p paths.Paths, r run.Runner) error {
+	domains, err := store.Load(p.DomainsJSON)
+	if err != nil {
+		return err
+	}
+	if !slices.ContainsFunc(domains, func(d store.Domain) bool { return d.Enabled && d.HTTPS }) {
+		return skipped("no enabled name has HTTPS on")
+	}
+	if !exists(p.Caddy) {
+		return skipped("Caddy is not installed; names with HTTPS on need it: brew install caddy, then lodo setup")
+	}
+	// Setup has just restarted Caddy, and its admin API may not listen yet.
+	for try := 1; ; try++ {
+		err := r.RunTTY(ctx, p.Caddy, "trust")
+		if err == nil || try == trustTries {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return err
+		case <-time.After(trustWait):
+		}
+	}
+}
+
+// caddy trust gets trustTries tries, trustWait apart, while Caddy starts.
+const (
+	trustTries = 5
+	trustWait  = 400 * time.Millisecond
+)
 
 // installFile stages content and installs it as root with mode.
 func installFile(ctx context.Context, p paths.Paths, r run.Runner, content, target, mode string) error {
