@@ -47,12 +47,18 @@ stops the commit.
   when the task asks for it. `lodo doctor`, `lodo version` and the tests are safe.
 - Every external command goes through `run.Runner`, with the absolute tool path from `paths.Paths` and each
   argument passed separately. Nothing builds a shell command line from data.
-- The root script only creates `/etc/resolver` files named by lines matching `store.NamePattern`, with fixed
-  content, and only deletes files that start with lodo's marker line. Changes to it keep those three properties.
-- Setup trusts Caddy's local CA (`caddy trust`) only when a name has HTTPS on, and uninstall untrusts it: a
-  trusted root signs certificates for any site.
+- The root script reads the names on standard input (`run.Runner.RunInput`), never from a path, and copies at
+  most `system.MaxScriptInput` bytes into its own temp dir. It only creates `/etc/resolver` files named by lines
+  matching `store.NamePattern`, with fixed content, and only deletes files that start with lodo's marker line.
+  Changes to it keep those three properties.
+- Setup trusts Caddy's local CA only when a name has HTTPS on: it copies the root file Caddy wrote to
+  `~/.config/lodo/caddy-root.crt` and runs `security add-trusted-cert` on that copy; uninstall untrusts the copy.
+  A trusted root signs certificates for any site. Nothing uses Caddy's admin API; lodo's block in Homebrew's
+  Caddyfile turns it off.
 - The TUI writes one project file: the `.env` a linked compose file runs with, only its `DOCKER_HOST_IP`
-  lines, through `fsutil`, and never one that git tracks. Everything else in a project stays read-only.
+  lines, through `fsutil`, only when it lies inside the project once symlinks are followed, and never one that
+  git tracks (git runs with `safe.bareRepository=explicit` and `core.fsmonitor=false`). Everything else in a
+  project stays read-only, and lodo reads project files only through `fsutil.ReadRegular`.
 - Names end in `.test`, from `store.TLD`. macOS sends a name with one label before `.local` to Bonjour only, so
   `.local` can't serve project names like `media.local`.
 - Golden files live in each package's `testdata/` and use `github.com/charmbracelet/x/exp/golden`.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -20,7 +21,7 @@ func uninstallCalls(p paths.Paths, withScript, withCaddy bool) []string {
 	}
 	calls = append(calls, run.Line(p.Brew, "services", "stop", "dnsmasq"))
 	if withCaddy {
-		calls = append(calls, run.Line(p.Caddy, "untrust"), run.Line(p.Brew, "services", "stop", "caddy"))
+		calls = append(calls, run.Line(p.Brew, "services", "stop", "caddy"))
 	}
 	calls = append(calls,
 		run.Line(p.Sudo, "-n", p.Launchctl, "bootout", "system/io.lodo.loopback"),
@@ -66,7 +67,9 @@ func TestUninstall(t *testing.T) {
 	if got, err := store.Load(p.DomainsJSON); err != nil || len(got) != 1 {
 		t.Errorf("domains.json after uninstall: %v, %v; want it kept", got, err)
 	}
-	assertFile(t, p.Resolvers, "")
+	if got := r.Inputs(run.Line(p.Sudo, "-n", p.Script)); !slices.Equal(got, []string{""}) {
+		t.Errorf("resolver script input = %q, want one empty list", got)
+	}
 	if !strings.Contains(out.String(), "sudo brew services start dnsmasq") {
 		t.Errorf("output lacks the hint to restore the root job:\n%s", out.String())
 	}
@@ -99,23 +102,5 @@ func TestUninstall_NothingInstalled(t *testing.T) {
 	assertCalls(t, r.Calls(), uninstallCalls(p, false, false))
 	if _, err := os.Stat(p.DomainsJSON); !os.IsNotExist(err) {
 		t.Errorf("uninstall created domains.json: %v", err)
-	}
-}
-
-// TestUninstall_UntrustFails runs uninstall where caddy untrust fails, as it
-// does for a root that was never trusted; uninstall goes on.
-func TestUninstall_UntrustFails(t *testing.T) {
-	t.Parallel()
-
-	p, r := newMac(t, true)
-	writeFile(t, p.SystemCaddyfile, system.CaddyBlock(p))
-	r.Fail(run.Line(p.Caddy, "untrust"), "certificate not found")
-	var out strings.Builder
-	if err := system.Uninstall(context.Background(), p, r, &out); err != nil {
-		t.Fatalf("Uninstall: %v\n%s", err, out.String())
-	}
-	assertCalls(t, r.Calls(), uninstallCalls(p, false, true))
-	if want := "✓ Caddy's local CA no longer trusted (caddy untrust failed, so it likely was never trusted)"; !strings.Contains(out.String(), want) {
-		t.Errorf("output lacks %q:\n%s", want, out.String())
 	}
 }

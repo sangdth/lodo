@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/sangdth/lodo/internal/compose"
@@ -301,6 +302,36 @@ func TestFind_Symlinks(t *testing.T) {
 		if want := []string{filepath.Join(root, "compose.yml")}; !slices.Equal(got, want) {
 			t.Errorf("Find(%s) = %q, want %q", root, got, want)
 		}
+	}
+}
+
+// TestFind_NotRegular checks that a compose name counts only when it is a
+// regular file once symlinks are followed: never a device, a FIFO or a folder.
+func TestFind_NotRegular(t *testing.T) {
+	t.Parallel()
+
+	tmp := t.TempDir()
+	root := filepath.Join(tmp, "project")
+	tree(t, tmp, "project/package.json", "elsewhere/real.yml")
+	links := map[string]string{
+		"compose.dev.yml":    filepath.Join(tmp, "elsewhere", "real.yml"),
+		"compose.yml":        "/dev/null",
+		"docker-compose.yml": filepath.Join(tmp, "elsewhere"),
+	}
+	for name, target := range links {
+		if err := os.Symlink(target, filepath.Join(root, name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := syscall.Mkfifo(filepath.Join(root, "compose.local.yml"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := compose.Find(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{filepath.Join(root, "compose.dev.yml")}; !slices.Equal(got, want) {
+		t.Errorf("Find = %q, want %q", got, want)
 	}
 }
 

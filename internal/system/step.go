@@ -28,10 +28,20 @@ type skipped string
 
 func (s skipped) Error() string { return string(s) }
 
+// warning marks a step that failed without stopping the rest; its text says
+// what went wrong and how to finish by hand.
+type warning string
+
+func (w warning) Error() string { return string(w) }
+
 func (s steps) do(step, fix string, fn func() (string, error)) error {
 	note, err := fn()
 	if why, ok := errors.AsType[skipped](err); ok {
 		fmt.Fprintf(s.out, "– %s: %s\n", step, why)
+		return nil
+	}
+	if why, ok := errors.AsType[warning](err); ok {
+		fmt.Fprintf(s.out, "! %s: %s\n", step, why)
 		return nil
 	}
 	if err != nil {

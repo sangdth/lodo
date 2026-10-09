@@ -10,10 +10,12 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/sangdth/lodo/internal/brew"
 	"github.com/sangdth/lodo/internal/caddy"
+	"github.com/sangdth/lodo/internal/dnsmasq"
 	"github.com/sangdth/lodo/internal/fsutil"
 	"github.com/sangdth/lodo/internal/paths"
 	"github.com/sangdth/lodo/internal/run"
@@ -64,11 +66,8 @@ func Setup(ctx context.Context, p paths.Paths, r run.Runner, out io.Writer) erro
 			return "", brew.Restart(ctx, r, p.Brew, "dnsmasq")
 		}},
 		{"Caddy serves lodo's sites on port 80", "brew services restart caddy", func() (string, error) { return "", setupCaddy(ctx, p, r) }},
-		{"Caddy's local CA trusted for HTTPS names", "caddy trust", func() (string, error) { return "", trustCaddy(ctx, p, r) }},
-		{"sudo runs the resolver script without a password", "lodo setup", func() (string, error) {
-			_, err := r.Run(ctx, p.Sudo, "-n", "-k", p.Script)
-			return "", err
-		}},
+		{"Caddy's local CA trusted for HTTPS names", "lodo setup", func() (string, error) { return "", trustCaddy(ctx, p, r) }},
+		{"sudo runs the resolver script without a password", "lodo setup", func() (string, error) { return "", proveScript(ctx, p, r) }},
 	} {
 		if err := s.do(step.name, step.fix, step.fn); err != nil {
 			return err
@@ -194,6 +193,18 @@ func installLoopback(ctx context.Context, p paths.Paths, r run.Runner) error {
 	return err
 }
 
+// proveScript runs the resolver script with the enabled names in domains.json
+// through sudo -k, which drops the password setup cached, so it passes only
+// when the sudoers rule lets it run without one.
+func proveScript(ctx context.Context, p paths.Paths, r run.Runner) error {
+	domains, err := store.Load(p.DomainsJSON)
+	if err != nil {
+		return err
+	}
+	_, err = r.RunInput(ctx, dnsmasq.ResolverList(domains), p.Sudo, "-n", "-k", p.Script)
+	return err
+}
+
 func removeResolverLocal(ctx context.Context, p paths.Paths, r run.Runner) (string, error) {
 	local := filepath.Join(p.ResolverDir, "local")
 	if !exists(local) {
@@ -230,10 +241,11 @@ func setupCaddy(ctx context.Context, p paths.Paths, r run.Runner) error {
 }
 
 // trustCaddy adds Caddy's local root certificate to the System keychain, so
-// browsers trust the certificates tls internal makes. caddy trust fetches the
-// root from Caddy's admin API, so Caddy must be running, and runs sudo itself,
-// which Setup's sudo -v already covered. It skips unless an enabled domain has
-// HTTPS on.
+// browsers trust the certificates tls internal makes. It reads the root from
+// the file Caddy writes at startup, never from a server, copies it to
+// p.TrustedCA and trusts that copy, which also records what uninstall
+// untrusts. security runs through sudo, which Setup's sudo -v already covered.
+// It skips unless an enabled domain has HTTPS on.
 func trustCaddy(ctx context.Context, p paths.Paths, r run.Runner) error {
 	domains, err := store.Load(p.DomainsJSON)
 	if err != nil {
@@ -245,21 +257,68 @@ func trustCaddy(ctx context.Context, p paths.Paths, r run.Runner) error {
 	if !exists(p.Caddy) {
 		return skipped("Caddy is not installed; names with HTTPS on need it: brew install caddy, then lodo setup")
 	}
-	// Setup has just restarted Caddy, and its admin API may not listen yet.
+	root, err := readCaddyRoot(ctx, p)
+	if err != nil {
+		return err
+	}
+	had := exists(p.TrustedCA)
+	if _, err := fsutil.WriteFile(p.TrustedCA, root, 0o644); err != nil {
+		return err
+	}
+	err = r.RunTTY(ctx, p.Sudo, p.Security, "add-trusted-cert", "-d", "-r", "trustRoot", "-k", p.SystemKeychain, p.TrustedCA)
+	if err != nil && !had {
+		_ = os.Remove(p.TrustedCA) // nothing was trusted, so nothing is left to record
+	}
+	return err
+}
+
+// readCaddyRoot reads Caddy's root certificate. Setup has just restarted
+// Caddy, which may not have written it yet, so it waits for the file. The file
+// must be a regular file the user owns, not a link: lodo trusts what it holds.
+func readCaddyRoot(ctx context.Context, p paths.Paths) ([]byte, error) {
 	for try := 1; ; try++ {
-		err := r.RunTTY(ctx, p.Caddy, "trust")
-		if err == nil || try == trustTries {
-			return err
+		info, err := os.Lstat(p.CaddyRoot)
+		if err == nil {
+			if err := ownedRegular(info); err != nil {
+				return nil, fmt.Errorf("caddy's root %s: %w", p.CaddyRoot, err)
+			}
+			data, err := os.ReadFile(p.CaddyRoot)
+			if err != nil {
+				return nil, fmt.Errorf("read caddy's root: %w", err)
+			}
+			return data, nil
+		}
+		if !errors.Is(err, fs.ErrNotExist) {
+			return nil, fmt.Errorf("check caddy's root: %w", err)
+		}
+		if try == trustTries {
+			return nil, fmt.Errorf("caddy has not made its root %s; check caddy runs: brew services info caddy", p.CaddyRoot)
 		}
 		select {
 		case <-ctx.Done():
-			return err
+			return nil, ctx.Err()
 		case <-time.After(trustWait):
 		}
 	}
 }
 
-// caddy trust gets trustTries tries, trustWait apart, while Caddy starts.
+// ownedRegular returns an error unless info is a regular file the current
+// user owns.
+func ownedRegular(info fs.FileInfo) error {
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("not a regular file (%s)", info.Mode().Type())
+	}
+	st, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return errors.New("owner unknown")
+	}
+	if int(st.Uid) != os.Getuid() {
+		return fmt.Errorf("owned by uid %d, not you", st.Uid)
+	}
+	return nil
+}
+
+// readCaddyRoot gets trustTries tries, trustWait apart, while Caddy starts.
 const (
 	trustTries = 5
 	trustWait  = 400 * time.Millisecond

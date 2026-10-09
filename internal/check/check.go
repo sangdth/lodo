@@ -36,6 +36,8 @@ type Env struct {
 	HTTPSPort int            // the port Caddy serves HTTPS on
 	RootCAs   *x509.CertPool // the CAs the HTTPS probe trusts; nil means this Mac's
 	RootUID   uint32         // the uid that must own the resolver script: 0, or the test user's uid in tests
+
+	dnsmasqOff bool // check 1 found dnsmasq turned off; run sets it for the checks after
 }
 
 // NewEnv returns the Env for this Mac: dnsmasq on 127.0.0.1:53535, Caddy on
@@ -115,6 +117,9 @@ func (e Env) run(ctx context.Context, domains []store.Domain, results []Result, 
 	for i, c := range doctorChecks[:n] {
 		checks[i] = c.run(e, ctx, domains, results)
 		checks[i].ID, checks[i].Name = i+1, c.name
+		if i == 0 {
+			e.dnsmasqOff = checks[0].Off
+		}
 	}
 	// With dnsmasq turned off no name resolves, and lodo apply leaves it off.
 	if n >= 7 && checks[0].Off && !checks[6].OK {
@@ -195,7 +200,8 @@ func (e Env) checkLoopback(ctx context.Context, _ []store.Domain, _ []Result) Ch
 }
 
 // checkResolvers: the root script is the one setup installs, sudo runs it
-// without a password, and every enabled domain has its resolver file.
+// without a password, and every enabled domain has its resolver file. With
+// dnsmasq turned off, no file lodo wrote is left instead.
 func (e Env) checkResolvers(ctx context.Context, domains []store.Domain, _ []Result) Check {
 	p := e.Paths
 	if problem := e.scriptProblem(); problem != "" {
@@ -203,6 +209,9 @@ func (e Env) checkResolvers(ctx context.Context, domains []store.Domain, _ []Res
 	}
 	if _, err := e.Runner.Run(ctx, p.Sudo, "-n", "-k", "-l", p.Script); err != nil {
 		return fail("sudo asks for a password: the sudoers rule is missing", fixSetup)
+	}
+	if e.dnsmasqOff {
+		return e.resolversOff()
 	}
 	on := enabled(domains)
 	var missing, foreign, foreignNames []string
@@ -228,6 +237,32 @@ func (e Env) checkResolvers(ctx context.Context, domains []store.Domain, _ []Res
 		return fail("missing for "+firstFew(missing, ", "), fixApply)
 	}
 	return pass(plural(len(on), "file"))
+}
+
+// resolversOff passes when no /etc/resolver file starts with lodo's marker:
+// with dnsmasq turned off, one would send .test lookups to a port any account
+// could take. Files left from before are reported as off, with the fix in the
+// detail, so a dnsmasq turned off never keeps the TUI shut; lodo apply, or
+// turning dnsmasq off again, removes them.
+func (e Env) resolversOff() Check {
+	dir := e.Paths.ResolverDir
+	entries, err := os.ReadDir(dir)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return off("dnsmasq turned off; " + oneLine(err.Error()))
+	}
+	var left []string
+	for _, entry := range entries {
+		if !entry.Type().IsRegular() {
+			continue
+		}
+		if got, err := readFile(filepath.Join(dir, entry.Name())); err == nil && strings.HasPrefix(got, system.Marker+"\n") {
+			left = append(left, entry.Name())
+		}
+	}
+	if len(left) > 0 {
+		return off("dnsmasq turned off, but lodo apply should remove these: " + firstFew(left, ", "))
+	}
+	return pass("none while dnsmasq is turned off")
 }
 
 // scriptProblem says what is wrong with the installed resolver script, or

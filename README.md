@@ -49,8 +49,8 @@ Run `lodo setup` as yourself, not with `sudo`. It asks for your password once, b
 9. runs the script through `sudo -n` to prove the rule works, then prints `lodo doctor`'s checks.
 
 It prints one line per step and stops at the first failure, with the command that fixes it. Running it again is
-safe: it repairs the setup and keeps the first backup. Do so after you install Caddy, and when `lodo doctor`
-reports the script out of date after an upgrade. After setup, adding, editing and deleting names never asks for
+safe: it repairs the setup and keeps the first backup. Do so after you install Caddy, and after you upgrade lodo
+when `lodo doctor` reports "script out of date". After setup, adding, editing and deleting names never asks for
 a password, and neither does `lodo apply`.
 
 ## Using lodo
@@ -73,7 +73,8 @@ The top line shows Caddy, dnsmasq, loopback and resolvers (doctor checks 8, 1, 3
 works, a dim `○` is off (turned off, or Caddy not running while no name has a port), and a red `○` needs
 `lodo doctor`. `tab` moves the keys to Caddy and dnsmasq: `←` `→` (or `h` `l`) pick one, `space` turns it on or
 off, `tab` goes back to the names. A service turned off stays off through every change until you turn it on; with
-dnsmasq off no `.test` name resolves.
+dnsmasq off no `.test` name resolves, and lodo removes its `/etc/resolver` files, so no other account's process
+can answer `.test` lookups on dnsmasq's port. Turning dnsmasq on writes them again.
 
 `●` marks a name that is on, `○` one that is off. Each change saves `domains.json`, applies it and checks every
 name. The status line at the bottom, above the key help, says what failed, or why the selected name fails.
@@ -124,7 +125,8 @@ asking; any other key leaves the question open. A name that isn't listed gets th
 `l` links the selected name: the compose file of the project lodo started in, or outside one the name's own,
 becomes the name's, and `DOCKER_HOST_IP=<address>` goes into the `.env` that file runs with. That is the file a
 `package.json` script passes with `--env-file`, else the project root's `.env`. lodo leaves a `.env` that git
-tracks alone: this Mac's address doesn't belong in a shared file. The question's `y`, `l` in the preview, and a
+tracks alone: this Mac's address doesn't belong in a shared file. It also refuses a `.env` outside the project,
+directly or through a symlink. The question's `y`, `l` in the preview, and a
 form save that changes a linked name's compose file or address do the same.
 
 ### HTTPS
@@ -134,15 +136,18 @@ own local certificate authority, and `http://<name>` keeps working. The `https` 
 column adds `https ✓` once a request over HTTPS reaches the app.
 
 Browsers accept the certificate once macOS trusts Caddy's root. After you turn on the first HTTPS name, run
-`lodo setup` again: it runs `caddy trust`, which adds the root to the System keychain and asks for your
-password. Until then the name's check says `https: Caddy's certificate isn't trusted: run lodo setup`.
+`lodo setup` again: it copies the root to `~/.config/lodo/caddy-root.crt`, adds that copy to the System keychain
+and asks for your password. Until then the name's check says `https: Caddy's certificate isn't trusted: run lodo
+setup`.
 
 - Safari and Chrome use the keychain. Firefox on macOS reads its roots too, through Settings → Privacy &
   Security → Certificates, "Allow Firefox to automatically trust third-party root certificates you install".
   Firefox's HTTPS-Only Mode then reaches the name instead of showing "Secure Site Not Available".
-- The root's private key lives in `~/Library/Application Support/Caddy`. Whatever can read it can sign a
-  certificate this Mac trusts, for any site, which is why lodo trusts it only once a name uses HTTPS.
-  `lodo uninstall` removes the trust with `caddy untrust`.
+- The root's private key lives in `/opt/homebrew/var/lib/caddy/pki/authorities/local`. Whatever can read it can
+  sign a certificate this Mac trusts, for any site, which is why lodo trusts it only once a name uses HTTPS.
+  `lodo uninstall` removes the trust from the copy in `~/.config/lodo`.
+- lodo turns Caddy's admin API off, so no other user or web page can change Caddy's config through
+  `localhost:2019`. Each site listens only on its row's loopback address, so other devices can't reach it.
 
 ### Sign-in callbacks
 
@@ -202,7 +207,7 @@ fails. The list does the same after every change. It refuses to run before `lodo
 2. `dnsmasq config`: Homebrew's `dnsmasq.conf` has one `conf-file=` line, lodo's, and listens on `127.0.0.1:53535`.
 3. `loopback`: the `io.lodo.loopback` job is loaded and all 50 addresses are on `lo0`.
 4. `resolvers`: the script is root-owned, mode 755 and current; `sudo` runs it without a password; every
-   enabled name has its `/etc/resolver` file.
+   enabled name has its `/etc/resolver` file, or, with dnsmasq turned off, none is left.
 5. `resolver for .local`: there is no `/etc/resolver/local`.
 6. `generated files`: lodo's generated files in `~/.config/lodo` match `domains.json`.
 7. `names resolve`: each enabled name resolves through dnsmasq and macOS; with a port, Caddy reaches the app.

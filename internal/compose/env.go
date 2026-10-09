@@ -4,19 +4,21 @@ import (
 	"cmp"
 	"encoding/json"
 	"maps"
-	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
+
+	"github.com/sangdth/lodo/internal/fsutil"
 )
 
 // EnvFile returns the .env file the compose file at path is run with: the one
 // a package.json script passes through --env-file to a command that names
 // path, or else the .env at the project's root. The root is the git root
-// above path, or path's folder outside a repository.
+// above path, or path's folder outside a repository. A script's file can lie
+// outside the root; the caller that writes it checks.
 func EnvFile(path string) string {
-	root := projectDir(path)
+	root := ProjectDir(path)
 	if env, ok := scriptEnvFile(root, path); ok {
 		return env
 	}
@@ -31,7 +33,7 @@ var envFileRE = regexp.MustCompile(`--env-file(?:=|\s+)(?:"([^"]+)"|'([^']+)'|(\
 // a command that names path. npm runs scripts at root, so a relative env file
 // starts there.
 func scriptEnvFile(root, path string) (string, bool) {
-	data, err := os.ReadFile(filepath.Join(root, "package.json")) //nolint:gosec // G304: the project's own package.json
+	data, err := fsutil.ReadRegular(filepath.Join(root, "package.json"), fsutil.MaxProjectFile)
 	if err != nil {
 		return "", false
 	}

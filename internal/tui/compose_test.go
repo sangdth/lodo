@@ -617,10 +617,10 @@ func TestBackend_LinkEnv(t *testing.T) {
 			}
 			r := run.NewFake() // an unknown command succeeds, which would read as tracked
 			for _, name := range []string{".env", "env.real"} {
-				r.Fail(run.Line(p.Git, "-C", root, "ls-files", "--error-unmatch", "--", name), "error: pathspec did not match any file(s) known to git")
+				r.Fail(lsFiles(p, root, name), "error: pathspec did not match any file(s) known to git")
 			}
 			if tt.tracked {
-				r.Set(run.Line(p.Git, "-C", root, "ls-files", "--error-unmatch", "--", ".env"), ".env\n")
+				r.Set(lsFiles(p, root, ".env"), ".env\n")
 			}
 			_, err = NewBackend(p, r).LinkEnv(t.Context(), composePath, "127.0.1.3")
 			if tt.wantErr == "" && err != nil || tt.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tt.wantErr)) {
@@ -645,6 +645,63 @@ func TestBackend_LinkEnv(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestBackend_LinkEnv_Outside(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		envFile string // a package.json script's --env-file; empty for none
+		symlink bool   // .env links to the file outside
+	}{
+		{name: "a symlink out of the project", symlink: true},
+		{name: "an --env-file up and out", envFile: "../outside.env"},
+		{name: "an absolute --env-file", envFile: "OUTSIDE"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			p := paths.ForTest(t.TempDir())
+			tmp, err := filepath.EvalSymlinks(t.TempDir()) // macOS keeps temp folders under the /var link
+			if err != nil {
+				t.Fatal(err)
+			}
+			root := filepath.Join(tmp, "app")
+			composePath := filepath.Join(root, "compose.yml")
+			outside := filepath.Join(tmp, "outside.env")
+			writeTestFile(t, filepath.Join(root, ".git", "HEAD"), "ref: refs/heads/main\n")
+			writeTestFile(t, composePath, "services: {}\n")
+			writeTestFile(t, outside, "Host x\n")
+			if tt.symlink {
+				if err := os.Symlink(outside, filepath.Join(root, ".env")); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if tt.envFile != "" {
+				envFile := strings.ReplaceAll(tt.envFile, "OUTSIDE", outside)
+				writeTestFile(t, filepath.Join(root, "package.json"),
+					`{"scripts":{"up":"docker compose --env-file `+envFile+` -f compose.yml up"}}`)
+			}
+			r := run.NewFake()
+			_, err = NewBackend(p, r).LinkEnv(t.Context(), composePath, "127.0.1.3")
+			if err == nil || !strings.Contains(err.Error(), "lodo writes only a .env inside the project") {
+				t.Fatalf("err = %v, want the outside refusal", err)
+			}
+			if got, err := os.ReadFile(outside); err != nil || string(got) != "Host x\n" {
+				t.Errorf("outside file = %q, %v; want it unchanged", got, err)
+			}
+			if len(r.Calls()) != 0 {
+				t.Errorf("ran %q, want no command", r.Calls())
+			}
+		})
+	}
+}
+
+// lsFiles is the git command LinkEnv asks whether git tracks dir/name with.
+func lsFiles(p paths.Paths, dir, name string) string {
+	return run.Line(p.Git, "-c", "safe.bareRepository=explicit", "-c", "core.fsmonitor=false",
+		"-C", dir, "ls-files", "--error-unmatch", "--", name)
 }
 
 // composeOf returns name's compose value in the last list b saved.

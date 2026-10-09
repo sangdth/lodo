@@ -1,11 +1,13 @@
 // Package fsutil writes files so a reader sees either the old content or the
-// new, never a partial file.
+// new, never a partial file, and reads a project's files only when they are
+// regular files of a bounded size.
 package fsutil
 
 import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -51,4 +53,42 @@ func WriteFile(path string, data []byte, perm fs.FileMode) (changed bool, err er
 		return false, fmt.Errorf("write %s: %w", path, err)
 	}
 	return true, nil
+}
+
+// MaxProjectFile is the most ReadRegular reads of a file a project holds: a
+// compose file, package.json, a script or a .env is far smaller.
+const MaxProjectFile = 1 << 20
+
+// ReadRegular returns the content of the regular file at path, following
+// symlinks. It refuses a directory, a device or a FIFO before it opens one,
+// since opening a FIFO blocks and a device can be endless, and it refuses a
+// file over limit bytes. A missing file's error matches fs.ErrNotExist.
+func ReadRegular(path string, limit int64) ([]byte, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", path, err)
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("read %s: not a regular file", path)
+	}
+	f, err := os.Open(path) //nolint:gosec // G304: callers pass a project's own files
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", path, err)
+	}
+	defer func() { _ = f.Close() }() // read only: a close error loses nothing
+	// The path can change between Stat and Open; check the file opened.
+	if info, err = f.Stat(); err != nil {
+		return nil, fmt.Errorf("read %s: %w", path, err)
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("read %s: not a regular file", path)
+	}
+	data, err := io.ReadAll(io.LimitReader(f, limit+1))
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", path, err)
+	}
+	if int64(len(data)) > limit {
+		return nil, fmt.Errorf("read %s: larger than %d bytes", path, limit)
+	}
+	return data, nil
 }

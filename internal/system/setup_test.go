@@ -87,7 +87,7 @@ func TestSetup(t *testing.T) {
 				}
 			}
 			if withCaddy {
-				assertFile(t, p.SystemCaddyfile, system.CaddyBlock(p))
+				assertFile(t, p.SystemCaddyfile, system.CaddyGlobalBlock+"\n"+system.CaddyBlock(p))
 				if _, err := os.Stat(p.SystemCaddyfileBackup); !os.IsNotExist(err) {
 					t.Errorf("Caddyfile backup made with no Caddyfile before: %v", err)
 				}
@@ -98,6 +98,26 @@ func TestSetup(t *testing.T) {
 				t.Errorf("staging dir left behind: %v", err)
 			}
 		})
+	}
+}
+
+func TestSetup_ScriptGetsEnabledNames(t *testing.T) {
+	t.Parallel()
+
+	p, r := newMac(t, false)
+	domains := []store.Domain{
+		{Name: "crm.test", Address: "127.0.1.1", Enabled: true},
+		{Name: "old.test", Address: "127.0.1.2"},
+	}
+	if err := store.Save(p.DomainsJSON, domains); err != nil {
+		t.Fatal(err)
+	}
+	var out strings.Builder
+	if err := system.Setup(context.Background(), p, r, &out); err != nil {
+		t.Fatalf("Setup: %v\n%s", err, out.String())
+	}
+	if got := r.Inputs(run.Line(p.Sudo, "-n", "-k", p.Script)); !slices.Equal(got, []string{"crm.test\n"}) {
+		t.Errorf("resolver script input = %q, want the enabled name", got)
 	}
 }
 
@@ -115,7 +135,7 @@ func TestSetup_SecondRunKeepsFirstBackup(t *testing.T) {
 	assertFile(t, p.SystemConfBackup, "# dnsmasq\n#port=5353\n")
 	assertFile(t, p.SystemConf, "# dnsmasq\n#port=5353\n\n"+system.ConfBlock(p))
 	assertFile(t, p.SystemCaddyfileBackup, "example.com {\n\trespond \"hi\"\n}\n")
-	assertFile(t, p.SystemCaddyfile, "example.com {\n\trespond \"hi\"\n}\n\n"+system.CaddyBlock(p))
+	assertFile(t, p.SystemCaddyfile, system.CaddyGlobalBlock+"\nexample.com {\n\trespond \"hi\"\n}\n\n"+system.CaddyBlock(p))
 }
 
 func TestSetup_StopsRootDnsmasq(t *testing.T) {
@@ -266,109 +286,4 @@ func removeFile(t *testing.T, path string) {
 func exists(path string) bool {
 	_, err := os.Lstat(path)
 	return err == nil
-}
-
-// TestSetup_TrustsCaddy checks caddy trust runs right after Caddy restarts,
-// and only when an enabled domain has HTTPS on and Caddy is installed.
-func TestSetup_TrustsCaddy(t *testing.T) {
-	t.Parallel()
-
-	secure := store.Domain{Name: "secure.test", Address: "127.0.1.1", Port: 3000, Enabled: true, HTTPS: true}
-	tests := []struct {
-		name      string
-		domains   []store.Domain
-		withCaddy bool
-		trust     bool   // caddy trust runs
-		wantOut   string // a line the output holds
-	}{
-		{
-			name: "enabled https domain", domains: []store.Domain{secure}, withCaddy: true, trust: true,
-			wantOut: "✓ Caddy's local CA trusted for HTTPS names\n",
-		},
-		{
-			name: "https domain disabled", withCaddy: true,
-			domains: []store.Domain{{Name: "secure.test", Address: "127.0.1.1", Port: 3000, HTTPS: true}},
-			wantOut: "– Caddy's local CA trusted for HTTPS names: no enabled name has HTTPS on\n",
-		},
-		{
-			name: "no domains.json yet", withCaddy: true,
-			wantOut: "– Caddy's local CA trusted for HTTPS names: no enabled name has HTTPS on\n",
-		},
-		{
-			name: "caddy not installed", domains: []store.Domain{secure},
-			wantOut: "– Caddy's local CA trusted for HTTPS names: Caddy is not installed",
-		},
-	}
-	t.Run("caddy trust keeps failing: tried 5 times, then setup stops", func(t *testing.T) {
-		t.Parallel()
-
-		p, r := newMac(t, true)
-		if err := os.MkdirAll(p.ConfigDir, 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := store.Save(p.DomainsJSON, []store.Domain{secure}); err != nil {
-			t.Fatal(err)
-		}
-		r.Fail(run.Line(p.Caddy, "trust"), "connection refused")
-		var out strings.Builder
-		if err := system.Setup(context.Background(), p, r, &out); err == nil {
-			t.Fatalf("Setup succeeded; want the trust step's error\n%s", out.String())
-		}
-		tries := 0
-		for _, c := range r.Calls() {
-			if c == run.Line(p.Caddy, "trust") {
-				tries++
-			}
-		}
-		if tries != 5 {
-			t.Errorf("caddy trust ran %d times, want 5", tries)
-		}
-	})
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			p, r := newMac(t, tt.withCaddy)
-			if tt.domains != nil {
-				if err := os.MkdirAll(p.ConfigDir, 0o755); err != nil {
-					t.Fatal(err)
-				}
-				if err := store.Save(p.DomainsJSON, tt.domains); err != nil {
-					t.Fatal(err)
-				}
-			}
-			var out strings.Builder
-			if err := system.Setup(context.Background(), p, r, &out); err != nil {
-				t.Fatalf("Setup: %v\n%s", err, out.String())
-			}
-			want := setupCalls(p, tt.withCaddy)
-			if tt.trust {
-				// caddy trust comes right after the restart, before the last call.
-				last := len(want) - 1
-				want = append(want[:last:last], run.Line(p.Caddy, "trust"), want[last])
-			}
-			assertCalls(t, r.Calls(), want)
-			if !strings.Contains(out.String(), tt.wantOut) {
-				t.Errorf("output lacks %q:\n%s", tt.wantOut, out.String())
-			}
-		})
-	}
-}
-
-func TestSetup_TrustFails(t *testing.T) {
-	t.Parallel()
-
-	p, r := newMac(t, true)
-	if err := os.MkdirAll(p.ConfigDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := store.Save(p.DomainsJSON, []store.Domain{{Name: "secure.test", Address: "127.0.1.1", Port: 3000, Enabled: true, HTTPS: true}}); err != nil {
-		t.Fatal(err)
-	}
-	r.Fail(run.Line(p.Caddy, "trust"), "connection refused")
-	err := system.Setup(context.Background(), p, r, &strings.Builder{})
-	se, ok := errors.AsType[*system.StepError](err)
-	if !ok || se.Step != "Caddy's local CA trusted for HTTPS names" || se.Fix != "caddy trust" {
-		t.Fatalf("err = %#v, want the trust step's StepError", err)
-	}
 }

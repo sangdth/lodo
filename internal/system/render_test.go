@@ -1,12 +1,15 @@
 package system_test
 
 import (
+	"context"
 	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/charmbracelet/x/exp/golden"
 
@@ -39,7 +42,7 @@ func TestScript_Run(t *testing.T) {
 	long := strings.Repeat("abc.", 61) + "abcde.test" // matches the pattern, 254 characters
 	tests := []struct {
 		name       string
-		list       *string           // nil: no list file
+		list       string            // the script's standard input
 		before     map[string]string // resolver dir content before the run
 		after      map[string]string // resolver dir content after the run
 		wantStdout string            // checked when the script succeeds
@@ -48,39 +51,39 @@ func TestScript_Run(t *testing.T) {
 	}{
 		{
 			name:       "writes valid names",
-			list:       ptr("crm.test\ntest.crm.test\n"),
+			list:       "crm.test\ntest.crm.test\n",
 			after:      map[string]string{"crm.test": resolver, "test.crm.test": resolver},
 			wantStdout: "lodo: 2 resolver files written, 0 removed, 0 lines skipped\n",
 		},
 		{
 			name:       "skips invalid lines",
-			list:       ptr("test\n../x.test\nX.TEST\nx.com\n\nx.test \n-x.test\nflowy.test\na/b.test\n" + long + "\n"),
+			list:       "test\n../x.test\nX.TEST\nx.com\n\nx.test \n-x.test\nflowy.test\na/b.test\n" + long + "\n",
 			after:      map[string]string{"flowy.test": resolver},
 			wantStdout: "lodo: 1 resolver files written, 0 removed, 9 lines skipped\n",
 		},
 		{
 			name:       "last line without newline",
-			list:       ptr("crm.test\nflowy.test"),
+			list:       "crm.test\nflowy.test",
 			after:      map[string]string{"crm.test": resolver, "flowy.test": resolver},
 			wantStdout: "lodo: 2 resolver files written, 0 removed, 0 lines skipped\n",
 		},
 		{
 			name:       "removes its files no longer listed",
-			list:       ptr("crm.test\n"),
+			list:       "crm.test\n",
 			before:     map[string]string{"old.test": resolver, "crm.test": resolver},
 			after:      map[string]string{"crm.test": resolver},
 			wantStdout: "lodo: 1 resolver files written, 1 removed, 0 lines skipped\n",
 		},
 		{
 			name:       "empty list removes all its files",
-			list:       ptr(""),
+			list:       "",
 			before:     map[string]string{"old.test": resolver, "older.test": resolver},
 			after:      map[string]string{},
 			wantStdout: "lodo: 0 resolver files written, 2 removed, 0 lines skipped\n",
 		},
 		{
 			name: "leaves files it did not write",
-			list: ptr("crm.test\n"),
+			list: "crm.test\n",
 			before: map[string]string{
 				"crm.test":   "nameserver 10.0.0.1\n",
 				"other.test": "nameserver 10.0.0.2\n",
@@ -95,12 +98,18 @@ func TestScript_Run(t *testing.T) {
 			wantStderr: "crm.test alone: lodo did not write it",
 		},
 		{
-			name:       "missing list",
-			list:       nil,
+			name:       "list as long as the cap",
+			list:       "crm.test\n" + strings.Repeat("x", system.MaxScriptInput-len("crm.test\n")),
+			after:      map[string]string{"crm.test": resolver},
+			wantStdout: "lodo: 1 resolver files written, 0 removed, 1 lines skipped\n",
+		},
+		{
+			name:       "list longer than the cap",
+			list:       "crm.test\n" + strings.Repeat("x", system.MaxScriptInput-len("crm.test\n")+1),
 			before:     map[string]string{"old.test": resolver},
 			after:      map[string]string{"old.test": resolver},
 			wantFail:   true,
-			wantStderr: "is missing or not a regular file",
+			wantStderr: "is longer than",
 		},
 	}
 	for _, tt := range tests {
@@ -109,10 +118,7 @@ func TestScript_Run(t *testing.T) {
 
 			p := paths.ForTest(t.TempDir())
 			writeDir(t, p.ResolverDir, tt.before)
-			if tt.list != nil {
-				writeFile(t, p.Resolvers, *tt.list)
-			}
-			stdout, stderr, err := runScript(t, p)
+			stdout, stderr, err := runScript(t, p, tt.list)
 			if tt.wantFail != (err != nil) {
 				t.Fatalf("err = %v, wantFail %v; stderr:\n%s", err, tt.wantFail, stderr)
 			}
@@ -136,8 +142,7 @@ func TestScript_RunFileModes(t *testing.T) {
 	t.Parallel()
 
 	p := paths.ForTest(t.TempDir())
-	writeFile(t, p.Resolvers, "crm.test\n")
-	if _, stderr, err := runScript(t, p); err != nil {
+	if _, stderr, err := runScript(t, p, "crm.test\n"); err != nil {
 		t.Fatalf("%v: %s", err, stderr)
 	}
 	info, err := os.Stat(filepath.Join(p.ResolverDir, "crm.test"))
@@ -149,27 +154,38 @@ func TestScript_RunFileModes(t *testing.T) {
 	}
 }
 
-func TestScript_RunSymlinkedList(t *testing.T) {
+// TestScript_RunNeverOpensInput feeds the script paths to FIFOs with no
+// writer, by absolute path and relative to its working directory. Opening one
+// would block until the timeout, so a quick run shows it read neither.
+func TestScript_RunNeverOpensInput(t *testing.T) {
 	t.Parallel()
 
 	p := paths.ForTest(t.TempDir())
-	target := filepath.Join(t.TempDir(), "secret")
-	writeFile(t, target, "crm.test\n")
-	if err := os.MkdirAll(filepath.Dir(p.Resolvers), 0o755); err != nil {
-		t.Fatal(err)
+	cwd := t.TempDir()
+	abs := filepath.Join(t.TempDir(), "list.test")
+	for _, fifo := range []string{abs, filepath.Join(cwd, "crm.test")} {
+		if err := syscall.Mkfifo(fifo, 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
-	if err := os.Symlink(target, p.Resolvers); err != nil {
-		t.Fatal(err)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	script := filepath.Join(t.TempDir(), "apply-resolvers.sh")
+	writeFile(t, script, system.Script(p))
+	var out, errOut strings.Builder
+	cmd := exec.CommandContext(ctx, "/bin/sh", script)
+	cmd.Dir = cwd
+	cmd.Stdin = strings.NewReader(abs + "\n/dev/stdin\ncrm.test\n")
+	cmd.Stdout, cmd.Stderr = &out, &errOut
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("%v: %s", err, errOut.String())
 	}
-	_, stderr, err := runScript(t, p)
-	if err == nil {
-		t.Fatal("err = nil, want the script to refuse a symlinked list")
+	if want := "lodo: 1 resolver files written, 0 removed, 2 lines skipped\n"; out.String() != want {
+		t.Errorf("stdout = %q, want %q", out.String(), want)
 	}
-	if !strings.Contains(stderr, "is missing or not a regular file") {
-		t.Errorf("stderr = %q", stderr)
-	}
-	if got := readDir(t, p.ResolverDir); len(got) != 0 {
-		t.Errorf("resolver dir = %v, want nothing written", got)
+	want := map[string]string{"crm.test": system.ResolverFile()}
+	if got := readDir(t, p.ResolverDir); !maps.Equal(got, want) {
+		t.Errorf("resolver dir = %v, want %v", got, want)
 	}
 }
 
@@ -177,8 +193,7 @@ func TestScript_RunQuotedPath(t *testing.T) {
 	t.Parallel()
 
 	p := paths.ForTest(filepath.Join(t.TempDir(), "it's here"))
-	writeFile(t, p.Resolvers, "crm.test\n")
-	if _, stderr, err := runScript(t, p); err != nil {
+	if _, stderr, err := runScript(t, p, "crm.test\n"); err != nil {
 		t.Fatalf("%v: %s", err, stderr)
 	}
 	if got := readDir(t, p.ResolverDir); len(got) != 1 {
@@ -190,9 +205,8 @@ func TestScript_RunTwice(t *testing.T) {
 	t.Parallel()
 
 	p := paths.ForTest(t.TempDir())
-	writeFile(t, p.Resolvers, "crm.test\nflowy.test\n")
 	for range 2 {
-		if _, stderr, err := runScript(t, p); err != nil {
+		if _, stderr, err := runScript(t, p, "crm.test\nflowy.test\n"); err != nil {
 			t.Fatalf("%v: %s", err, stderr)
 		}
 	}
@@ -217,8 +231,7 @@ func TestScript_AgreesWithStore(t *testing.T) {
 		"a.tests", "localhost", "a.test\r", "a\tb.test", "a b.test", "é.test", "a/b.test", "..test",
 	}
 	p := paths.ForTest(t.TempDir())
-	writeFile(t, p.Resolvers, strings.Join(names, "\n")+"\n")
-	if _, stderr, err := runScript(t, p); err != nil {
+	if _, stderr, err := runScript(t, p, strings.Join(names, "\n")+"\n"); err != nil {
 		t.Fatalf("%v: %s", err, stderr)
 	}
 	written := readDir(t, p.ResolverDir)
@@ -297,12 +310,13 @@ func TestCaddyBlock(t *testing.T) {
 }
 
 // runScript renders the script for p into a temp file and runs it with /bin/sh.
-func runScript(t *testing.T, p paths.Paths) (stdout, stderr string, err error) {
+func runScript(t *testing.T, p paths.Paths, stdin string) (stdout, stderr string, err error) {
 	t.Helper()
 	script := filepath.Join(t.TempDir(), "apply-resolvers.sh")
 	writeFile(t, script, system.Script(p))
 	var out, errOut strings.Builder
 	cmd := exec.Command("/bin/sh", script)
+	cmd.Stdin = strings.NewReader(stdin)
 	cmd.Stdout, cmd.Stderr = &out, &errOut
 	err = cmd.Run()
 	return out.String(), errOut.String(), err
@@ -345,5 +359,3 @@ func readDir(t *testing.T, dir string) map[string]string {
 	}
 	return got
 }
-
-func ptr(s string) *string { return &s }

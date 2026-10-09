@@ -25,12 +25,14 @@ type Paths struct {
 	Caddyfile   string // generated: one site per enabled domain with a port
 	Log         string // dnsmasq's query log
 	Staging     string // setup renders root-owned files here before installing them
+	TrustedCA   string // the copy of Caddy's root that setup trusted in the System keychain
 
 	// Homebrew's files, owned by the user.
 	SystemConf            string // the config Homebrew's dnsmasq service loads
 	SystemConfBackup      string
 	SystemCaddyfile       string // the config Homebrew's caddy service loads
 	SystemCaddyfileBackup string
+	CaddyRoot             string // the root certificate of the local CA Homebrew's caddy service makes
 
 	// Root-owned files and directories.
 	LaunchDaemons string // system launchd jobs
@@ -38,6 +40,9 @@ type Paths struct {
 	Script        string // the resolver script, run through sudo
 	Sudoers       string
 	ResolverDir   string
+
+	// SystemKeychain holds the roots every user's browsers trust.
+	SystemKeychain string
 
 	// Hosts is the hosts file; macOS and dnsmasq answer from it before DNS.
 	Hosts string
@@ -56,6 +61,7 @@ type Paths struct {
 	Dscacheutil string
 	Lsof        string
 	Git         string
+	Security    string
 
 	// Leftovers are LocalDNS files that setup reports and leaves alone.
 	Leftovers []string
@@ -78,7 +84,8 @@ func ForTest(root string) Paths {
 func build(root, home, user string) Paths {
 	sys := func(p string) string { return filepath.Join(root, p) }
 	config := filepath.Join(home, ".config", "lodo")
-	etc := sys("/opt/homebrew/etc")
+	brew := sys("/opt/homebrew")
+	etc := filepath.Join(brew, "etc")
 	daemons := sys("/Library/LaunchDaemons")
 	return Paths{
 		User: user,
@@ -91,11 +98,13 @@ func build(root, home, user string) Paths {
 		Caddyfile:   filepath.Join(config, "Caddyfile"),
 		Log:         filepath.Join(config, "dnsmasq.log"),
 		Staging:     filepath.Join(config, "staging"),
+		TrustedCA:   filepath.Join(config, "caddy-root.crt"),
 
 		SystemConf:            filepath.Join(etc, "dnsmasq.conf"),
 		SystemConfBackup:      filepath.Join(etc, "dnsmasq.conf.before-lodo"),
 		SystemCaddyfile:       filepath.Join(etc, "Caddyfile"),
 		SystemCaddyfileBackup: filepath.Join(etc, "Caddyfile.before-lodo"),
+		CaddyRoot:             filepath.Join(brew, "var/lib/caddy/pki/authorities/local/root.crt"),
 
 		LaunchDaemons: daemons,
 		LoopbackPlist: filepath.Join(daemons, "io.lodo.loopback.plist"),
@@ -103,11 +112,13 @@ func build(root, home, user string) Paths {
 		Sudoers:       sys("/etc/sudoers.d/lodo"),
 		ResolverDir:   sys("/etc/resolver"),
 
+		SystemKeychain: sys("/Library/Keychains/System.keychain"),
+
 		Hosts: sys("/etc/hosts"),
 
-		Brew:        sys("/opt/homebrew/bin/brew"),
-		Dnsmasq:     sys("/opt/homebrew/opt/dnsmasq/sbin/dnsmasq"),
-		Caddy:       sys("/opt/homebrew/bin/caddy"),
+		Brew:        filepath.Join(brew, "bin/brew"),
+		Dnsmasq:     filepath.Join(brew, "opt/dnsmasq/sbin/dnsmasq"),
+		Caddy:       filepath.Join(brew, "bin/caddy"),
 		Sudo:        sys("/usr/bin/sudo"),
 		Launchctl:   sys("/bin/launchctl"),
 		Ifconfig:    sys("/sbin/ifconfig"),
@@ -118,6 +129,7 @@ func build(root, home, user string) Paths {
 		Dscacheutil: sys("/usr/bin/dscacheutil"),
 		Lsof:        sys("/usr/sbin/lsof"),
 		Git:         sys("/usr/bin/git"),
+		Security:    sys("/usr/bin/security"),
 
 		Leftovers: []string{
 			filepath.Join(home, ".config", "localdns"),
