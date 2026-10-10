@@ -141,7 +141,7 @@ func TestModel_Services(t *testing.T) {
 		t.Errorf("SetService calls = %q, want %q", b.setServices, want)
 	}
 	bar := ansi.Strip(m.statusBar())
-	if !strings.HasPrefix(bar, " lodo   caddy ○   dnsmasq ○   loopback ●   resolvers ●") {
+	if !strings.HasSuffix(bar, "caddy ○   dnsmasq ○   loopback ●   resolvers ● ") {
 		t.Errorf("status bar = %q, want both services off", bar)
 	}
 	if got := strings.TrimSpace(ansi.Strip(m.statusLine())); got != "" {
@@ -205,7 +205,7 @@ func TestModel_StatusBarMarks(t *testing.T) {
 
 	b := &fakeBackend{failingChecks: map[int]string{3: "job not loaded"}, off: map[string]bool{"dnsmasq": true}}
 	m := ready(b, sample)
-	if bar, want := ansi.Strip(m.statusBar()), " lodo   caddy ●   dnsmasq ○   loopback ○   resolvers ●"; bar != want {
+	if bar, want := ansi.Strip(m.statusBar()), "caddy ●   dnsmasq ○   loopback ○   resolvers ● "; !strings.HasSuffix(bar, want) {
 		t.Errorf("status bar = %q, want %q", bar, want)
 	}
 	for _, tt := range []struct {

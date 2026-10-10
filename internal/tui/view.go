@@ -304,7 +304,8 @@ func mark(ok bool) string {
 // statusBar shows the system parts doctor checks, each with its state. The
 // service the keys act on is highlighted.
 func (m Model) statusBar() string {
-	parts := []string{m.styles.title.Render("lodo")}
+	logo := " " + m.styles.title.Render("lodo")
+	var parts []string
 	for _, p := range statusParts {
 		label := p.label
 		if m.onServices && label == services[m.service] {
@@ -312,7 +313,9 @@ func (m Model) statusBar() string {
 		}
 		parts = append(parts, label+" "+m.state(p.label, p.id))
 	}
-	return " " + strings.Join(parts, "   ")
+	right := strings.Join(parts, "   ") + " "
+	gap := max(3, m.innerWidth()-lipgloss.Width(logo)-lipgloss.Width(right))
+	return logo + strings.Repeat(" ", gap) + right
 }
 
 // state is a part's mark, like a name's: a green ● when it is on and works,

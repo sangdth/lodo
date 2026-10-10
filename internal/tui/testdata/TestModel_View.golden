@@ -4,7 +4,7 @@
                                                                                 
                                                                                 
 [90m╭──────────────────────────────────────────────────────────────────────────────╮[m
-[90m│[m [1mlodo[m   caddy [32m●[m   dnsmasq [32m●[m   loopback [32m●[m   resolvers [32m●[m                        [90m│[m
+[90m│[m [1mlodo[m                          caddy [32m●[m   dnsmasq [32m●[m   loopback [32m●[m   resolvers [32m●[m [90m│[m
 [90m│[m[90m──────────────────────────────────────────────────────────────────────────────[m[90m│[m
 [90m│[m [1;90mname           [m  [1;90maddress        [m  [1;90mport [m  [1;90mhttps[m  [1;90mcompose [m  [1;90mown[m  [1;90mcheck        [m [90m│[m
 [90m│[m[1;38;5;212m ● crm.test       127.0.1.1                                own  dns ✓         [m[90m│[m
