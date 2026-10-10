@@ -13,7 +13,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/sangdth/lodo/internal/check"
-	"github.com/sangdth/lodo/internal/compose"
+	"github.com/sangdth/lodo/internal/scan"
 	"github.com/sangdth/lodo/internal/store"
 )
 
@@ -28,14 +28,13 @@ type fakeBackend struct {
 	failingChecks map[int]string    // a check's detail when it fails
 	portsErr      error
 	serviceErr    error
-	projectRoot   string            // what Project returns for any folder
-	projectFiles  []string          // the compose files Project finds, best first
+	project       scan.Project      // what Scan finds for any folder; Root is empty for none
 	composeFiles  map[string]string // ReadCompose's files, by path
 	off           map[string]bool   // services turned off
 	setServices   []string          // each SetService call, such as "caddy off"
 	linkErr       error
-	nextDev       []compose.Fix // what NextDev returns for any compose file
-	log           string        // dnsmasq's log
+	hostFixes     []scan.Fix // what HostFixes returns for any project
+	log           string     // dnsmasq's log
 	tailErr       error
 	saved         [][]store.Domain
 	applied       [][]store.Domain
@@ -45,7 +44,13 @@ type fakeBackend struct {
 
 func (f *fakeBackend) PortsReady() error { return f.portsErr }
 
-func (f *fakeBackend) Project(string) (string, []string) { return f.projectRoot, f.projectFiles }
+// Scan proposes with the real scan.Propose, on the project set in the fake.
+func (f *fakeBackend) Scan(_, name string, domains []store.Domain) (scan.Project, scan.Proposal, bool) {
+	if f.project.Root == "" {
+		return scan.Project{}, scan.Proposal{}, false
+	}
+	return f.project, scan.Propose(f.project, domains, name), true
+}
 
 func (f *fakeBackend) ReadCompose(path string) ([]byte, error) {
 	content, ok := f.composeFiles[path]
@@ -92,7 +97,7 @@ func (f *fakeBackend) appendLog(s string) {
 	f.log += s
 }
 
-func (f *fakeBackend) NextDev(string, string) []compose.Fix { return f.nextDev }
+func (f *fakeBackend) HostFixes(string, string) []scan.Fix { return f.hostFixes }
 
 // LinkEnv records the link and names the .env next to the compose file.
 func (f *fakeBackend) LinkEnv(_ context.Context, composePath, address string) (string, error) {

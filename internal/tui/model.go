@@ -10,11 +10,13 @@ import (
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/table"
+	"charm.land/bubbles/v2/textinput"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/sangdth/lodo/internal/check"
 	"github.com/sangdth/lodo/internal/compose"
+	"github.com/sangdth/lodo/internal/scan"
 	"github.com/sangdth/lodo/internal/store"
 )
 
@@ -38,12 +40,12 @@ const (
 	modeForm                // the add or edit form
 	modeConfirm             // a delete waiting for y
 	modeLog                 // dnsmasq's query log
-	modeAsk                 // the compose question at startup
+	modeScan                // the scan's review of the project lodo started in
 	modePreview             // a compose file with lodo's changes
 )
 
-// Start is where lodo started: the folder the compose question looks for a
-// project in, empty to skip it, and the home folder that ~ stands for.
+// Start is where lodo started: the folder the scan looks for a project in,
+// empty to skip it, and the home folder that ~ stands for.
 type Start struct {
 	Dir  string
 	Home string
@@ -55,9 +57,14 @@ type Model struct {
 	backend Backend
 	origin  Start // where lodo started
 
-	project  projectMsg // the project lodo started in; empty outside one
-	asked    bool       // the compose question has run, or had nothing to ask
-	question question   // what the compose question offers, while it is open
+	project   scan.Project  // the project lodo started in; Root is empty outside one
+	proposal  scan.Proposal // what the last scan found missing from the list
+	scanned   bool          // the first scan is done
+	offered   bool          // the startup offer ran, or had nothing to offer
+	scanName  string        // the project's name the user chose in the review; empty lets the scan pick
+	renaming  bool          // e in the review: the keys type the project's name
+	rename    textinput.Model
+	renameErr string // why the typed name can't be the project's
 
 	mode       mode
 	form       form
@@ -78,7 +85,7 @@ type Model struct {
 	logEvery   time.Duration // how often the open log is read
 
 	preview      viewport.Model
-	previewTitle string // the file, its name and how many changes, such as compose.dev.yaml for flowy.test · 3 changes
+	previewTitle string // the file, its name and how many changes, such as compose.dev.yaml for flowy.test · 3 changes; or the scan's folder
 	previewEnv   string // the .env line the file's ports need, such as DOCKER_HOST_IP=127.0.1.3; empty when none binds it
 	previewOwner string // the name whose compose file the preview shows
 
@@ -138,12 +145,12 @@ func tableKeys() table.KeyMap {
 	}
 }
 
-// Init checks the system and every name while the spinner runs, and looks
-// for the project lodo started in.
+// Init checks the system and every name while the spinner runs, and scans
+// the project lodo started in.
 func (m Model) Init() tea.Cmd {
 	cmds := []tea.Cmd{m.report(m.domains), m.spinner.Tick}
 	if m.origin.Dir != "" {
-		cmds = append(cmds, m.findProject())
+		cmds = append(cmds, m.runScan(false))
 	}
 	return tea.Batch(cmds...)
 }
@@ -250,11 +257,11 @@ func (m Model) thenLink(cmd tea.Cmd, d store.Domain) tea.Cmd {
 			msg.err = errors.Join(msg.err, err)
 			return msg
 		}
-		// The next dev hint goes before the .env's path, which a narrow
-		// status line cuts.
+		// The host hint goes before the .env's path, which a narrow status
+		// line cuts.
 		hint := ""
-		if len(b.NextDev(d.Compose, d.Address)) > 0 {
-			hint = " · next dev needs -H: p shows it"
+		if len(b.HostFixes(compose.ProjectDir(d.Compose), d.Address)) > 0 {
+			hint = " · dev servers need a host: p shows it"
 		}
 		msg.note = "linked " + d.Name + hint + " · " + compose.EnvVar + "=" + d.Address + " in " + shortPath(env, home)
 		return msg

@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -24,6 +25,8 @@ Usage:
   lodo setup      one-time system setup; asks for your password
   lodo apply      write the configs from domains.json, reload, and check every name
   lodo doctor     check every part and print what to fix
+  lodo scan       print what the project in this folder needs; --json for scripts,
+                  --name hugger to name the project
   lodo uninstall  remove what setup installed; keeps domains.json
   lodo version    print the version
   lodo help       print this help
@@ -52,16 +55,45 @@ func dispatch(args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintf(stderr, "lodo: %s takes no arguments\n\n%s", command, usage)
 			return 2
 		}
-		return runApp(command, stdout, stderr)
+		return runApp(command, scanFlags{}, stdout, stderr)
+	case "scan":
+		sf, err := parseScanFlags(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "lodo: scan: %v\n\n%s", err, usage)
+			return 2
+		}
+		return runApp(command, sf, stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "lodo: unknown command %q\n\n%s", args[0], usage)
 		return 2
 	}
 }
 
+// scanFlags are lodo scan's options: JSON output, and the project's name the
+// user chose, with or without .test.
+type scanFlags struct {
+	json bool
+	name string
+}
+
+func parseScanFlags(args []string) (scanFlags, error) {
+	var sf scanFlags
+	fs := flag.NewFlagSet("scan", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	fs.BoolVar(&sf.json, "json", false, "")
+	fs.StringVar(&sf.name, "name", "", "")
+	if err := fs.Parse(args); err != nil {
+		return sf, err
+	}
+	if fs.NArg() > 0 {
+		return sf, fmt.Errorf("unexpected argument %q", fs.Arg(0))
+	}
+	return sf, nil
+}
+
 // runApp runs the TUI or a command that reads or changes the system, as the
-// user.
-func runApp(command string, stdout, stderr io.Writer) int {
+// user. sf holds scan's options.
+func runApp(command string, sf scanFlags, stdout, stderr io.Writer) int {
 	if os.Geteuid() == 0 {
 		fmt.Fprintln(stderr, "lodo: run lodo as your user, not with sudo; it asks for your password when it needs it")
 		return 2
@@ -84,6 +116,13 @@ func runApp(command string, stdout, stderr io.Writer) int {
 		return a.apply(ctx)
 	case "doctor":
 		return a.doctor(ctx)
+	case "scan":
+		dir, err := os.Getwd()
+		if err != nil {
+			a.fail(fmt.Errorf("find the current folder: %w", err))
+			return 1
+		}
+		return a.scan(dir, sf)
 	default:
 		return a.uninstall(ctx)
 	}

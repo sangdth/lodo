@@ -2,6 +2,11 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -10,6 +15,7 @@ import (
 	"github.com/sangdth/lodo/internal/check"
 	"github.com/sangdth/lodo/internal/paths"
 	"github.com/sangdth/lodo/internal/run"
+	"github.com/sangdth/lodo/internal/scan"
 )
 
 func TestApp_Doctor(t *testing.T) {
@@ -77,5 +83,66 @@ func TestFormatResults(t *testing.T) {
 			t.Parallel()
 			golden.RequireEqual(t, formatResults(tt.results))
 		})
+	}
+}
+
+func TestApp_Scan(t *testing.T) {
+	t.Parallel()
+
+	tmp := t.TempDir()
+	root := filepath.Join(tmp, "shop")
+	for name, content := range map[string]string{
+		".git/HEAD":               "ref: refs/heads/master\n",
+		"package.json":            `{"scripts": {"dev": "turbo dev"}}`,
+		"pnpm-workspace.yaml":     "packages: [apps/*]\n",
+		"apps/web/package.json":   "{\n  \"scripts\": {\"dev\": \"next dev -p 3001\"}\n}\n",
+		"apps/api/package.json":   `{"scripts": {"dev": "nest start --watch"}}`,
+		"docker/compose.dev.yaml": "services: {}\n",
+	} {
+		path := filepath.Join(root, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	p := paths.ForTest(t.TempDir())
+
+	var stdout, stderr strings.Builder
+	a := newApp(p, run.NewFake(), &stdout, &stderr)
+	if code := a.scan(filepath.Join(root, "apps", "web"), scanFlags{}); code != 0 {
+		t.Fatalf("exit code = %d, stderr %q", code, stderr.String())
+	}
+	got := strings.ReplaceAll(stdout.String(), root, "<root>")
+	golden.RequireEqual(t, got)
+
+	stdout.Reset()
+	if code := a.scan(root, scanFlags{json: true}); code != 0 {
+		t.Fatalf("--json: exit code = %d, stderr %q", code, stderr.String())
+	}
+	var proposal scan.Proposal
+	if err := json.Unmarshal([]byte(stdout.String()), &proposal); err != nil || len(proposal.Add) != 3 {
+		t.Errorf("--json gave %+v, %v; want 3 names to add", proposal, err)
+	}
+	if _, err := os.Stat(p.DomainsJSON); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("scan wrote domains.json: %v", err)
+	}
+
+	stdout.Reset()
+	if code := a.scan(root, scanFlags{json: true, name: "store"}); code != 0 {
+		t.Fatalf("--name: exit code = %d, stderr %q", code, stderr.String())
+	}
+	if err := json.Unmarshal([]byte(stdout.String()), &proposal); err != nil || proposal.Name != "store.test" ||
+		proposal.Add[0].Root != root || !strings.HasSuffix(proposal.Add[1].Name, ".store.test") {
+		t.Errorf("--name store gave %+v, %v; want store.test with its subdomains", proposal, err)
+	}
+	if code := a.scan(root, scanFlags{name: "web.store"}); code != 2 {
+		t.Errorf("--name web.store: exit code = %d, want 2", code)
+	}
+
+	stderr.Reset()
+	if code := a.scan(tmp, scanFlags{}); code != 1 || !strings.Contains(stderr.String(), "not in a project") {
+		t.Errorf("outside a project: exit code %d, stderr %q", code, stderr.String())
 	}
 }

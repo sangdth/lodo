@@ -63,15 +63,17 @@ func TestProjectRoot(t *testing.T) {
 		{name: "git folder and package-lock.json", paths: []string{".git/", "package-lock.json"}, dir: ".", want: "."},
 		{name: "git file of a worktree", paths: []string{".git", "pnpm-lock.yaml"}, dir: ".", want: "."},
 		{name: "subfolder of a project", paths: []string{".git/", "yarn.lock", "apps/web/src/"}, dir: "apps/web/src", want: "."},
-		{name: "go.sum", paths: []string{".git/", "go.mod", "go.sum"}, dir: ".", want: "."},
-		{name: "bun.lockb", paths: []string{".git/", "bun.lockb"}, dir: ".", want: "."},
-		{name: "Cargo.lock", paths: []string{".git/", "Cargo.lock"}, dir: ".", want: "."},
-		{name: "no lock file", paths: []string{".git/", "package.json", "go.mod"}, dir: "."},
-		{name: "lock file only in a subfolder", paths: []string{".git/", "web/package-lock.json"}, dir: "web"},
-		{name: "folder named like a lock file", paths: []string{".git/", "deps.lock/"}, dir: "."},
-		{name: "nearest git root decides", paths: []string{".git/", "go.sum", "sub/.git", "sub/x/"}, dir: "sub/x"},
-		{name: "nested repo with its own lock file", paths: []string{".git/", "go.sum", "sub/.git/", "sub/yarn.lock"}, dir: "sub", want: "sub"},
-		{name: "outside any repo", paths: []string{"package-lock.json", "a/"}, dir: "a"},
+		{name: "git without a lock file", paths: []string{".git/", "package.json"}, dir: ".", want: "."},
+		{name: "git root wins over a lock file below it", paths: []string{".git/", "web/package-lock.json", "web/package.json"}, dir: "web", want: "."},
+		{name: "nearest git root decides", paths: []string{".git/", "go.sum", "sub/.git", "sub/x/"}, dir: "sub/x", want: "sub"},
+		{name: "lock file and manifest without git", paths: []string{"package.json", "pnpm-lock.yaml", "a/"}, dir: "a", want: "."},
+		{name: "go.sum without git", paths: []string{"go.mod", "go.sum"}, dir: ".", want: "."},
+		{name: "nearest lock folder without git", paths: []string{"go.mod", "go.sum", "web/package.json", "web/bun.lockb"}, dir: "web", want: "web"},
+		{name: "lock file without a manifest", paths: []string{"x.lock", "a/"}, dir: "a"},
+		{name: "manifest without a lock file", paths: []string{"package.json"}, dir: "."},
+		{name: "skills-lock.json is no lock file", paths: []string{"package.json", "skills-lock.json"}, dir: "."},
+		{name: "folder named like a lock file", paths: []string{"package.json", "deps.lock/"}, dir: "."},
+		{name: "neither", paths: []string{"a/"}, dir: "a"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -88,6 +90,16 @@ func TestProjectRoot(t *testing.T) {
 				t.Errorf("ProjectRoot(%s) = %q, %v; want %q, %v", tt.dir, got, ok, want, wantOK)
 			}
 		})
+	}
+}
+
+// TestProjectRoot_Home sets HOME, so it can't run in parallel.
+func TestProjectRoot_Home(t *testing.T) {
+	tmp := t.TempDir()
+	tree(t, tmp, ".git/", "package.json", "package-lock.json", "Downloads/")
+	t.Setenv("HOME", tmp)
+	if got, ok := compose.ProjectRoot(filepath.Join(tmp, "Downloads")); ok {
+		t.Errorf("ProjectRoot under a home folder that is a repository = %q, true; want false", got)
 	}
 }
 
@@ -116,8 +128,8 @@ func TestProjectRoot_Unreadable(t *testing.T) {
 		t.Parallel()
 
 		tmp := t.TempDir()
-		tree(t, tmp, ".git/", "go.sum")
-		lock(t, tmp, 0o311) // .git can be found, the lock file can't
+		tree(t, tmp, "package.json", "go.sum")
+		lock(t, tmp, 0o311) // the lock file can't be listed
 		if got, ok := compose.ProjectRoot(tmp); ok {
 			t.Errorf("ProjectRoot of an unreadable root = %q, true; want false", got)
 		}

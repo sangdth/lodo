@@ -24,49 +24,79 @@ var lockSuffixes = []string{".lock", ".lockb", "-lock.json", "-lock.yaml"}
 // docker-compose.yaml, compose.dev.yaml. The group is the variant, dev.
 var fileNameRE = regexp.MustCompile(`(?i)^(?:docker[-.])?compose(?:\.([a-z0-9][a-z0-9_-]*))?\.ya?ml$`)
 
-// ProjectRoot returns the git root dir is in when it holds a lock file, so lodo
-// knows it started in a project. ok is false otherwise.
+// ProjectRoot returns the project dir is in: the nearest git root above it,
+// or outside a repository the nearest folder above it that holds a lock file
+// and the manifest it pins: a stray *.lock in a temp folder makes no project.
+// The home folder is never a project, so a dotfiles repository there doesn't
+// make every folder one. ok is false outside a project, and when a folder on
+// the way up can't be read: a .git under it can't be ruled out.
 func ProjectRoot(dir string) (root string, ok bool) {
-	root, ok = gitRoot(dir)
-	if !ok || !hasLockFile(root) {
+	dir, err := filepath.Abs(dir)
+	if err != nil {
+		return "", false
+	}
+	root, found, err := walkUp(dir, isGitRoot)
+	if err == nil && !found {
+		root, found, err = walkUp(dir, isPackageRoot)
+	}
+	if err != nil || !found {
+		return "", false
+	}
+	if home, err := os.UserHomeDir(); err == nil && root == filepath.Clean(home) {
 		return "", false
 	}
 	return root, true
 }
 
-// gitRoot returns dir, or the nearest folder above it, that holds an entry
-// named .git: a worktree's is a file.
-func gitRoot(dir string) (string, bool) {
-	dir, err := filepath.Abs(dir)
-	if err != nil {
-		return "", false
-	}
+// walkUp returns dir, or the nearest folder above it, for which is reports
+// true. It stops at the first folder is can't check.
+func walkUp(dir string, is func(string) (bool, error)) (string, bool, error) {
 	for {
-		_, err = os.Lstat(filepath.Join(dir, ".git"))
-		if err == nil {
-			return dir, true
+		ok, err := is(dir)
+		if err != nil || ok {
+			return dir, ok, err
 		}
 		parent := filepath.Dir(dir)
-		if !errors.Is(err, fs.ErrNotExist) || parent == dir {
-			return "", false
+		if parent == dir {
+			return "", false, nil
 		}
 		dir = parent
 	}
 }
 
-// hasLockFile reports whether dir directly holds a lock file.
-func hasLockFile(dir string) bool {
+// isGitRoot reports whether dir holds an entry named .git: a worktree's is a
+// file.
+func isGitRoot(dir string) (bool, error) {
+	_, err := os.Lstat(filepath.Join(dir, ".git"))
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
+// manifests are the files a lock file pins.
+var manifests = []string{"package.json", "go.mod", "pyproject.toml", "Cargo.toml", "Gemfile", "composer.json"}
+
+// isPackageRoot reports whether dir directly holds a lock file and a manifest.
+func isPackageRoot(dir string) (bool, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return false
+		return false, err
 	}
-	return slices.ContainsFunc(entries, func(e fs.DirEntry) bool { return !e.IsDir() && isLockFile(e.Name()) })
+	file := func(match func(string) bool) bool {
+		return slices.ContainsFunc(entries, func(e fs.DirEntry) bool { return !e.IsDir() && match(e.Name()) })
+	}
+	return file(isLockFile) && file(func(name string) bool { return slices.Contains(manifests, name) }), nil
 }
 
 // isLockFile reports whether name is a package manager's lock file.
+// skills-lock.json pins an agent's skills, not a project's dependencies.
 func isLockFile(name string) bool {
-	if name == "go.sum" {
+	switch name {
+	case "go.sum":
 		return true
+	case "skills-lock.json":
+		return false
 	}
 	for _, s := range lockSuffixes {
 		if strings.HasSuffix(name, s) {
@@ -78,7 +108,7 @@ func isLockFile(name string) bool {
 
 // Find returns the compose files under root, best first, as absolute paths.
 // It looks maxDepth folders down at most, and never in hidden folders,
-// node_modules or vendor. Files for development come first, then the plain
+// node_modules, vendor or testdata. Files for development come first, then the plain
 // file, then other variants, and files for production last; a tie goes to
 // the shallower file, then to the path. A folder it can't read is skipped, and
 // so is a compose name that isn't a regular file once symlinks are followed.
@@ -147,8 +177,17 @@ func rank(variant string) int {
 	}
 }
 
-// skipDir reports whether Find stays out of a folder: a hidden one, or one a
-// package manager fills.
+// skipDir reports whether Find stays out of a folder: a hidden one, one a
+// package manager fills, or Go's testdata, whose files are fixtures.
 func skipDir(name string) bool {
-	return strings.HasPrefix(name, ".") || name == "node_modules" || name == "vendor"
+	return strings.HasPrefix(name, ".") || name == "node_modules" || name == "vendor" || name == "testdata"
+}
+
+// ProjectDir returns the project the file at path belongs to (ProjectRoot), or
+// the file's folder outside one.
+func ProjectDir(path string) string {
+	if root, ok := ProjectRoot(filepath.Dir(path)); ok {
+		return root
+	}
+	return filepath.Dir(path)
 }

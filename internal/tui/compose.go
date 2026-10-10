@@ -1,13 +1,12 @@
 package tui
 
-// The compose file of a project: the question at startup, the compose cell
-// and field, and the preview of the file rewritten for lodo.
+// The compose file of a project: the compose cell and field, linking, and the
+// preview of the file rewritten for lodo.
 
 import (
 	"errors"
 	"io/fs"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -16,31 +15,17 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/sangdth/lodo/internal/compose"
+	"github.com/sangdth/lodo/internal/scan"
 	"github.com/sangdth/lodo/internal/store"
 )
-
-// question is the compose file lodo offers at startup for a project's name.
-type question struct {
-	name   string // the name the project's folder suggests, such as flowy.test
-	path   string // the compose file found, absolute
-	rel    string // the same file from the project's root, for the prompt
-	listed bool   // name is in the list; otherwise yes adds it
-}
 
 // previewMsg is owner's compose file, rewritten for its project.
 type previewMsg struct {
 	owner   store.Domain
 	out     []byte
 	changes []compose.Change
-	fixes   []compose.Fix // next dev lines that need -H
+	fixes   []scan.Fix // dev server lines that need a host
 	err     error
-}
-
-// projectMsg is the project lodo started in: its root and its compose files,
-// best first. files is empty outside a project.
-type projectMsg struct {
-	root  string
-	files []string
 }
 
 // readPreview reads owner's compose file and rewrites it for owner's project.
@@ -52,7 +37,7 @@ func (m Model) readPreview(owner store.Domain) tea.Cmd {
 			return previewMsg{err: err}
 		}
 		out, changes, err := compose.Rewrite(src, values)
-		fixes := b.NextDev(owner.Compose, owner.Address)
+		fixes := b.HostFixes(compose.ProjectDir(owner.Compose), owner.Address)
 		return previewMsg{owner: owner, out: out, changes: changes, fixes: fixes, err: err}
 	}
 }
@@ -117,27 +102,19 @@ func (m *Model) showPreview(msg previewMsg) {
 	m.preview.SetXOffset(0)
 }
 
-// fixLines shows each next dev fix under its file and line, then a line
-// before the compose file. lodo leaves those files to the user.
-func (m Model) fixLines(fixes []compose.Fix) []string {
+// fixLines shows each dev server fix under its file and line, then a line
+// before what follows. lodo leaves those files to the user.
+func (m Model) fixLines(fixes []scan.Fix) []string {
 	if len(fixes) == 0 {
 		return nil
 	}
-	lines := []string{m.styles.dim.Render("  next dev listens on every address; add -H to these lines yourself:")}
+	lines := []string{m.styles.dim.Render("  these listen on every address; add the host yourself:")}
 	for _, f := range fixes {
 		lines = append(lines,
 			m.styles.dim.Render("  "+f.File+":"+strconv.Itoa(f.Line)),
 			m.styles.ok.Render("~ "+f.New))
 	}
 	return append(lines, "")
-}
-
-func (m Model) findProject() tea.Cmd {
-	b, dir := m.backend, m.origin.Dir
-	return func() tea.Msg {
-		root, files := b.Project(dir)
-		return projectMsg{root: root, files: files}
-	}
 }
 
 // checkCompose refuses a compose path that breaks store's rule or names no
@@ -156,113 +133,16 @@ func (m Model) checkCompose(path string) error {
 	return nil
 }
 
-// maybeAsk opens the compose question once the first check is done, when lodo
-// started in a project that no listed name links yet and whose folder's name
-// has no answer. It asks once.
-func (m *Model) maybeAsk() {
-	if m.asked || m.busy || m.mode != modeList || len(m.project.files) == 0 {
-		return
-	}
-	m.asked = true
-	root, path := m.project.root, m.project.files[0]
-	name := projectName(root)
-	if name == "" || m.projectLinked(root) {
-		return
-	}
-	d, listed := m.find(name)
-	if listed && d.Compose != "" {
-		return
-	}
-	rel := path
-	if r, err := filepath.Rel(root, path); err == nil {
-		rel = "./" + r
-	}
-	m.mode, m.question = modeAsk, question{name: name, path: path, rel: rel, listed: listed}
-	m.point(name)
-}
-
-// projectLinked reports whether a listed name, whatever it is called, links a
-// compose file inside the project at root: lodo asks about the project, and the
-// folder's name only suggests a name for it.
-func (m Model) projectLinked(root string) bool {
-	return slices.ContainsFunc(m.domains, func(d store.Domain) bool {
-		return linked(d) && strings.HasPrefix(d.Compose, root+string(filepath.Separator))
-	})
-}
-
-// point puts the cursor on name's row, or on the add row when name isn't
-// listed, so the row a question is about is the one highlighted.
-func (m *Model) point(name string) {
-	i := slices.IndexFunc(m.listed(), func(d store.Domain) bool { return d.Name == name })
-	if i < 0 {
-		i = len(m.listed())
-	}
-	m.table.SetCursor(i)
-	m.table.SetRows(m.rows()) // the add row looks different under the cursor
-}
-
-// nonLabel matches what a folder's name holds that a DNS label can't.
-var nonLabel = regexp.MustCompile(`[^a-z0-9-]+`)
-
-// projectName is the name a project's folder suggests: flowy.test for
-// ~/Projects/flowy. It is empty when the folder's name makes no valid label.
-func projectName(root string) string {
-	label := strings.Trim(nonLabel.ReplaceAllString(strings.ToLower(filepath.Base(root)), "-"), "-")
-	name := label + tldSuffix
-	if store.ValidateName(name) != nil {
-		return ""
-	}
-	return name
-}
-
 // find returns the listed domain called name.
-func (m Model) find(name string) (store.Domain, bool) {
-	i := slices.IndexFunc(m.domains, func(d store.Domain) bool { return d.Name == name })
+func (m Model) find(name string) (store.Domain, bool) { return findIn(m.domains, name) }
+
+// findIn returns the domain called name in domains.
+func findIn(domains []store.Domain, name string) (store.Domain, bool) {
+	i := slices.IndexFunc(domains, func(d store.Domain) bool { return d.Name == name })
 	if i < 0 {
 		return store.Domain{}, false
 	}
-	return m.domains[i], true
-}
-
-// askKey answers the compose question, which defaults to yes. For a listed
-// name, y or enter links the file, e opens the edit form with it, and n or esc
-// saves no, so lodo stops asking. For a name that isn't listed, y, enter or e
-// opens the add form with both filled in. Any other key waits: a stray key
-// must not write the project's .env.
-func (m Model) askKey(k string) (tea.Model, tea.Cmd) {
-	yes := k == "y" || k == "Y" || k == "enter"
-	no := k == "n" || k == "N" || k == "esc"
-	if !yes && !no && k != "e" {
-		return m, nil
-	}
-	q := m.question
-	m.mode, m.question = modeList, question{}
-	d, listed := m.find(q.name)
-	switch {
-	case !listed && !no:
-		m = m.openAdd("")
-		m.form.inputs[fieldName].SetValue(strings.TrimSuffix(q.name, tldSuffix))
-		m.form.prefill(m.domains)
-		m.form.inputs[fieldCompose].SetValue(m.shortPath(q.path))
-		return m, nil
-	case !listed:
-		return m, nil
-	case k == "e":
-		m = m.openEdit(d)
-		m.form.inputs[fieldCompose].SetValue(m.shortPath(q.path))
-		m.form.focusField(fieldCompose)
-		return m, nil
-	}
-	if yes {
-		return m.linkTo(d, q.path)
-	}
-	d.Compose = store.NoCompose
-	next, err := store.Update(m.domains, d.Name, d)
-	if err != nil {
-		m.err = err
-		return m, nil
-	}
-	return m.start(d.Name, m.save(next))
+	return domains[i], true
 }
 
 // link links d to the compose file of the project lodo started in, or, outside
@@ -270,8 +150,8 @@ func (m Model) askKey(k string) (tea.Model, tea.Cmd) {
 // the .env that file runs with.
 func (m Model) link(d store.Domain) (Model, tea.Cmd) {
 	path := d.Compose
-	if len(m.project.files) > 0 {
-		path = m.project.files[0]
+	if len(m.project.Compose) > 0 {
+		path = m.project.Compose[0]
 	}
 	if path == "" || path == store.NoCompose {
 		m.err = errors.New("no compose file to link: start lodo in the project, or e to set one")
