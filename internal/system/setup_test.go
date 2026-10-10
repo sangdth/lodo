@@ -56,6 +56,7 @@ func setupCalls(p paths.Paths, withCaddy bool) []string {
 		calls = append(calls,
 			run.Line(p.Caddy, "validate", "--config", p.SystemCaddyfile, "--adapter", "caddyfile"),
 			run.Line(p.Brew, "services", "restart", "caddy"),
+			run.Line(p.Brew, "services", "info", "caddy", "--json"),
 		)
 	}
 	return append(calls, run.Line(p.Sudo, "-n", "-k", p.Script))

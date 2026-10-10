@@ -30,6 +30,7 @@ func TestDefault(t *testing.T) {
 		"Security":       "/usr/bin/security",
 		"SystemKeychain": "/Library/Keychains/System.keychain",
 		"CaddyRoot":      "/opt/homebrew/var/lib/caddy/pki/authorities/local/root.crt",
+		"CaddyLog":       "/opt/homebrew/var/log/caddy.log",
 		"TrustedCA":      filepath.Join(p.Home, ".config/lodo/caddy-root.crt"),
 	}
 	v := reflect.ValueOf(p)

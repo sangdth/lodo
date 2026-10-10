@@ -3,9 +3,11 @@ package system_test
 import (
 	"context"
 	"errors"
+	"os"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sangdth/lodo/internal/dnsmasq"
 	"github.com/sangdth/lodo/internal/paths"
@@ -42,11 +44,11 @@ func TestApply(t *testing.T) {
 		{name: "dns only, no caddy", domains: dnsOnly},
 		{name: "port without caddy set up", domains: withPort, wantErrSubst: "Caddy is not set up for lodo"},
 		{name: "dnsmasq turned off", domains: dnsOnly, dnsmasqInfo: dnsmasqOff},
-		{name: "port added", caddySetUp: true, domains: withPort, wantCaddy: []string{"info", "validate", "restart"}},
+		{name: "port added", caddySetUp: true, domains: withPort, wantCaddy: []string{"info", "validate", "restart", "info"}},
 		{name: "ports unchanged, caddy running", caddySetUp: true, before: withPort, domains: withPort, caddyInfo: caddyRunning, wantCaddy: []string{"info"}},
-		{name: "ports unchanged, caddy crashed", caddySetUp: true, before: withPort, domains: withPort, caddyInfo: caddyCrashed, wantCaddy: []string{"info", "validate", "restart"}},
+		{name: "ports unchanged, caddy crashed", caddySetUp: true, before: withPort, domains: withPort, caddyInfo: caddyCrashed, wantCaddy: []string{"info", "validate", "restart", "info"}, wantErrSubst: "caddy stopped right after it started"},
 		{name: "port added, caddy turned off", caddySetUp: true, domains: withPort, caddyInfo: caddyOff, wantCaddy: []string{"info"}},
-		{name: "last port removed", caddySetUp: true, before: withPort, domains: dnsOnly, wantCaddy: []string{"info", "validate", "restart"}},
+		{name: "last port removed", caddySetUp: true, before: withPort, domains: dnsOnly, wantCaddy: []string{"info", "validate", "restart", "info"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -138,7 +140,7 @@ func TestSetService(t *testing.T) {
 		{name: "dnsmasq off removes resolver files first", service: "dnsmasq", want: []string{"script", "services stop dnsmasq"}, wantInput: []string{""}},
 		{name: "dnsmasq on writes resolver files after", service: "dnsmasq", on: true, want: []string{"services restart dnsmasq", "script"}, wantInput: []string{"crm.test\n"}},
 		{name: "caddy off", service: "caddy", want: []string{"services stop caddy"}},
-		{name: "caddy on validates first", service: "caddy", on: true, want: []string{"validate", "services restart caddy"}},
+		{name: "caddy on validates first", service: "caddy", on: true, want: []string{"validate", "services restart caddy", "services info caddy --json"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -194,6 +196,54 @@ func TestSetService(t *testing.T) {
 			t.Errorf("err %v, calls %q; want an error and no command", err, r.Calls())
 		}
 	})
+}
+
+func TestSetService_CaddyStopsAfterStart(t *testing.T) {
+	t.Parallel()
+
+	const bindErr = "loading initial config: loading new config: http app module: start: " +
+		"listening on 127.0.1.1:80: listen tcp 127.0.1.1:80: bind: permission denied"
+	log := `{"level":"error","ts":1,"msg":"an older failure"}` + "\n" +
+		`{"level":"info","ts":2,"msg":"using config from file"}` + "\n" +
+		`{"level":"error","ts":3,"msg":"` + bindErr + `"}` + "\n" +
+		`{"level":"info","ts":4,"msg":"servers shutting down"}` + "\n"
+	tests := []struct {
+		name    string
+		info    string
+		log     string
+		logAge  time.Duration // how long before the restart Caddy last wrote its log
+		wantErr string        // "" when SetService succeeds
+	}{
+		{name: "still running", info: caddyRunning, log: log},
+		{name: "stopped, log has the reason", info: caddyCrashed, log: log, wantErr: "caddy stopped right after it started: " + bindErr},
+		{name: "stopped, log is from before", info: caddyCrashed, log: log, logAge: time.Hour, wantErr: "; see "},
+		{name: "stopped, no log", info: caddyCrashed, wantErr: "; see "},
+		{name: "brew can't say", info: "not json"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			p, r := setUpMac(t, true)
+			writeFile(t, p.SystemCaddyfile, system.CaddyBlock(p))
+			if tt.log != "" {
+				writeFile(t, p.CaddyLog, tt.log)
+				// Caddy writes its log after the restart; a test writes it before.
+				written := time.Now().Add(time.Minute - tt.logAge)
+				if err := os.Chtimes(p.CaddyLog, written, written); err != nil {
+					t.Fatal(err)
+				}
+			}
+			r.Set(run.Line(p.Brew, "services", "info", "caddy", "--json"), tt.info)
+
+			err := system.SetService(context.Background(), p, r, "caddy", true)
+			switch {
+			case tt.wantErr == "" && err != nil:
+				t.Fatalf("err = %v, want nil", err)
+			case tt.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tt.wantErr)):
+				t.Fatalf("err = %v, want it to contain %q", err, tt.wantErr)
+			}
+		})
+	}
 }
 
 func TestApply_BeforeSetup(t *testing.T) {

@@ -33,6 +33,7 @@ type Paths struct {
 	SystemCaddyfile       string // the config Homebrew's caddy service loads
 	SystemCaddyfileBackup string
 	CaddyRoot             string // the root certificate of the local CA Homebrew's caddy service makes
+	CaddyLog              string // where Homebrew's caddy service logs
 
 	// Root-owned files and directories.
 	LaunchDaemons string // system launchd jobs
@@ -105,6 +106,7 @@ func build(root, home, user string) Paths {
 		SystemCaddyfile:       filepath.Join(etc, "Caddyfile"),
 		SystemCaddyfileBackup: filepath.Join(etc, "Caddyfile.before-lodo"),
 		CaddyRoot:             filepath.Join(brew, "var/lib/caddy/pki/authorities/local/root.crt"),
+		CaddyLog:              filepath.Join(brew, "var/log/caddy.log"),
 
 		LaunchDaemons: daemons,
 		LoopbackPlist: filepath.Join(daemons, "io.lodo.loopback.plist"),

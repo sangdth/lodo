@@ -257,6 +257,8 @@ Caddy idles when no row has a port, and rows without a port never need it.
 4. `sudo -n` the resolver script with the enabled names on its standard input, or none while dnsmasq is turned
    off. It writes `/etc/resolver/` and flushes the cache.
 5. When the `Caddyfile` changed and Caddy is set up: `caddy validate`, then `brew services restart caddy`.
+   A second later `brew services info caddy` must still show it running; when it doesn't, apply fails with the
+   last error in `/opt/homebrew/var/log/caddy.log`. Setup and turning Caddy on check the same way.
 6. Per enabled domain: query dnsmasq on `127.0.0.1:53535`, then resolve through macOS
    (`dscacheutil -q host -a name <name>`); with a port, `GET http://<address>/` with `Host: <name>`. Any HTTP
    status means Caddy routes the name; 502 means nothing listens on the upstream. Each row shows ✓ or ✗ with
