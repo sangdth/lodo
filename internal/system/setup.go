@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/sangdth/lodo/internal/brew"
-	"github.com/sangdth/lodo/internal/caddy"
 	"github.com/sangdth/lodo/internal/dnsmasq"
 	"github.com/sangdth/lodo/internal/fsutil"
 	"github.com/sangdth/lodo/internal/paths"
@@ -234,10 +233,7 @@ func setupCaddy(ctx context.Context, p paths.Paths, r run.Runner) error {
 	if _, err := fsutil.WriteFile(p.SystemCaddyfile, []byte(RewriteSystemCaddyfile(string(old), p)), 0o644); err != nil {
 		return err
 	}
-	if err := caddy.Validate(ctx, r, p.Caddy, p.SystemCaddyfile); err != nil {
-		return err
-	}
-	return brew.Restart(ctx, r, p.Brew, "caddy")
+	return restartCaddy(ctx, p, r)
 }
 
 // trustCaddy adds Caddy's local root certificate to the System keychain, so

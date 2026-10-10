@@ -91,6 +91,7 @@ name. The status line at the bottom, above the key help, says what failed, or wh
 | `s`         | turn HTTPS on or off; the name needs a port        |
 | `l`         | link it to the project's compose file and `.env`   |
 | `p`         | preview the compose file, as lodo would change it  |
+| `i`         | scan the project lodo started in and review it     |
 | `g`         | show dnsmasq's query log; `g` or `esc` goes back   |
 | `r`         | read `domains.json` again and apply it             |
 | `tab`       | move the keys to Caddy and dnsmasq, and back       |
@@ -102,15 +103,42 @@ you type a new name, the form fills in the address: the parent's address for a s
 the lowest free own address. Typing in the address field stops that. A port needs Caddy installed and set up;
 until then the form says what to run.
 
+### Scanning a project
+
+When `lodo` starts inside a project, it scans it. A project is the git root above the folder, or outside git the
+nearest folder above it with a lock file and its manifest (`pnpm-lock.yaml` and `package.json`, `go.sum` and
+`go.mod`); your home folder never counts, and `skills-lock.json` is no lock file. The scan reads, and never writes:
+
+- the apps: the root's `package.json` `dev` script, or in a workspace (`pnpm-workspace.yaml` or `workspaces`)
+  each package whose `dev` script starts a dev server lodo knows, and any package under `apps/` with a `dev`
+  script. It knows Next, Vite (SvelteKit, Remix), Astro, Nuxt, Wrangler, React Router, Angular, Gatsby,
+  Docusaurus, Storybook, Vue CLI, webpack, NestJS, Create React App and react-email. It follows `npm:next`-style
+  scripts and the shell scripts `dev` runs.
+- each app's port: `-p` or `--port`, `PORT=` before the command, a literal `port:` in `vite.config` or
+  `astro.config`, else the framework's own: 3000 for Next and NestJS, 5173 for Vite, 4200 for Angular, and so
+  on. A port it can't read stays empty, with a note.
+- the compose file: up to 3 folders deep, `.dev` first, never in `node_modules`, `vendor` or `testdata`.
+- the address: a listed name's in the project, else `DOCKER_HOST_IP` from the root's `.env` or `.env.example`
+  when no other project has it, else the lowest free one.
+
+It proposes the project's name, a subdomain per app, such as `admin.media.test` with its port, the compose file
+to link, and the `dev` lines that listen on every address. All of a project's apps share its address. When two
+want the same port, an app whose port only its code sets (NestJS, Create React App, an unknown command) keeps it,
+and the others move up: NestJS on 3000, then Next on 3001, Vite on 3002. The `dev` line the review shows then
+adds `--port 3001` too; until you change it, that name's check says `app down`. Two apps that can't move get two
+addresses. The project's name is yours: the scan suggests the folder's, such as `media.test`, and `e`
+in the review changes it; the subdomains follow. Once added, the name keeps the project's folder as `root` in
+`domains.json`, so later scans know it by that name. A name already listed that links a compose file in the
+project counts too. When none of the project's names is listed, the review opens: `y` or `enter` adds every name
+and links the compose file in one change, and `n` or `esc` goes back, so lodo offers it again next time. A listed project
+only gets a note in the status line, such as `scan: 1 line to change · i reviews`. `i` scans again at any time.
+`lodo scan` prints the same review, `lodo scan --json` the same data for scripts, and `--name hugger` names the
+project `hugger.test`.
+
 ### Compose files
 
-When `lodo` starts inside a project, a git repository with a lock file, it looks up to 3 folders deep for
-`compose.yml`, `docker-compose.yaml` and their variants, `.dev` first. Unless a listed name, whatever it is
-called, already links a compose file in the project, it asks once: `use ./compose.dev.yaml for media.test? Y/n`.
-The project's folder suggests the name; to link a name called something else, answer `n` and press `l` on it. `y`
-or `enter` links it (see `l` below), `e` lets you fix the path first, and `n` or `esc` saves `none`, so lodo stops
-asking; any other key leaves the question open. A name that isn't listed gets the add form, filled in. The form's
-`compose` field sets or changes the path at any time: `~/…`, a path from where lodo started, or `none`.
+The form's `compose` field sets or changes a name's compose file at any time: `~/…`, a path from where lodo
+started, or `none`.
 
 `p` shows the file as lodo would change it, and changes nothing:
 
@@ -119,17 +147,18 @@ asking; any other key leaves the question open. A name that isn't listed gets th
 - A `localhost` URL in `environment` takes the project's name, or the subdomain Caddy serves on that port:
   `http://localhost:3000` becomes `http://dashboard.blog.test`.
 - Healthchecks, commands and comments keep `localhost`: inside a container it is the container itself.
-- Above the file, a `next dev` without `-H` in the project's `package.json`, or in a shell script one of its
-  scripts runs, such as `scripts/dev.sh`, gets `-H <address>`: without it Next listens on every address, so two
-  projects can't both use port 3000. lodo doesn't edit these files, since git tracks them; you add the flag. After
-  `l`, the status line says when one needs it.
+- Above the file, each dev server started without a host in the project's `package.json` files, or in a shell
+  script one of their scripts runs, such as `scripts/dev.sh`, gets one: `next dev -H <address>`, `vite --host
+  <address>`, `wrangler dev --ip <address>`. Without it the server listens on every address, so two projects can't
+  both use port 3000. lodo doesn't edit these files, since git tracks them; you add the flag. After `l`, the status
+  line says when one needs it.
 
 `l` links the selected name: the compose file of the project lodo started in, or outside one the name's own,
 becomes the name's, and `DOCKER_HOST_IP=<address>` goes into the `.env` that file runs with. That is the file a
 `package.json` script passes with `--env-file`, else the project root's `.env`. lodo leaves a `.env` that git
 tracks alone: this Mac's address doesn't belong in a shared file. It also refuses a `.env` outside the project,
-directly or through a symlink. The question's `y`, `l` in the preview, and a
-form save that changes a linked name's compose file or address do the same.
+directly or through a symlink. The scan's `y`, `l` in the preview, and a form save that changes a linked name's
+compose file or address do the same.
 
 ### HTTPS
 
@@ -215,6 +244,10 @@ fails. The list does the same after every change. It refuses to run before `lodo
 7. `names resolve`: each enabled name resolves through dnsmasq and macOS; with a port, Caddy reaches the app.
 8. `caddy`, only when an enabled name has a port: Caddy is installed, imports lodo's file, runs, passes
    `caddy validate`, and holds port 80.
+
+`lodo scan` prints what the project in the current folder lacks from the list, as the TUI's review shows it, and
+changes nothing; `--json` prints it for scripts, and `--name hugger` proposes it under `hugger.test`. It exits 1
+outside a project.
 
 `lodo uninstall` removes what setup installed; see [Uninstall](#uninstall). `lodo version` prints the version, and
 `lodo help` the usage.

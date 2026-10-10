@@ -1,0 +1,11 @@
+scan of <root>
+add   shop.test      127.0.1.1
+add   api.shop.test  127.0.1.1  port 3000
+add   web.shop.test  127.0.1.1  port 3001
+link  ./docker/compose.dev.yaml · DOCKER_HOST_IP=127.0.1.1 in its .env
+fix   apps/web/package.json:2
+      - "scripts": {"dev": "next dev -p 3001"}
+      + "scripts": {"dev": "next dev -H 127.0.1.1 -p 3001"}
+note  api.shop.test: nest has no host option; make the app listen on the name's address
+
+run lodo here and press y to add and link these; e names the project

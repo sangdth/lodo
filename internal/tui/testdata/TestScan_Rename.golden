@@ -1,0 +1,24 @@
+                                                                                
+                                                                                
+[90m╭──────────────────────────────────────────────────────────────────────────────╮[m
+[90m│[m [1mlodo[m                          caddy [32m●[m   dnsmasq [32m●[m   loopback [32m●[m   resolvers [32m●[m [90m│[m
+[90m│[m[90m──────────────────────────────────────────────────────────────────────────────[m[90m│[m
+[90m│[m [1mscan of ~/Projects/flowy[m                                                     [90m│[m
+[90m│[m name  [37m[mweb.x[7;37m [m[90m.test[m  [31m✗ a project's name has one label before .test[m             [90m│[m
+[90m│[m[32m  add   flowy.test      127.0.1.2  :3000[m                                      [90m│[m
+[90m│[m[32m  add   api.flowy.test  127.0.1.2[m                                             [90m│[m
+[90m│[m[32m  link  ./compose.dev.yaml · DOCKER_HOST_IP=127.0.1.2 in its .env[m             [90m│[m
+[90m│[m[90m  note  api.flowy.test: lodo can't tell its dev server's port; e sets it[m      [90m│[m
+[90m│[m                                                                              [90m│[m
+[90m│[m                                                                              [90m│[m
+[90m│[m                                                                              [90m│[m
+[90m│[m                                                                              [90m│[m
+[90m│[m                                                                              [90m│[m
+[90m│[m                                                                              [90m│[m
+[90m│[m                                                                              [90m│[m
+[90m│[m[90m enter use this name  esc keep the old one[m                                    [90m│[m
+[90m│[m[90m[m                                                                              [90m│[m
+[90m╰──────────────────────────────────────────────────────────────────────────────╯[m
+                                                                                
+                                                                                
+                                                                                

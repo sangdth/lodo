@@ -7,6 +7,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/sangdth/lodo/internal/brew"
 	"github.com/sangdth/lodo/internal/caddy"
@@ -85,17 +86,47 @@ func applyCaddy(ctx context.Context, p paths.Paths, r run.Runner, domains []stor
 			return nil
 		}
 	}
+	return restartCaddy(ctx, p, r)
+}
+
+// caddySettle is how long restartCaddy waits before it checks Caddy still
+// runs. brew services restart returns once launchd starts the job; a Caddy
+// that can't load its config exits a few milliseconds later, and launchd
+// starts it again only every 10 seconds. Tests set it to 0.
+var caddySettle = time.Second
+
+// restartCaddy validates Homebrew's Caddyfile, restarts Caddy, and returns an
+// error with the last error in Caddy's log when Caddy stopped right after it
+// started. When brew can't say whether it runs, it is not an error: lodo
+// doctor shows what is wrong.
+func restartCaddy(ctx context.Context, p paths.Paths, r run.Runner) error {
 	if err := caddy.Validate(ctx, r, p.Caddy, p.SystemCaddyfile); err != nil {
 		return err
 	}
-	return brew.Restart(ctx, r, p.Brew, "caddy")
+	started := time.Now()
+	if err := brew.Restart(ctx, r, p.Brew, "caddy"); err != nil {
+		return err
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(caddySettle):
+	}
+	st, err := brew.Info(ctx, r, p.Brew, "caddy")
+	if err != nil || st.Running {
+		return nil
+	}
+	if msg := caddy.LogError(p.CaddyLog, started); msg != "" {
+		return fmt.Errorf("caddy stopped right after it started: %s", msg)
+	}
+	return fmt.Errorf("caddy stopped right after it started; see %s", p.CaddyLog)
 }
 
 // Services are the brew services SetService turns on and off.
 var Services = []string{"dnsmasq", "caddy"}
 
-// SetService turns a service on or off. On validates Caddy's config first,
-// then starts the service and registers it to start at login; off stops and
+// SetService turns a service on or off. On starts the service and registers it
+// to start at login, Caddy through restartCaddy; off stops and
 // unregisters it, which Apply and lodo doctor read as turned off. dnsmasq's
 // resolver files follow it: off removes them before it stops, so no account's
 // .test lookups go to a port nobody holds, and on writes them once it runs.
@@ -112,15 +143,10 @@ func SetService(ctx context.Context, p paths.Paths, r run.Runner, service string
 	if !on {
 		return brew.Stop(ctx, r, p.Brew, service)
 	}
-	if service == "caddy" {
-		if !CaddySetUp(p) {
-			return errors.New("caddy is not set up for lodo: brew install caddy, then lodo setup")
-		}
-		if err := caddy.Validate(ctx, r, p.Caddy, p.SystemCaddyfile); err != nil {
-			return err
-		}
+	if !CaddySetUp(p) {
+		return errors.New("caddy is not set up for lodo: brew install caddy, then lodo setup")
 	}
-	return brew.Restart(ctx, r, p.Brew, service)
+	return restartCaddy(ctx, p, r)
 }
 
 // setDnsmasq turns dnsmasq off after removing lodo's resolver files, or on

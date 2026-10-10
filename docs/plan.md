@@ -85,6 +85,12 @@ Settled 2026-10-08. The steps below follow them.
   dnsmasq against the old config.
 - **Doctor names hand-made resolver files:** an `/etc/resolver/<name>` without lodo's marker gets `sudo rm` as its
   fix, because the script never replaces it. Hand-written setup recipes make exactly such files.
+- **A project is a git root, or a folder with a lock file and its manifest** (2026-10-10): 48 repos in `~/Projects`
+  have git and no lock file, 15 a lock file and no git. A lock file alone isn't enough: `$TMPDIR` holds stray
+  `*.lock` files. The home folder never counts, and `skills-lock.json` pins agent skills, not dependencies.
+- **The scan proposes, the user applies:** no LLM; every rule reads a file lodo can parse, and what it can't read
+  (a port from env, an unknown dev command) becomes a note. Dev server lines are shown, never written: git
+  tracks them. `--json` lets an agent such as Claude Code read the same proposal.
 - **Probes name `/etc/hosts` conflicts:** macOS and dnsmasq answer from `/etc/hosts` first, so an entry with another
   address is reported as the cause of a failed lookup.
 
@@ -257,6 +263,8 @@ Caddy idles when no row has a port, and rows without a port never need it.
 4. `sudo -n` the resolver script with the enabled names on its standard input, or none while dnsmasq is turned
    off. It writes `/etc/resolver/` and flushes the cache.
 5. When the `Caddyfile` changed and Caddy is set up: `caddy validate`, then `brew services restart caddy`.
+   A second later `brew services info caddy` must still show it running; when it doesn't, apply fails with the
+   last error in `/opt/homebrew/var/log/caddy.log`. Setup and turning Caddy on check the same way.
 6. Per enabled domain: query dnsmasq on `127.0.0.1:53535`, then resolve through macOS
    (`dscacheutil -q host -a name <name>`); with a port, `GET http://<address>/` with `Host: <name>`. Any HTTP
    status means Caddy routes the name; 502 means nothing listens on the upstream. Each row shows ✓ or ✗ with
@@ -308,21 +316,27 @@ A failure at any step shows in the status line. The saved file stays as written;
 - **Link** (`l`): the name gets the compose file of the project lodo started in, or keeps its own outside one, and
   `DOCKER_HOST_IP=<address>` goes into the `.env` that file runs with: the one a `package.json` script passes
   with `--env-file`, else the project root's (`compose.EnvFile`, `compose.SetEnv`). A `.env` outside the
-  project once symlinks are followed is refused, and so is one git tracks; the compose path is still saved. The question's `y`, `l` in the preview, and a form save that changes
+  project once symlinks are followed is refused, and so is one git tracks; the compose path is still saved. The scan's `y`, `l` in the preview, and a form save that changes
   a linked name's compose file or address link too. Linking saves without an apply.
 - **HTTPS** (`s`): turns HTTPS on or off for the selected name and applies, like `space`. A name without a port
   is refused: `https needs a port`. The `https` column shows `✓`; the check cell adds `https ✓` or `https ✗`
   from a probe of `https://<name>` with normal certificate checks, so an untrusted root fails it with
   "run lodo setup". With HTTPS on, the compose rewrite turns `http://localhost:<port>` into `https://<name>`.
 - **Log:** a `viewport` tailing `dnsmasq.log`, polled every 500 ms; `g` or `esc` returns.
-- **Compose:** started in a project that no listed name links yet (any name whose compose file sits inside the
-  project counts), lodo asks once, after the first check, about the best compose file for the name the project's
-  folder suggests, defaulting to yes: `y` or `enter` links it, `e` edits it first, `n` or `esc` saves `none`, and
-  any other key waits; an unlisted name gets the add form. A compose path is saved without an apply: it changes
-  no generated file. `p` previews the file rewritten by `compose.Rewrite` in a `viewport`, the changed lines
+- **Scan:** started in a project, lodo scans it (`scan.Find`, `scan.Propose`) once the first check is done. When
+  none of the project's names is listed, the review opens: the names to add with address and port, the compose
+  file to link, the dev server lines to change by hand and the notes. `y` or `enter` adds and links them in one
+  change, `n` or `esc` goes back and saves nothing, so the review returns at the next start. A listed project
+  gets a status note instead, such as `scan: 1 line to change · i reviews`; nothing found shows nothing. `i`
+  scans again and opens the review. `e` in the review edits the project's name, with the `.test` suffix dimmed;
+  `enter` scans again under it, so the subdomains, address and fixes follow, and `esc` keeps the old one. The
+  project is named by the listed name whose `root` is its folder, else by the listed name that links a compose
+  file in it, else by its folder. `y` saves the folder as the main name's `root`, also on a listed name the user
+  picked.
+- **Compose:** a compose path is saved without an apply: it changes no generated file. `p` previews the file rewritten by `compose.Rewrite` in a `viewport`, the changed lines
   marked, with the `.env` line; `l` links. The preview scrolls sideways with the arrows only. Above the file it lists
-  the `next dev` lines without `-H <address>` in the root `package.json` and the shell scripts its scripts run
-  (`compose.NextDev`), with the flag added, for the user to copy: those files are tracked, so lodo doesn't write
+  the dev server lines without a host in the project's `package.json` scripts and the shell scripts they run
+  (`scan.HostFixes`), with the host added, for the user to copy: those files are tracked, so lodo doesn't write
   them. `l`'s note says when there are any. lodo writes one project file: the linked `.env`, and only its
   `DOCKER_HOST_IP` lines. It reads a project's files only when they are regular files of at most 1 MiB
   (`fsutil.ReadRegular`), and `compose.Find` skips a compose name that isn't one.
@@ -420,7 +434,8 @@ internal/dnsmasq/       dnsmasq.conf and resolver-list generation, log tail
 internal/caddy/         Caddyfile generation and caddy validate
 internal/system/        setup, apply, uninstall; templates for the script, plist, sudoers, conf blocks
 internal/check/         the eight doctor checks and the per-domain dns, macOS and http probes
-internal/compose/       find a project's compose file; rewrite its ports and localhost URLs for the preview
+internal/compose/       find a project and its compose file; rewrite its ports and localhost URLs for the preview
+internal/scan/          read a project's apps, ports and address; propose names, compose link and host fixes
 internal/tui/           Bubble Tea model, views, key map
 ```
 
@@ -654,6 +669,25 @@ Commits: one per step group.
 | 8.4  | probes: `https://<name>` on port 443 with certificate checks; doctor and the check cell show it            |
 | 8.5  | TUI: box at 80% width, an `https` column, `s` toggles; compose URLs on an HTTPS port become `https://`     |
 | 8.6  | README: HTTPS, trust, Firefox, sign-in callbacks and Google's public suffix rule                           |
+
+### Phase 9: scan
+
+| Step | Work                                                                                       |
+| ---- | ------------------------------------------------------------------------------------------ |
+| 9.1  | `ProjectRoot`: git root, else nearest folder with a lock file and its manifest; never `~`  |
+| 9.2  | `internal/scan`: apps (root or workspace), dev tool and port per app                       |
+| 9.3  | Ports: flag, `PORT=` prefix, literal `port:` in vite/astro config, then the tool's own     |
+| 9.4  | Host fixes: `compose.NextDev` moves to `scan`, for next, vite, astro, nuxt and wrangler    |
+| 9.5  | Address: a listed name's, else `DOCKER_HOST_IP` from `.env`/`.env.example`, else next free |
+| 9.6  | `scan.Propose`: only what the list lacks; one address, a clash moves `--port` apps up      |
+| 9.7  | TUI: the review replaces the compose question; a note for listed projects; `i` rescans     |
+| 9.8  | `lodo scan`, `lodo scan --json`, read-only                                                 |
+| 9.9  | README, CLAUDE.md layout                                                                   |
+| 9.10 | `Domain.Root`; `e` in the review names the project, `lodo scan --name`; the name sticks    |
+
+Tests: fake project trees in `t.TempDir()` from the shapes in `~/Projects`: plain Next, a pnpm monorepo, a
+vite config port, `dev.sh` with `HOST_IP`, a port from env, lock without git, git without lock,
+`skills-lock.json` only. The review is a golden snapshot.
 
 ## Tests
 

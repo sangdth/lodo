@@ -310,6 +310,11 @@ func TestValidate(t *testing.T) {
 			{Name: "crm.test", Address: "127.0.1.1"},
 			{Name: "flowy.test", Address: "127.0.1.1"},
 		}, wantErr: `"flowy.test": 127.0.1.1 belongs to crm.test`},
+		{name: "project folder", in: []store.Domain{{Name: "crm.test", Address: "127.0.1.1", Root: "/Users/me/Projects/crm"}}},
+		{
+			name: "relative project folder", in: []store.Domain{{Name: "crm.test", Address: "127.0.1.1", Root: "Projects/crm"}},
+			wantErr: `"crm.test": project folder "Projects/crm" must be an absolute path`,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

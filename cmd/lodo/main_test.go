@@ -19,6 +19,8 @@ func TestDispatch(t *testing.T) {
 		{name: "help", args: []string{"help"}, wantCode: 0, wantStdout: "Usage:"},
 		{name: "unknown command", args: []string{"frobnicate"}, wantCode: 2, wantStderr: `lodo: unknown command "frobnicate"`},
 		{name: "extra argument", args: []string{"doctor", "now"}, wantCode: 2, wantStderr: "lodo: doctor takes no arguments"},
+		{name: "scan with an unknown flag", args: []string{"scan", "--yaml"}, wantCode: 2, wantStderr: "lodo: scan: flag provided but not defined: -yaml"},
+		{name: "scan with an argument", args: []string{"scan", "now"}, wantCode: 2, wantStderr: `lodo: scan: unexpected argument "now"`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

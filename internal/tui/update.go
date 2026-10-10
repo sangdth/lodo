@@ -25,7 +25,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.setReport(msg.checks, msg.results)
 		m.layout()
 		m.placeCursor(here)
-		m.maybeAsk()
+		m.maybeOffer()
 		return m, nil
 	case changedMsg:
 		m.busy, m.err = false, msg.err
@@ -43,9 +43,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.layout()
 		m.placeCursor(here)
 		return m, nil
-	case projectMsg:
-		m.project = msg
-		m.maybeAsk()
+	case scanMsg:
+		m.setScan(msg)
 		return m, nil
 	case previewMsg:
 		if msg.err != nil {
@@ -99,8 +98,8 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.confirmKey(k)
 	case modeLog:
 		return m.logKey(msg)
-	case modeAsk:
-		return m.askKey(k)
+	case modeScan:
+		return m.scanKey(msg)
 	case modePreview:
 		return m.previewKey(msg)
 	}
@@ -124,6 +123,9 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 	if k == "p" {
 		return m.openPreview() // reading the compose file is safe while a change runs
+	}
+	if k == "i" && m.origin.Dir != "" {
+		return m, m.runScan(true) // so is scanning the project
 	}
 	if !m.busy {
 		if next, cmd, ok := m.listKey(k); ok {

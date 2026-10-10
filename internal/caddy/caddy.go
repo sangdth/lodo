@@ -6,7 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"os"
 	"strings"
+	"time"
 
 	"github.com/sangdth/lodo/internal/run"
 	"github.com/sangdth/lodo/internal/store"
@@ -55,6 +58,33 @@ func Validate(ctx context.Context, r run.Runner, caddyBin, path string) error {
 		}
 	}
 	return fmt.Errorf("caddy validate: %w", err)
+}
+
+// logTail is how much of the end of Caddy's log LogError reads.
+const logTail = 64 << 10
+
+// LogError returns the last error message in the last logTail bytes of
+// Caddy's log at path, or "" when there is none, the log can't be read, or
+// Caddy has not written to it since since.
+func LogError(path string, since time.Time) string {
+	// Stat first: opening a FIFO blocks.
+	info, err := os.Stat(path)
+	if err != nil || !info.Mode().IsRegular() || info.ModTime().Before(since) {
+		return ""
+	}
+	f, err := os.Open(path) //nolint:gosec // G304: path is paths.CaddyLog, Homebrew's own log
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = f.Close() }() // read only: a close error loses nothing
+	if _, err := f.Seek(max(0, info.Size()-logTail), io.SeekStart); err != nil {
+		return ""
+	}
+	tail, err := io.ReadAll(io.LimitReader(f, logTail))
+	if err != nil {
+		return ""
+	}
+	return lastError(string(tail))
 }
 
 // lastError returns the last error message in caddy's stderr, or "". Caddy

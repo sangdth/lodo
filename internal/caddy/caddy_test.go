@@ -7,7 +7,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/charmbracelet/x/exp/golden"
 
@@ -157,6 +159,46 @@ func TestValidate(t *testing.T) {
 			}
 			if err == nil || err.Error() != want {
 				t.Errorf("err = %v, want %q", err, want)
+			}
+		})
+	}
+}
+
+func TestLogError(t *testing.T) {
+	t.Parallel()
+
+	start := time.Now()
+	dir := t.TempDir()
+	write := func(name, content string) string {
+		t.Helper()
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	// The tail starts mid-line; the cut line is skipped.
+	long := strings.Repeat(`{"level":"error","msg":"too old to read"}`+"\n", 2000) +
+		`{"level":"error","msg":"bind: permission denied"}` + "\n" +
+		`{"level":"info","msg":"servers shutting down"}` + "\n"
+
+	tests := []struct {
+		name  string
+		path  string
+		since time.Time
+		want  string
+	}{
+		{name: "last error", path: write("caddy.log", long), since: start, want: "bind: permission denied"},
+		{name: "no error", path: write("quiet.log", `{"level":"info","msg":"serving"}`+"\n"), since: start},
+		{name: "written before since", path: write("old.log", long), since: time.Now().Add(time.Hour)},
+		{name: "missing", path: filepath.Join(dir, "none.log"), since: start},
+		{name: "a directory", path: dir, since: start},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := caddy.LogError(tt.path, tt.since.Add(-time.Second)); got != tt.want {
+				t.Errorf("LogError = %q, want %q", got, tt.want)
 			}
 		})
 	}

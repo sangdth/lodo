@@ -72,6 +72,7 @@ type Domain struct {
 	Enabled bool   `json:"enabled"`
 	Compose string `json:"compose,omitempty"` // an absolute path, NoCompose, or empty before lodo asked
 	HTTPS   bool   `json:"https,omitempty"`   // Caddy also serves https://<name>, with a certificate from its local CA
+	Root    string `json:"root,omitempty"`    // the project folder this is the name of, absolute; set by the scan
 }
 
 // NoCompose is a domain's compose value once the user said its project has no
@@ -264,6 +265,9 @@ func check(others []Domain, d Domain) error {
 	}
 	if err := ValidatePort(d.Port); err != nil {
 		return err
+	}
+	if d.Root != "" && !filepath.IsAbs(d.Root) {
+		return fmt.Errorf("project folder %q must be an absolute path", d.Root)
 	}
 	if err := ValidateCompose(d.Compose); err != nil {
 		return err

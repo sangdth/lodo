@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"charm.land/bubbles/v2/table"
+	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -91,18 +92,19 @@ const servicesHelp = " ←/→ or h/l pick  space on/off  tab back to the names\
 
 // The keys each mode takes, shown on the last lines.
 var help = map[mode]string{
-	modeList:    " a sub  e edit  d del  space on/off  l link  p preview\n s https  g log  r apply  tab top  q quit",
+	modeList:    " a sub  e edit  d del  space on/off  l link  p preview\n s https  i scan  g log  r apply  tab top  q quit",
 	modeForm:    " enter save  tab next field  esc cancel\n",
 	modeConfirm: " y delete  any other key keeps it\n",
 	modeLog:     " g or esc back to the list  ↑/↓ scroll\n q quit",
 	modePreview: " p or esc back to the list  ↑/↓ ←/→ scroll  l write the .env line\n q quit",
+	modeScan:    " y or enter add and link  e name  n or esc back to the list  ↑/↓ ←/→ scroll\n q quit",
 }
 
-// The keys of the compose question, for a listed name and for one lodo adds.
-const (
-	askHelp    = " y or enter use it  e edit the path first  n or esc no\n"
-	askAddHelp = " y or enter add it  n or esc no\n"
-)
+// renameHelp is the review's keys while its name is edited.
+const renameHelp = " enter use this name  esc keep the old one\n"
+
+// scanFixesHelp is the review's keys when it holds only lines to change.
+const scanFixesHelp = " e name  n or esc back to the list  ↑/↓ ←/→ scroll\n q quit"
 
 // View draws the status bar, a rule, the table or the form, the status line
 // and the keys in a bordered box at the middle of the terminal.
@@ -115,6 +117,8 @@ func (m Model) View() tea.View {
 		body = m.logView()
 	case modePreview:
 		body = m.previewView()
+	case modeScan:
+		body = m.scanView()
 	}
 	keys := strings.Split(m.keys(), "\n")
 	for i, line := range keys {
@@ -137,17 +141,17 @@ func (m Model) View() tea.View {
 const addRowHelp = " enter add\n g log  r apply  tab top  q quit"
 
 // keys is the help for the mode, for the services when tab moved the keys
-// there, for the add row when the cursor is on it, and for the question.
+// there, and for the add row when the cursor is on it.
 func (m Model) keys() string {
 	switch {
 	case m.mode == modeList && m.onServices:
 		return servicesHelp
 	case m.mode == modeList && m.onAddRow():
 		return addRowHelp
-	case m.mode == modeAsk && m.question.listed:
-		return askHelp
-	case m.mode == modeAsk:
-		return askAddHelp
+	case m.mode == modeScan && m.renaming:
+		return renameHelp
+	case m.mode == modeScan && !m.canAccept():
+		return scanFixesHelp
 	}
 	return help[m.mode]
 }
@@ -345,7 +349,7 @@ func (m Model) check(id int) (check.Check, bool) {
 	return check.Check{}, false
 }
 
-// statusLine says what a delete or the compose question waits for, what
+// statusLine says what a delete waits for, what
 // failed, what was just done, why the selected name fails, or which system
 // part needs lodo doctor, in that order.
 func (m Model) statusLine() string {
@@ -353,10 +357,6 @@ func (m Model) statusLine() string {
 	switch {
 	case m.mode == modeConfirm:
 		line = m.styles.title.Render(m.deleteQuestion())
-	case m.mode == modeAsk && m.question.listed:
-		line = m.styles.title.Render("use " + m.question.rel + " for " + m.question.name + "? Y/n")
-	case m.mode == modeAsk:
-		line = m.styles.title.Render("add " + m.question.name + " with " + m.question.rel + "? Y/n")
 	case m.err != nil:
 		line = m.styles.bad.Render("✗ " + oneLine(m.err.Error()))
 	case m.note != "":
@@ -447,14 +447,17 @@ func (m Model) logView() string {
 
 // nameInput draws the name field as wide as its text, or its placeholder, and
 // the form's dimmed suffix after it, which can't be edited.
-func (m Model) nameInput() string {
-	in := m.form.inputs[fieldName]
+func (m Model) nameInput() string { return m.suffixed(m.form.inputs[fieldName], m.form.suffix) }
+
+// suffixed draws a name field at its text's width with its suffix, dimmed,
+// right after it.
+func (m Model) suffixed(in textinput.Model, suffix string) string {
 	width := ansi.StringWidth(in.Value())
 	if width == 0 {
 		width = ansi.StringWidth(in.Placeholder)
 	}
 	in.SetWidth(width)
-	return in.View() + m.styles.dim.Render(m.form.suffix)
+	return in.View() + m.styles.dim.Render(suffix)
 }
 
 // expected reports whether r fails only because of a service turned off:

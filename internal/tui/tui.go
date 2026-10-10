@@ -17,6 +17,7 @@ import (
 	"github.com/sangdth/lodo/internal/fsutil"
 	"github.com/sangdth/lodo/internal/paths"
 	"github.com/sangdth/lodo/internal/run"
+	"github.com/sangdth/lodo/internal/scan"
 	"github.com/sangdth/lodo/internal/store"
 	"github.com/sangdth/lodo/internal/system"
 )
@@ -36,17 +37,17 @@ type Backend interface {
 	PortsReady() error
 	// SetService turns dnsmasq or Caddy on or off.
 	SetService(ctx context.Context, service string, on bool) error
-	// Project returns the project dir is in and its compose files, best
-	// first; root is empty outside a project.
-	Project(dir string) (root string, files []string)
+	// Scan reads the project dir is in and proposes what the list lacks for
+	// it, under name when the user chose one; ok is false outside a project.
+	Scan(dir, name string, domains []store.Domain) (p scan.Project, proposal scan.Proposal, ok bool)
 	// ReadCompose returns the compose file at path.
 	ReadCompose(path string) ([]byte, error)
 	// LinkEnv writes DOCKER_HOST_IP=address into the .env the compose file at
 	// composePath runs with, and returns that file.
 	LinkEnv(ctx context.Context, composePath, address string) (string, error)
-	// NextDev returns the lines of the compose file's project that start
-	// next dev on every address, with -H address added. lodo doesn't write them.
-	NextDev(composePath, address string) []compose.Fix
+	// HostFixes returns the lines of the project at root that start a dev
+	// server on every address, with address added. lodo doesn't write them.
+	HostFixes(root, address string) []scan.Fix
 	// Tail returns what dnsmasq logged since offset, and the next offset.
 	Tail(offset int64) (string, int64, error)
 }
@@ -89,18 +90,12 @@ func (b backend) PortsReady() error {
 	return nil
 }
 
-// Project needs a git root with a lock file. A root it can't search counts as
-// having no compose file: the question is only an offer.
-func (b backend) Project(dir string) (string, []string) {
-	root, ok := compose.ProjectRoot(dir)
+func (b backend) Scan(dir, name string, domains []store.Domain) (scan.Project, scan.Proposal, bool) {
+	p, ok := scan.Find(dir)
 	if !ok {
-		return "", nil
+		return scan.Project{}, scan.Proposal{}, false
 	}
-	files, err := compose.Find(root)
-	if err != nil {
-		return root, nil
-	}
-	return root, files
+	return p, scan.Propose(p, domains, name), true
 }
 
 func (b backend) ReadCompose(path string) ([]byte, error) {
@@ -166,8 +161,6 @@ func envInside(root, env string) (string, error) {
 	return real, nil
 }
 
-func (b backend) NextDev(composePath, address string) []compose.Fix {
-	return compose.NextDev(composePath, address)
-}
+func (b backend) HostFixes(root, address string) []scan.Fix { return scan.HostFixes(root, address) }
 
 func (b backend) Tail(offset int64) (string, int64, error) { return dnsmasq.Tail(b.paths.Log, offset) }
