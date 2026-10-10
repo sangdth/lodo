@@ -149,7 +149,7 @@ setup`.
   sign a certificate this Mac trusts, for any site, which is why lodo trusts it only once a name uses HTTPS.
   `lodo uninstall` removes the trust from the copy in `~/.config/lodo`.
 - lodo turns Caddy's admin API off, so no other user or web page can change Caddy's config through
-  `localhost:2019`. Each site listens only on its row's loopback address, so other devices can't reach it.
+  `localhost:2019`. Each site closes any connection from another device without an answer.
 
 ### Sign-in callbacks
 

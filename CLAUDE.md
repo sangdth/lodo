@@ -55,6 +55,8 @@ stops the commit.
   `~/.config/lodo/caddy-root.crt` and runs `security add-trusted-cert` on that copy; uninstall untrusts the copy.
   A trusted root signs certificates for any site. Nothing uses Caddy's admin API; lodo's block in Homebrew's
   Caddyfile turns it off.
+- Caddy runs as the user and listens on port 80 of every address: macOS needs root to listen below port 1024 on
+  one address, so a Caddy `bind` fails. Every generated site aborts connections from outside `127.0.0.0/8` and `::1`.
 - The TUI writes one project file: the `.env` a linked compose file runs with, only its `DOCKER_HOST_IP`
   lines, through `fsutil`, only when it lies inside the project once symlinks are followed, and never one that
   git tracks (git runs with `safe.bareRepository=explicit` and `core.fsmonitor=false`). Everything else in a
