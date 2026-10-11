@@ -319,8 +319,8 @@ A failure at any step shows in the status line. The saved file stays as written;
   project once symlinks are followed is refused, and so is one git tracks; the compose path is still saved. The scan's `y`, `l` in the preview, and a form save that changes
   a linked name's compose file or address link too. Linking saves without an apply.
 - **HTTPS** (`s`): turns HTTPS on or off for the selected name and applies, like `space`. A name without a port
-  is refused: `https needs a port`. The `https` column shows `✓`; the check cell adds `https ✓` or `https ✗`
-  from a probe of `https://<name>` with normal certificate checks, so an untrusted root fails it with
+  is refused: `https needs a port`. The `https` column shows `✓`, or `✗` when the probe
+  fails: a probe of `https://<name>` with normal certificate checks, so an untrusted root fails it with
   "run lodo setup". With HTTPS on, the compose rewrite turns `http://localhost:<port>` into `https://<name>`.
 - **Log:** a `viewport` tailing `dnsmasq.log`, polled every 500 ms; `g` or `esc` returns.
 - **Scan:** started in a project, lodo scans it (`scan.Find`, `scan.Propose`) once the first check is done. When

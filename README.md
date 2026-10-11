@@ -163,8 +163,8 @@ compose file or address do the same.
 ### HTTPS
 
 `s` turns HTTPS on for a name with a port: Caddy then also serves `https://<name>`, with a certificate from its
-own local certificate authority, and `http://<name>` keeps working. The `https` column marks it, and the check
-column adds `https ✓` once a request over HTTPS reaches the app.
+own local certificate authority, and `http://<name>` keeps working. The `https` column marks it: `✓` once a
+request over HTTPS reaches the app, `✗` when it doesn't.
 
 Browsers accept the certificate once macOS trusts Caddy's root. After you turn on the first HTTPS name, run
 `lodo setup` again: it copies the root to `~/.config/lodo/caddy-root.crt`, adds that copy to the System keychain
