@@ -3,6 +3,7 @@ package scan
 import (
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/sangdth/lodo/internal/store"
@@ -123,6 +124,46 @@ func TestFind_EnvAddress(t *testing.T) {
 	}
 }
 
+func TestFind_Pages(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		files map[string]string
+		want  []Page
+	}{
+		{
+			name: "Mailpit bound to DOCKER_HOST_IP",
+			files: map[string]string{"docker/compose.dev.yaml": composeFile("axllent/mailpit:latest",
+				"${DOCKER_HOST_IP:-127.0.0.1}:1025:1025", "${DOCKER_HOST_IP:-127.0.0.1}:8025:8025")},
+			want: []Page{{Label: "mail", Port: 8025}},
+		},
+		{
+			name:  "from another registry, on another port",
+			files: map[string]string{"compose.yaml": composeFile("ghcr.io/axllent/mailpit:v1.21@sha256:0abc", "18025:8025")},
+			want:  []Page{{Label: "mail", Port: 18025}},
+		},
+		{name: "SMTP only", files: map[string]string{"compose.yaml": composeFile("axllent/mailpit", "1025:1025")}},
+		{name: "an image lodo doesn't know", files: map[string]string{"compose.yaml": composeFile("mailhog/mailhog", "8025:8025")}},
+		{name: "a file that doesn't parse", files: map[string]string{"compose.yaml": "services: ["}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			p, _ := Find(project(t, "shop", tt.files))
+			if !slices.Equal(p.Pages, tt.want) {
+				t.Errorf("Pages = %+v, want %+v", p.Pages, tt.want)
+			}
+		})
+	}
+}
+
+// composeFile is a compose file with one service that runs image and
+// publishes ports.
+func composeFile(image string, ports ...string) string {
+	return "services:\n  mail:\n    image: " + image + "\n    ports: [\"" + strings.Join(ports, `", "`) + "\"]\n"
+}
+
 func TestFind_NotAProject(t *testing.T) {
 	t.Parallel()
 
@@ -149,7 +190,10 @@ func TestName(t *testing.T) {
 func TestPropose(t *testing.T) {
 	t.Parallel()
 
-	const compose = "/p/shop/docker/compose.dev.yaml"
+	const compose, prod = "/p/shop/docker/compose.dev.yaml", "/p/shop/docker/compose.prod.yaml"
+	elsewhere := filepath.Join(t.TempDir(), "compose.yaml") // outside the project, and still there
+	write(t, elsewhere, "services: {}\n")
+	inbox := []Page{{Label: "mail", Port: 8025}}
 	monorepo := []App{
 		{Dir: "apps/storefront", Tool: "next", Port: 3000}, {Dir: "apps/admin", Tool: "next", Port: 3000},
 		{Dir: "apps/api"}, {Dir: "apps/email", Port: 3003},
@@ -237,6 +281,83 @@ func TestPropose(t *testing.T) {
 				Address: "127.0.1.1",
 				Add:     []store.Domain{{Name: "shop.test", Address: "127.0.1.1", Enabled: true, Root: "/p/shop"}},
 				Compose: compose,
+			},
+		},
+		{
+			name:    "Mailpit's inbox gets mail.<project>",
+			project: Project{Root: "/p/shop", Name: "shop.test", Compose: []string{compose}, Apps: []App{{Dir: ".", Tool: "next", Port: 3000}}, Pages: inbox},
+			want: Proposal{
+				Address: "127.0.1.1",
+				Add: []store.Domain{
+					{Name: "shop.test", Address: "127.0.1.1", Port: 3000, Enabled: true, Root: "/p/shop"},
+					{Name: "mail.shop.test", Address: "127.0.1.1", Port: 8025, Enabled: true},
+				},
+				Compose: compose,
+			},
+		},
+		{
+			name:    "a listed inbox stays, on its port",
+			project: Project{Root: "/p/shop", Name: "shop.test", Compose: []string{compose}, Pages: inbox},
+			domains: []store.Domain{
+				{Name: "shop.test", Address: "127.0.1.4", Enabled: true, Compose: compose},
+				{Name: "mail.shop.test", Address: "127.0.1.4", Port: 8026, Enabled: true},
+			},
+			want: Proposal{Address: "127.0.1.4", Listed: true},
+		},
+		{
+			name:    "another name on the inbox's port serves it",
+			project: Project{Root: "/p/shop", Name: "shop.test", Compose: []string{compose}, Pages: inbox},
+			domains: []store.Domain{
+				{Name: "shop.test", Address: "127.0.1.4", Enabled: true, Compose: compose},
+				{Name: "inbox.shop.test", Address: "127.0.1.4", Port: 8025, Enabled: true},
+			},
+			want: Proposal{Address: "127.0.1.4", Listed: true},
+		},
+		{
+			name:    "a project set to no compose file gets no inbox",
+			project: Project{Root: "/p/shop", Name: "shop.test", Compose: []string{compose}, Pages: inbox},
+			domains: []store.Domain{{Name: "shop.test", Address: "127.0.1.4", Enabled: true, Compose: store.NoCompose}},
+			want:    Proposal{Address: "127.0.1.4", Listed: true},
+		},
+		{
+			name:    "a project that runs another compose file gets no inbox from the first",
+			project: Project{Root: "/p/shop", Name: "shop.test", Compose: []string{compose, prod}, Pages: inbox},
+			domains: []store.Domain{{Name: "shop.test", Address: "127.0.1.4", Enabled: true, Compose: prod}},
+			want:    Proposal{Address: "127.0.1.4", Listed: true},
+		},
+		{
+			name:    "nor when another of its names links that file",
+			project: Project{Root: "/p/shop", Name: "shop.test", Compose: []string{compose, prod}, Pages: inbox},
+			domains: []store.Domain{
+				{Name: "shop.test", Address: "127.0.1.4", Enabled: true},
+				{Name: "api.shop.test", Address: "127.0.1.4", Port: 4000, Enabled: true, Compose: prod},
+			},
+			want: Proposal{Address: "127.0.1.4", Listed: true},
+		},
+		{
+			name:    "a link to a file that moved in the project counts as none",
+			project: Project{Root: "/p/shop", Name: "shop.test", Compose: []string{compose}},
+			domains: []store.Domain{{Name: "shop.test", Address: "127.0.1.4", Enabled: true, Root: "/p/shop", Compose: "/p/shop/compose.yaml"}},
+			want:    Proposal{Address: "127.0.1.4", Listed: true, Compose: compose},
+		},
+		{
+			name:    "a link to a file elsewhere that is still there stays",
+			project: Project{Root: "/p/shop", Name: "shop.test", Compose: []string{compose}},
+			domains: []store.Domain{{Name: "shop.test", Address: "127.0.1.4", Enabled: true, Compose: elsewhere}},
+			want:    Proposal{Address: "127.0.1.4", Listed: true},
+		},
+		{
+			name: "a renamed folder: the user's name claims it and links its file",
+			project: Project{
+				Root: "/p/ai-calling", Name: "ai-calling.test", Compose: []string{"/p/ai-calling/docker/compose.dev.yaml"},
+				Apps: []App{{Dir: ".", Tool: "next", Port: 3000}},
+			},
+			domains: []store.Domain{
+				{Name: "calling.test", Address: "127.0.1.5", Port: 3000, Enabled: true, Root: "/p/client-calling", Compose: "/p/client-calling/compose.yaml"},
+			},
+			chosen: "calling.test",
+			want: Proposal{
+				Name: "calling.test", Address: "127.0.1.5", Listed: true, Claim: true, Compose: "/p/ai-calling/docker/compose.dev.yaml",
 			},
 		},
 		{

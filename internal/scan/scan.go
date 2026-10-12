@@ -1,11 +1,15 @@
 // Package scan reads a project and proposes what lodo should list for it: a
-// name for the project and one for each app, their address and ports, the
-// compose file to link, and the lines that start a dev server on every
-// address. It reads files and never writes them.
+// name for the project, one for each app and one for each web page its compose
+// file publishes that lodo knows, their address and ports, the compose file to
+// link, and the lines that start a dev server on every address. It reads files
+// and never writes them.
 package scan
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
+	"os"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -23,6 +27,7 @@ type Project struct {
 	Name       string   `json:"name"`    // what the root folder suggests, such as flowy.test; empty when it makes no label
 	Compose    []string `json:"compose"` // its compose files, best first, absolute
 	Apps       []App    `json:"apps"`
+	Pages      []Page   `json:"pages"`
 	EnvAddress string   `json:"-"` // DOCKER_HOST_IP from the root's .env or .env.example, when it is an own address
 }
 
@@ -35,7 +40,9 @@ func Find(dir string) (Project, bool) {
 		return Project{}, false
 	}
 	files, _ := compose.Find(root)
-	return Project{Root: root, Name: Name(root), Compose: files, Apps: findApps(root), EnvAddress: envAddress(root)}, true
+	return Project{
+		Root: root, Name: Name(root), Compose: files, Apps: findApps(root), Pages: findPages(files), EnvAddress: envAddress(root),
+	}, true
 }
 
 // nonLabel matches what a folder's name holds that a DNS label can't.
@@ -128,9 +135,14 @@ func projectName(p Project, domains []store.Domain) string {
 // and each other app a subdomain named after its folder with its port, all
 // on the project's address: the one a listed name of the project has, else
 // the .env's own address when no other project has it, else the lowest free
-// one (assignPorts shares the ports out). Names already listed stay as they
-// are; only their address and port are used for the fixes, and a listed name
-// the user chose gets the folder as Root (Claim). A project with no app and no
+// one (assignPorts shares the ports out). Each page gets its label's
+// subdomain, such as mail.shop.test, with its port on the address of the
+// project's name, unless a listed name has that port there, or the project
+// runs none or another compose file than the first, which the pages come
+// from. Names already listed stay as they are; only their address and port are
+// used for the fixes, and a listed name the user chose gets the folder as Root
+// (Claim). The project's best compose file is offered when no name of the
+// project links one that is still there (linked). A project with no app and no
 // compose file gets nothing.
 func Propose(p Project, domains []store.Domain, name string) Proposal {
 	prop := Proposal{Root: p.Root, Add: []store.Domain{}, Fixes: []Fix{}, Notes: []string{}}
@@ -226,9 +238,31 @@ func Propose(p Project, domains []store.Domain, name string) Proposal {
 		prop.Add = append(prop.Add, d)
 	}
 
-	if owner, ok := find(list, p.Name); ok && owner.Compose == "" && len(p.Compose) > 0 &&
-		!slices.ContainsFunc(list, func(d store.Domain) bool { return linksInside(d, p.Root) }) {
-		prop.Compose = p.Compose[0]
+	if owner, ok := find(list, p.Name); ok && len(p.Compose) > 0 {
+		used := owner.Compose // the compose file the project runs once the proposal is applied
+		if !linked(owner, p.Compose) {
+			used = p.Compose[0]
+			if i := slices.IndexFunc(list, func(d store.Domain) bool { return linksInside(d, p.Root) && linked(d, p.Compose) }); i >= 0 {
+				used = list[i].Compose
+			} else {
+				prop.Compose = used
+			}
+		}
+		if used == p.Compose[0] { // the file Find read the pages from
+			for _, pg := range p.Pages {
+				d := store.Domain{Name: pg.Label + "." + p.Name, Address: owner.Address, Port: pg.Port, Enabled: true}
+				if _, listed := find(list, d.Name); listed || portTaken(list, d.Address, d.Port) {
+					continue // a listed name stays as it is, and the name on the port serves the page
+				}
+				next, err := store.Add(list, d)
+				if err != nil {
+					prop.Notes = append(prop.Notes, d.Name+": "+err.Error())
+					continue
+				}
+				list = next
+				prop.Add = append(prop.Add, d)
+			}
+		}
 	}
 	prop.Fixes = fixesFor(p, addresses, moved)
 	return prop
@@ -348,4 +382,19 @@ func portTaken(domains []store.Domain, address string, port int) bool {
 // linksInside reports whether d links a compose file inside root.
 func linksInside(d store.Domain, root string) bool {
 	return d.Compose != "" && d.Compose != store.NoCompose && strings.HasPrefix(d.Compose, root+string(filepath.Separator))
+}
+
+// linked reports whether d links no compose file on purpose, or one that is
+// still there: one of found, the files the scan found, or one on disk. A link
+// to a file that is gone, since the project's folder or the file moved,
+// counts as none, so the scan offers the project's file again.
+func linked(d store.Domain, found []string) bool {
+	switch {
+	case d.Compose == "":
+		return false
+	case d.Compose == store.NoCompose || slices.Contains(found, d.Compose):
+		return true
+	}
+	_, err := os.Stat(d.Compose)
+	return !errors.Is(err, fs.ErrNotExist)
 }

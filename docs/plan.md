@@ -332,7 +332,10 @@ A failure at any step shows in the status line. The saved file stays as written;
   `enter` scans again under it, so the subdomains, address and fixes follow, and `esc` keeps the old one. The
   project is named by the listed name whose `root` is its folder, else by the listed name that links a compose
   file in it, else by its folder. `y` saves the folder as the main name's `root`, also on a listed name the user
-  picked.
+  picked. Mailpit in the project's best compose file gets `mail.<project>` with the port its inbox is published
+  on (`scan.webImages` lists the images lodo names), unless a listed name has that port on the address or the
+  project runs another compose file, or none. A link to a compose file that is gone counts as none, so the
+  review offers the project's file; `e` with the old name gives that name a renamed folder.
 - **Compose:** a compose path is saved without an apply: it changes no generated file. `p` previews the file rewritten by `compose.Rewrite` in a `viewport`, the changed lines
   marked, with the `.env` line; `l` links. The preview scrolls sideways with the arrows only. Above the file it lists
   the dev server lines without a host in the project's `package.json` scripts and the shell scripts they run
@@ -434,8 +437,8 @@ internal/dnsmasq/       dnsmasq.conf and resolver-list generation, log tail
 internal/caddy/         Caddyfile generation and caddy validate
 internal/system/        setup, apply, uninstall; templates for the script, plist, sudoers, conf blocks
 internal/check/         the eight doctor checks and the per-domain dns, macOS and http probes
-internal/compose/       find a project and its compose file; rewrite its ports and localhost URLs for the preview
-internal/scan/          read a project's apps, ports and address; propose names, compose link and host fixes
+internal/compose/       find a project and its compose file; read its services; rewrite its ports and localhost URLs
+internal/scan/          read a project's apps, ports, address and Mailpit; propose names, compose link and host fixes
 internal/tui/           Bubble Tea model, views, key map
 ```
 
@@ -684,6 +687,7 @@ Commits: one per step group.
 | 9.8  | `lodo scan`, `lodo scan --json`, read-only                                                 |
 | 9.9  | README, CLAUDE.md layout                                                                   |
 | 9.10 | `Domain.Root`; `e` in the review names the project, `lodo scan --name`; the name sticks    |
+| 9.11 | Pages: Mailpit in the compose file gets `mail.<project>`; a link to a gone file is none    |
 
 Tests: fake project trees in `t.TempDir()` from the shapes in `~/Projects`: plain Next, a pnpm monorepo, a
 vite config port, `dev.sh` with `HOST_IP`, a port from env, lock without git, git without lock,

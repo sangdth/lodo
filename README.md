@@ -118,18 +118,24 @@ nearest folder above it with a lock file and its manifest (`pnpm-lock.yaml` and 
   `astro.config`, else the framework's own: 3000 for Next and NestJS, 5173 for Vite, 4200 for Angular, and so
   on. A port it can't read stays empty, with a note.
 - the compose file: up to 3 folders deep, `.dev` first, never in `node_modules`, `vendor` or `testdata`.
+- the web pages in that file: Mailpit (`axllent/mailpit`, from any registry, at any tag) and the port on your Mac
+  its inbox, port 8025 in the container, is published on.
 - the address: a listed name's in the project, else `DOCKER_HOST_IP` from the root's `.env` or `.env.example`
   when no other project has it, else the lowest free one.
 
-It proposes the project's name, a subdomain per app, such as `admin.media.test` with its port, the compose file
-to link, and the `dev` lines that listen on every address. All of a project's apps share its address. When two
+It proposes the project's name, a subdomain per app, such as `admin.media.test` with its port, `mail.media.test`
+for Mailpit's inbox, the compose file to link, and the `dev` lines that listen on every address. All of a
+project's apps share its address, and so does the inbox. The inbox is skipped when a listed name has its port
+there, or when the project runs another compose file than the one the scan read, or none. When two
 want the same port, an app whose port only its code sets (NestJS, Create React App, an unknown command) keeps it,
 and the others move up: NestJS on 3000, then Next on 3001, Vite on 3002. The `dev` line the review shows then
 adds `--port 3001` too; until you change it, that name's check says `app down`. Two apps that can't move get two
 addresses. The project's name is yours: the scan suggests the folder's, such as `media.test`, and `e`
 in the review changes it; the subdomains follow. Once added, the name keeps the project's folder as `root` in
 `domains.json`, so later scans know it by that name. A name already listed that links a compose file in the
-project counts too. When none of the project's names is listed, the review opens: `y` or `enter` adds every name
+project counts too. A link to a compose file that is gone, after you rename the project's folder or move the
+file, counts as none: the review offers the project's file again, and `e` with the old name, such as `calling`,
+gives that name the renamed folder. When none of the project's names is listed, the review opens: `y` or `enter` adds every name
 and links the compose file in one change, and `n` or `esc` goes back, so lodo offers it again next time. A listed project
 only gets a note in the status line, such as `scan: 1 line to change · i reviews`. `i` scans again at any time.
 `lodo scan` prints the same review, `lodo scan --json` the same data for scripts, and `--name hugger` names the

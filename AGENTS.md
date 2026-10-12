@@ -35,10 +35,12 @@ stops the commit.
   resolver list, the generated Caddyfile.
 - `internal/system`: setup, apply and uninstall; the root script, sudoers rule and loopback plist templates;
   lodo's blocks in Homebrew's dnsmasq.conf and Caddyfile. `Apply` refuses to run until setup has.
-- `internal/compose`: finds the project a folder is in (`ProjectRoot`) and its compose file, and rewrites the
-  file's ports and `localhost` URLs for lodo. It reads files and never writes them.
-- `internal/scan`: reads a project's apps, dev servers, ports and `.env` address, and proposes the names, compose
-  link and host fixes the list lacks. All dev server rules live here. It reads files and never writes them.
+- `internal/compose`: finds the project a folder is in (`ProjectRoot`) and its compose file, reads its services'
+  images and published ports (`Services`), and rewrites the file's ports and `localhost` URLs for lodo. It reads
+  files and never writes them.
+- `internal/scan`: reads a project's apps, dev servers, ports, `.env` address and the compose web pages it names
+  (Mailpit's inbox), and proposes the names, compose link and host fixes the list lacks. All dev server rules and
+  the images lodo names (`webImages`) live here. It reads files and never writes them.
 - `internal/check`: the eight doctor checks and the per-domain probes: dnsmasq directly, macOS, and HTTP through
   Caddy. `Report` returns both from one probe; `Prerequisites` runs checks 1 to 5 without probing.
 - `internal/tui`: the Bubble Tea v2 model. It talks to the system only through its `Backend` interface; tests
