@@ -37,9 +37,11 @@ type Change struct {
 	Old, New string // the value before and after, without quotes
 }
 
-// urlRE matches an http or ws URL, secure or not, on this Mac's own host. The
-// groups are the scheme and the port, when it has one.
-var urlRE = regexp.MustCompile(`(?i)\b(https?|wss?)://(?:localhost|127\.0\.0\.1)(?::(\d{1,5}))?`)
+// urlRE matches a URL of any scheme on this Mac's own host. The groups are
+// the scheme, the user info with its @, and the port, when it has one. User
+// info may hold an @ but no backslash: a browser reads
+// http://evil.com\@localhost as a URL on evil.com.
+var urlRE = regexp.MustCompile(`(?i)\b([a-z][a-z0-9+.-]*)://([^\s/\\?#]*@)?(?:localhost|127\.0\.0\.1)(?::(\d{1,5}))?`)
 
 // hostChars are the bytes that, right after a match of urlRE, show its host
 // goes on, as in localhost.example.com or localhost@example.com. Such a URL
@@ -345,40 +347,82 @@ func secureScheme(scheme string) string {
 	return "https"
 }
 
-// pointURLs returns s with each localhost URL in it pointing at the project,
-// and false when s has none. An http or ws URL on a port Caddy serves a name
-// for gets that name without the port, since Caddy serves it on port 80;
-// when that name has HTTPS on, the URL becomes https or wss, which Caddy
-// serves on port 443. Any other URL gets the project's name and keeps its
-// port.
-func pointURLs(s string, v Values) (string, bool) {
+// LocalURL is the start of a URL on this Mac's own host, as written.
+type LocalURL struct {
+	Scheme   string // http, WS, postgres
+	UserInfo string // user:password@, or empty
+	Port     string // empty without one
+}
+
+// Web reports whether u is http, https, ws or wss.
+func (u LocalURL) Web() bool {
+	for _, s := range []string{"http", "https", "ws", "wss"} {
+		if strings.EqualFold(u.Scheme, s) {
+			return true
+		}
+	}
+	return false
+}
+
+// MapURLs returns s with each localhost URL's scheme://userinfo host[:port]
+// replaced by what to returns, and whether to replaced any. to returning
+// false keeps that URL. A URL whose host goes on (hostChars) is skipped.
+func MapURLs(s string, to func(LocalURL) (string, bool)) (string, bool) {
 	var b strings.Builder
-	last := 0
+	last, changed := 0, false
 	for _, m := range urlRE.FindAllStringSubmatchIndex(s, -1) {
 		if m[1] < len(s) && strings.IndexByte(hostChars, s[m[1]]) >= 0 {
 			continue
 		}
-		scheme, host, port := s[m[2]:m[3]], v.Domain, ""
+		u := LocalURL{Scheme: s[m[2]:m[3]]}
 		if m[4] >= 0 {
-			port = s[m[4]:m[5]]
+			u.UserInfo = s[m[4]:m[5]]
 		}
-		plain := strings.EqualFold(scheme, "http") || strings.EqualFold(scheme, "ws")
-		if n, err := strconv.Atoi(port); plain && err == nil && v.Names[n] != "" {
-			host, port = v.Names[n], ""
-			if v.Secure[n] {
-				scheme = secureScheme(scheme)
-			}
+		if m[6] >= 0 {
+			u.Port = s[m[6]:m[7]]
+		}
+		out, ok := to(u)
+		if !ok {
+			continue
 		}
 		b.WriteString(s[last:m[0]])
-		b.WriteString(scheme + "://" + host)
-		if port != "" {
-			b.WriteString(":" + port)
-		}
-		last = m[1]
+		b.WriteString(out)
+		last, changed = m[1], true
 	}
-	if last == 0 {
-		return "", false
+	if !changed {
+		return s, false
 	}
 	b.WriteString(s[last:])
 	return b.String(), true
+}
+
+// Point returns u pointing at the project. An http or ws URL on a port in
+// v.Names gets that name without the port, since Caddy serves it on port 80,
+// and named is true; when that name has HTTPS on, the URL becomes https or
+// wss, which Caddy serves on port 443. Any other URL gets v.Domain and keeps
+// its port. The scheme's case and the user info stay.
+func (v Values) Point(u LocalURL) (url string, named bool) {
+	scheme, host, port := u.Scheme, v.Domain, u.Port
+	plain := strings.EqualFold(scheme, "http") || strings.EqualFold(scheme, "ws")
+	if n, err := strconv.Atoi(port); plain && err == nil && v.Names[n] != "" {
+		host, port, named = v.Names[n], "", true
+		if v.Secure[n] {
+			scheme = secureScheme(scheme)
+		}
+	}
+	url = scheme + "://" + u.UserInfo + host
+	if port != "" {
+		url += ":" + port
+	}
+	return url, named
+}
+
+// pointURLs returns s with each http or ws localhost URL in it, secure or
+// not, pointing at the project (Values.Point), and false when s has none.
+// Other schemes stay: a container can't resolve a .test name.
+func pointURLs(s string, v Values) (string, bool) {
+	return MapURLs(s, func(u LocalURL) (string, bool) {
+		out, _ := v.Point(u)
+		return out, u.Web()
+	})
 }

@@ -69,7 +69,14 @@ func TestFormatResults(t *testing.T) {
 		{name: "none", results: nil},
 		{name: "mixed", results: []check.Result{
 			{Name: "crm.test", Address: "127.0.1.1", Direct: true, System: true},
-			{Name: "dashboard.crm.test", Address: "127.0.1.1", Port: 3000, Direct: true, System: true, Detail: "app down: nothing answers on 127.0.1.1:3000"},
+			{
+				Name: "dashboard.crm.test", Address: "127.0.1.1", Port: 3000, Direct: true, System: true, Down: true,
+				Detail: "app down: nothing answers on 127.0.1.1:3000",
+			},
+			{
+				Name: "docs.crm.test", Address: "127.0.1.1", Port: 3001, Direct: true, System: true,
+				Detail: "an app listens on 127.0.0.1:3001, not on the name's address: lodo scan shows the host fix",
+			},
 			{Name: "flowy.test", Address: "127.0.1.3", Direct: true, Detail: "macOS: no address"},
 			{Name: "secure.crm.test", Address: "127.0.1.1", Port: 3004, Direct: true, System: true, HTTP: true, Secure: true, HTTPS: true},
 			{
@@ -86,6 +93,32 @@ func TestFormatResults(t *testing.T) {
 	}
 }
 
+func TestProbeCode(t *testing.T) {
+	t.Parallel()
+
+	up := check.Result{Name: "crm.test", Direct: true, System: true}
+	down := check.Result{Name: "dashboard.crm.test", Port: 3000, Direct: true, System: true, Down: true}
+	broken := check.Result{Name: "flowy.test", Direct: true}
+	tests := []struct {
+		name    string
+		results []check.Result
+		want    int
+	}{
+		{name: "none", results: nil, want: 0},
+		{name: "every name passes", results: []check.Result{up}, want: 0},
+		{name: "an app isn't running", results: []check.Result{up, down}, want: 0},
+		{name: "another failure next to it", results: []check.Result{down, broken}, want: 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := probeCode(tt.results); got != tt.want {
+				t.Errorf("probeCode = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestApp_Scan(t *testing.T) {
 	t.Parallel()
 
@@ -97,7 +130,9 @@ func TestApp_Scan(t *testing.T) {
 		"pnpm-workspace.yaml":     "packages: [apps/*]\n",
 		"apps/web/package.json":   "{\n  \"scripts\": {\"dev\": \"next dev -p 3001\"}\n}\n",
 		"apps/api/package.json":   `{"scripts": {"dev": "nest start --watch"}}`,
-		"docker/compose.dev.yaml": "services: {}\n",
+		"apps/web/.env":           "API_URL=http://localhost:3001\nDATABASE_URL=postgres://u:hunter2@localhost:5432/shop\n",
+		".env":                    "DOCKER_HOST_IP=127.0.1.1\n",
+		"docker/compose.dev.yaml": `services: {db: {image: postgres, ports: ["${DOCKER_HOST_IP:-127.0.0.1}:5432:5432"]}}`,
 	} {
 		path := filepath.Join(root, filepath.FromSlash(name))
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -108,41 +143,71 @@ func TestApp_Scan(t *testing.T) {
 		}
 	}
 	p := paths.ForTest(t.TempDir())
+	realWeb, err := filepath.EvalSymlinks(filepath.Join(root, "apps", "web"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := run.NewFake()
+	r.Fail(run.Line(p.Git, "--literal-pathspecs", "-c", "safe.bareRepository=explicit", "-c", "core.fsmonitor=false",
+		"-C", realWeb, "ls-files", "--error-unmatch", "--", ".env"), "") // untracked; Fake says tracked otherwise
 
 	var stdout, stderr strings.Builder
-	a := newApp(p, run.NewFake(), &stdout, &stderr)
-	if code := a.scan(filepath.Join(root, "apps", "web"), scanFlags{}); code != 0 {
+	a := newApp(p, r, &stdout, &stderr)
+	if code := a.scan(t.Context(), filepath.Join(root, "apps", "web"), scanFlags{}); code != 0 {
 		t.Fatalf("exit code = %d, stderr %q", code, stderr.String())
 	}
 	got := strings.ReplaceAll(stdout.String(), root, "<root>")
+	for _, want := range []string{"set   apps/web/.env:1", "+ API_URL=http://web.shop.test\n", "+ DATABASE_URL=postgres://***@shop.test:5432/shop\n"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("scan lacks %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "hunter2") {
+		t.Errorf("scan shows the password:\n%s", got)
+	}
 	golden.RequireEqual(t, got)
 
 	stdout.Reset()
-	if code := a.scan(root, scanFlags{json: true}); code != 0 {
+	if code := a.scan(t.Context(), root, scanFlags{json: true}); code != 0 {
 		t.Fatalf("--json: exit code = %d, stderr %q", code, stderr.String())
 	}
+	if strings.Contains(stdout.String(), "hunter2") {
+		t.Errorf("--json shows the password:\n%s", stdout.String())
+	}
 	var proposal scan.Proposal
-	if err := json.Unmarshal([]byte(stdout.String()), &proposal); err != nil || len(proposal.Add) != 3 {
-		t.Errorf("--json gave %+v, %v; want 3 names to add", proposal, err)
+	if err := json.Unmarshal([]byte(stdout.String()), &proposal); err != nil || len(proposal.Add) != 3 || len(proposal.Env) != 2 {
+		t.Errorf("--json gave %+v, %v; want 3 names to add and 2 .env lines to set", proposal, err)
 	}
 	if _, err := os.Stat(p.DomainsJSON); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("scan wrote domains.json: %v", err)
 	}
 
 	stdout.Reset()
-	if code := a.scan(root, scanFlags{json: true, name: "store"}); code != 0 {
+	if code := a.scan(t.Context(), root, scanFlags{json: true, name: "store"}); code != 0 {
 		t.Fatalf("--name: exit code = %d, stderr %q", code, stderr.String())
 	}
 	if err := json.Unmarshal([]byte(stdout.String()), &proposal); err != nil || proposal.Name != "store.test" ||
 		proposal.Add[0].Root != root || !strings.HasSuffix(proposal.Add[1].Name, ".store.test") {
 		t.Errorf("--name store gave %+v, %v; want store.test with its subdomains", proposal, err)
 	}
-	if code := a.scan(root, scanFlags{name: "web.store"}); code != 2 {
+	if code := a.scan(t.Context(), root, scanFlags{name: "web.store"}); code != 2 {
 		t.Errorf("--name web.store: exit code = %d, want 2", code)
 	}
 
 	stderr.Reset()
-	if code := a.scan(tmp, scanFlags{}); code != 1 || !strings.Contains(stderr.String(), "not in a project") {
+	if code := a.scan(t.Context(), tmp, scanFlags{}); code != 1 || !strings.Contains(stderr.String(), "not in a project") {
 		t.Errorf("outside a project: exit code %d, stderr %q", code, stderr.String())
 	}
+
+	t.Run("tracked", func(t *testing.T) {
+		var stdout, stderr strings.Builder
+		a := newApp(p, run.NewFake(), &stdout, &stderr) // Fake's ls-files succeeds: git tracks apps/web/.env
+		if code := a.scan(t.Context(), root, scanFlags{}); code != 0 {
+			t.Fatalf("exit code = %d, stderr %q", code, stderr.String())
+		}
+		got := stdout.String()
+		if strings.Contains(got, "set   ") || !strings.Contains(got, "note  apps/web/.env: git tracks it") {
+			t.Errorf("a tracked .env gave:\n%s\nwant no set lines and its note", got)
+		}
+	})
 }

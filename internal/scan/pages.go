@@ -1,6 +1,7 @@
 package scan
 
 import (
+	"maps"
 	"strings"
 
 	"github.com/sangdth/lodo/internal/compose"
@@ -24,26 +25,28 @@ var webImages = []struct {
 	{image: "axllent/mailpit", label: "mail", port: 8025},
 }
 
-// findPages returns the pages of the project's best compose file, the first
-// of files. A file it can't read or parse has none.
-func findPages(files []string) []Page {
+// readCompose returns the pages of the project's best compose file, the first
+// of files, and the ports on this Mac it binds to DOCKER_HOST_IP. A file it
+// can't read or parse has none.
+func readCompose(files []string) (pages []Page, bound map[int]bool) {
 	if len(files) == 0 {
-		return nil
+		return nil, nil
 	}
 	data, err := fsutil.ReadRegular(files[0], fsutil.MaxProjectFile)
 	if err != nil {
-		return nil
+		return nil, nil
 	}
 	services, _ := compose.Services(data)
-	var pages []Page
+	bound = map[int]bool{}
 	for _, s := range services {
+		maps.Copy(bound, s.Bound)
 		for _, w := range webImages {
 			if port, ok := s.Ports[w.port]; ok && isImage(s.Image, w.image) {
 				pages = append(pages, Page{Label: w.label, Port: port})
 			}
 		}
 	}
-	return pages
+	return pages, bound
 }
 
 // isImage reports whether image is repo, from any registry and at any tag or

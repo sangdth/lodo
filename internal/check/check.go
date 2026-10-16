@@ -27,7 +27,8 @@ import (
 // Env holds what the checks and probes need: lodo's paths, the runner for
 // commands, and where dnsmasq and Caddy listen. NewEnv returns the values for
 // this Mac; tests point DNS, HTTPPort and HTTPSPort at local servers, RootCAs
-// at their test certificate and RootUID at their own uid.
+// at their test certificate, RootUID at their own uid and may narrow Localhost
+// to ::1.
 type Env struct {
 	Paths     paths.Paths
 	Runner    run.Runner
@@ -36,13 +37,14 @@ type Env struct {
 	HTTPSPort int            // the port Caddy serves HTTPS on
 	RootCAs   *x509.CertPool // the CAs the HTTPS probe trusts; nil means this Mac's
 	RootUID   uint32         // the uid that must own the resolver script: 0, or the test user's uid in tests
+	Localhost []string       // where a dev server started without a host listens: 127.0.0.1, and ::1, Node's localhost
 
 	dnsmasqOff bool // check 1 found dnsmasq turned off; run sets it for the checks after
 }
 
 // NewEnv returns the Env for this Mac: dnsmasq on 127.0.0.1:53535, Caddy on
-// ports 80 and 443, the certificates macOS trusts, and a resolver script that
-// root owns.
+// ports 80 and 443, the certificates macOS trusts, a resolver script that
+// root owns, and dev servers without a host on 127.0.0.1 or ::1.
 func NewEnv(p paths.Paths, r run.Runner) Env {
 	return Env{
 		Paths:     p,
@@ -51,6 +53,7 @@ func NewEnv(p paths.Paths, r run.Runner) Env {
 		HTTPPort:  store.ProxyPort,
 		HTTPSPort: store.TLSPort,
 		RootUID:   0,
+		Localhost: []string{"127.0.0.1", "::1"},
 	}
 }
 
@@ -70,6 +73,7 @@ const (
 	fixSetup     = "lodo setup"
 	fixApply     = "lodo apply"
 	fixDnsmasqOn = "turn dnsmasq on: brew services start dnsmasq, or tab and space in lodo"
+	fixHost      = "lodo scan in the app's project, then start the app with the host it shows"
 )
 
 // doctorChecks are the eight checks, in ID order. Each gets the whole domain
@@ -324,21 +328,51 @@ func (e Env) checkGenerated(_ context.Context, domains []store.Domain, _ []Resul
 	return pass("match domains.json")
 }
 
-// checkNames: every enabled domain passed its probes.
+// checkNames: every enabled domain passed its probes, or failed only because
+// its app isn't running, which no fix of lodo's starts; the detail names
+// those. Failures with the same detail are listed once, after their names.
+// The fix is lodo apply when a failure needs it, the host fix when every
+// failure is an app on the wrong address, and none otherwise, since each
+// failure then names its own.
 func (e Env) checkNames(_ context.Context, _ []store.Domain, results []Result) Check {
 	if len(results) == 0 {
 		return pass("no enabled domains")
 	}
-	var failed []string
+	var down, details []string
+	names := map[string][]string{} // per detail, the names that failed with it
+	apply, host := false, true
 	for _, r := range results {
-		if !r.OK() {
-			failed = append(failed, r.Name+": "+r.Detail)
+		switch {
+		case r.Down:
+			down = append(down, r.Name)
+		case !r.OK():
+			if names[r.Detail] == nil {
+				details = append(details, r.Detail)
+			}
+			names[r.Detail] = append(names[r.Detail], r.Name)
+			apply = apply || needsApply(r)
+			host = host && strings.HasSuffix(r.Detail, scanHost)
 		}
 	}
-	if len(failed) > 0 {
-		return fail(firstFew(failed, "; "), fixApply)
+	notRunning := ""
+	if len(down) > 0 {
+		notRunning = "; not running: " + firstFew(down, ", ")
 	}
-	return pass(fmt.Sprintf("%d of %d resolve", len(results), len(results)))
+	if len(details) > 0 {
+		failed := make([]string, len(details))
+		for i, detail := range details {
+			failed[i] = firstFew(names[detail], ", ") + ": " + detail
+		}
+		fix := ""
+		switch {
+		case apply:
+			fix = fixApply
+		case host:
+			fix = fixHost
+		}
+		return fail(firstFew(failed, "; ")+notRunning, fix)
+	}
+	return pass(fmt.Sprintf("%d of %d resolve", len(results), len(results)) + notRunning)
 }
 
 // checkCaddy: when an enabled domain has a port, Caddy is installed, set up,

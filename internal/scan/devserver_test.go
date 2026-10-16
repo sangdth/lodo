@@ -90,7 +90,7 @@ func TestServerIn(t *testing.T) {
 		{name: "vite config without a port", script: "vite", files: map[string]string{"vite.config.js": "export default {}"}, tool: "vite", port: 5173},
 		{name: "astro", script: "astro dev", tool: "astro", port: 4321},
 		{name: "wrangler", script: "wrangler dev --port 8787", tool: "wrangler", port: 8787},
-		{name: "nest", script: "nest start --watch --env-file .env", tool: "nest", port: 3000},
+		{name: "nest", script: "nest start --watch --env-file .env", tool: "nest"}, // the Nest CLI has no port of its own
 		{name: "angular", script: "ng serve", tool: "angular", port: 4200},
 		{name: "gatsby", script: "gatsby develop -p 8001", tool: "gatsby", port: 8001},
 		{name: "storybook", script: "storybook dev -p 6007", tool: "storybook", port: 6007},
@@ -147,6 +147,48 @@ func TestDevServer(t *testing.T) {
 			if tool != tt.tool || srv.port != tt.port || known != tt.known || hasDev != tt.hasDev {
 				t.Errorf("devServer = %q port %d known %v hasDev %v; want %q port %d known %v hasDev %v",
 					tool, srv.port, known, hasDev, tt.tool, tt.port, tt.known, tt.hasDev)
+			}
+		})
+	}
+}
+
+// TestDevServer_EnvPort checks which dev servers take PORT from the app's
+// .env, then its .env.example.
+func TestDevServer_EnvPort(t *testing.T) {
+	t.Parallel()
+
+	const nest, cra = `{"scripts": {"dev": "nest start --watch"}}`, `{"scripts": {"dev": "react-scripts start"}}`
+	tests := []struct {
+		name, pkg   string
+		env, sample string // the .env and the .env.example; empty for none
+		want        int
+	}{
+		{name: "nest", pkg: nest, env: "HOST=x\nPORT=3300\n", want: 3300},
+		{name: "nest, .env.example only", pkg: nest, sample: "PORT=3301\n", want: 3301},
+		{name: ".env first", pkg: nest, env: "PORT=3300\n", sample: "PORT=3301\n", want: 3300},
+		{name: "nest without one", pkg: nest},
+		{name: "commented out", pkg: nest, env: "# PORT=1\n"},
+		{name: "export and quotes", pkg: nest, env: "export PORT=\"3302\"\n", want: 3302},
+		{name: "too high", pkg: nest, env: "PORT=99999\n"},
+		{name: "a variable", pkg: nest, env: "PORT=${X}\n"},
+		{name: "create react app", pkg: cra, env: "PORT=3005\n", want: 3005},
+		{name: "create react app without one", pkg: cra, want: 3000},
+		{name: "next ignores it", pkg: `{"scripts": {"dev": "next dev"}}`, env: "PORT=4000\n", want: 3000},
+		{name: "an unknown command", pkg: `{"scripts": {"dev": "tsx watch src/server.ts"}}`, env: "PORT=4000\n", want: 4000},
+		{name: "its -p first", pkg: `{"scripts": {"dev": "tsx watch -p 5000 src/server.ts"}}`, env: "PORT=4000\n", want: 5000},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			write(t, filepath.Join(dir, "package.json"), tt.pkg)
+			for name, content := range map[string]string{".env": tt.env, ".env.example": tt.sample} {
+				if content != "" {
+					write(t, filepath.Join(dir, name), content)
+				}
+			}
+			if srv, _, _ := devServer(dir); srv.port != tt.want {
+				t.Errorf("port = %d, want %d", srv.port, tt.want)
 			}
 		})
 	}

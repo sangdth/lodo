@@ -13,6 +13,7 @@ import (
 type Service struct {
 	Image string
 	Ports map[int]int
+	Bound map[int]bool // the ports on this Mac bound to ${DOCKER_HOST_IP…}
 }
 
 // Services returns the services of a compose file, in the file's order. A
@@ -26,15 +27,18 @@ func Services(src []byte) ([]Service, error) {
 	}
 	var services []Service
 	for _, service := range pairs(servicesOf(&doc)) {
-		s := Service{Ports: map[int]int{}}
+		s := Service{Ports: map[int]int{}, Bound: map[int]bool{}}
 		for key, value := range pairs(service) {
 			switch key {
 			case "image":
 				s.Image = value.Value
 			case "ports":
 				for _, port := range value.Content {
-					if container, host, ok := published(port); ok {
+					if container, host, addr, ok := published(port); ok {
 						s.Ports[container] = host
+						if isHostIP(addr) {
+							s.Bound[host] = true
+						}
 					}
 				}
 			}
@@ -44,16 +48,20 @@ func Services(src []byte) ([]Service, error) {
 	return services, nil
 }
 
-// published returns the container's port and the Mac's of one entry in a
-// service's ports: a short one, such as "127.0.0.1:8025:8025/tcp", or a long
-// one with target and published.
-func published(port *yaml.Node) (container, host int, ok bool) {
+// published returns the container's port, the Mac's and the address it binds
+// of one entry in a service's ports: a short one, such as
+// "127.0.0.1:8025:8025/tcp", or a long one with target, published and
+// host_ip.
+func published(port *yaml.Node) (container, host int, addr string, ok bool) {
 	var containerText, hostText, protocol string
 	switch port.Kind {
 	case yaml.ScalarNode:
 		parts := splitPort(port.Value)
 		if len(parts) < 2 {
-			return 0, 0, false // only the container's port: Docker picks the Mac's
+			return 0, 0, "", false // only the container's port: Docker picks the Mac's
+		}
+		if len(parts) == 3 {
+			addr = parts[0]
 		}
 		hostText = parts[len(parts)-2]
 		containerText, protocol, _ = strings.Cut(parts[len(parts)-1], "/")
@@ -66,13 +74,22 @@ func published(port *yaml.Node) (container, host int, ok bool) {
 				hostText = value.Value
 			case "protocol":
 				protocol = value.Value
+			case "host_ip":
+				addr = value.Value
 			}
 		}
 	}
 	if protocol != "" && protocol != "tcp" {
-		return 0, 0, false
+		return 0, 0, "", false
 	}
 	container, errContainer := strconv.Atoi(containerText)
 	host, errHost := strconv.Atoi(hostText)
-	return container, host, errContainer == nil && errHost == nil && container > 0 && host > 0
+	return container, host, addr, errContainer == nil && errHost == nil && container > 0 && host > 0
+}
+
+// isHostIP reports whether a port's address is EnvVar, with or without a
+// default: ${DOCKER_HOST_IP}, ${DOCKER_HOST_IP:-127.0.0.1}.
+func isHostIP(addr string) bool {
+	rest, ok := strings.CutPrefix(addr, "${"+EnvVar)
+	return ok && rest != "" && strings.IndexByte("}:-", rest[0]) >= 0
 }

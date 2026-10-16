@@ -5,6 +5,7 @@ package tui
 
 import (
 	"errors"
+	"maps"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -28,26 +29,31 @@ type scanMsg struct {
 }
 
 // runScan scans the project lodo started in against the list, under the
-// name the user chose, if any.
+// name and app labels the user chose, if any.
 func (m Model) runScan(review bool) tea.Cmd {
-	b, dir, name, domains := m.backend, m.origin.Dir, m.scanName, m.domains
+	ctx, b, dir, name, labels, domains := m.ctx, m.backend, m.origin.Dir, m.scanName, m.scanLabels, m.domains
 	return func() tea.Msg {
-		project, proposal, ok := b.Scan(dir, name, domains)
+		project, proposal, ok := b.Scan(ctx, dir, name, labels, domains)
 		return scanMsg{project: project, proposal: proposal, ok: ok, review: review}
 	}
 }
 
-// setScan stores a scan and, when i asked for it, opens the review.
+// setScan stores a scan and, when i or a new name asked for it, opens the
+// review, or goes back to the list when there is nothing to review.
 func (m *Model) setScan(msg scanMsg) {
 	m.project, m.proposal, m.scanned = msg.project, msg.proposal, true
+	m.renaming, m.renameAt = false, 0 // the name field indexed the old proposal's apps
 	switch {
 	case !msg.review:
 		m.maybeOffer()
 	case !msg.ok:
+		m.mode = modeList
 		m.err = errors.New("not in a project: lodo scans the git root, or a folder with a lock file, it starts in")
 	case m.proposal.Empty() && !m.proposal.Listed:
+		m.mode = modeList
 		m.note = "scan found no dev server or compose file in " + m.shortPath(m.proposal.Root)
 	case m.proposal.Empty():
+		m.mode = modeList
 		m.note = m.proposal.Name + " is set up: nothing to add, link or change"
 	default:
 		m.openReview()
@@ -84,6 +90,9 @@ func (m Model) summary() string {
 	if m.proposal.Claim {
 		parts = append(parts, "this folder to save as "+m.proposal.Name+"'s")
 	}
+	if n := len(m.proposal.Env); n > 0 {
+		parts = append(parts, plural(n, ".env line")+" to set")
+	}
 	if n := len(m.proposal.Fixes); n > 0 {
 		parts = append(parts, plural(n, "line")+" to change")
 	}
@@ -98,7 +107,8 @@ func plural(n int, word string) string {
 }
 
 // openReview shows the proposal: the names to add, the compose file to link,
-// the lines to change by hand and what lodo couldn't decide.
+// the .env lines to set, the lines to change by hand and what lodo couldn't
+// decide.
 func (m *Model) openReview() {
 	p := m.proposal
 	nameWidth := 0
@@ -121,6 +131,9 @@ func (m *Model) openReview() {
 		lines = append(lines, m.styles.ok.Render("  link  ./"+filepath.ToSlash(rel)+" · "+
 			compose.EnvVar+"="+p.Address+" in its .env"))
 	}
+	for _, f := range p.Env { // New shows a URL's user info as ***@
+		lines = append(lines, m.styles.ok.Render("  set   "+f.File+":"+strconv.Itoa(f.Line)+"  "+strings.TrimSpace(f.New)))
+	}
 	if len(p.Fixes) > 0 {
 		lines = append(append(lines, ""), m.fixLines(p.Fixes)...)
 	}
@@ -139,10 +152,14 @@ func (m Model) scanView() string {
 	title := " " + m.styles.title.Render(m.previewTitle)
 	if m.renaming {
 		line := " name  " + m.suffixed(m.rename, tldSuffix) + "  "
+		hint := "subdomains follow it"
+		if m.renameAt > 0 {
+			hint = m.renameTargets()[m.renameAt] + ": <label>." + m.proposal.Name + ", or " + m.proposal.Name + " alone"
+		}
 		if m.renameErr != "" {
 			line += m.styles.bad.Render("✗ " + m.renameErr)
 		} else {
-			line += m.styles.dim.Render("subdomains follow it")
+			line += m.styles.dim.Render(hint)
 		}
 		return title + "\n" + ansi.Truncate(line, m.innerWidth(), "…") + "\n" + m.preview.View()
 	}
@@ -150,20 +167,33 @@ func (m Model) scanView() string {
 	if m.canAccept() {
 		what = "y: " + m.summary()
 		if len(m.proposal.Fixes) > 0 {
-			what = "y adds and links; the lines below are yours to change"
+			what = "y adds, links and sets the rest; the ~ lines are yours to change"
 		}
 	}
 	return title + "\n " + ansi.Truncate(m.styles.dim.Render(what), m.innerWidth()-1, "…") + "\n" + m.preview.View()
 }
 
-// canAccept reports whether y has something to add, link or save.
+// canAccept reports whether y has something to add, link, save or set.
 func (m Model) canAccept() bool {
-	return len(m.proposal.Add) > 0 || m.proposal.Compose != "" || m.proposal.Claim
+	return len(m.proposal.Add) > 0 || m.proposal.Compose != "" || m.proposal.Claim || len(m.proposal.Env) > 0
 }
 
-// scanKey answers the review: y or enter adds every name and links the
-// compose file in one change, e edits the project's name, n or esc goes back
-// without a change; the arrows scroll.
+// renameTargets are what the name field can name: "" for the project, then
+// the folder of each app the proposal adds a name for.
+func (m Model) renameTargets() []string {
+	targets := []string{""}
+	for _, d := range m.proposal.Add {
+		if dir := m.proposal.Dirs[d.Name]; dir != "" && dir != "." {
+			targets = append(targets, dir)
+		}
+	}
+	return targets
+}
+
+// scanKey answers the review: y or enter adds every name, links the compose
+// file and sets the .env lines in one change, e names the project or an app,
+// n or esc goes back without a change and forgets the names typed; the arrows
+// scroll.
 func (m Model) scanKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.renaming {
 		return m.renameKey(msg)
@@ -172,14 +202,14 @@ func (m Model) scanKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "y", "enter":
 		return m.acceptScan()
 	case "e":
-		m.renaming, m.renameErr = true, ""
+		m.renaming, m.renameErr, m.renameAt = true, "", 0
 		m.rename = newInputs(tldSuffix)[fieldName]
 		m.rename.Placeholder = "flowy"
 		m.rename.SetValue(strings.TrimSuffix(m.proposal.Name, tldSuffix))
 		m.rename.CursorEnd()
 		return m, m.rename.Focus()
 	case "n", "esc":
-		m.mode = modeList
+		m.mode, m.scanName, m.scanLabels = modeList, "", nil
 		return m, nil
 	case "q":
 		return m, tea.Quit
@@ -189,15 +219,35 @@ func (m Model) scanKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-// renameKey types the project's name. enter scans again under it, so the
-// subdomains, address and fixes follow; esc keeps the old name.
+// renameKey types the project's name, or with up and down an app's. enter
+// scans again under it, so the subdomains, address and fixes follow; esc
+// keeps the old name.
 func (m Model) renameKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.renaming = false
 		return m, nil
+	case "up", "down":
+		targets := m.renameTargets()
+		step := 1
+		if msg.String() == "up" {
+			step = len(targets) - 1
+		}
+		m.renameAt = (m.renameAt + step) % len(targets)
+		name := m.proposal.Name
+		if dir := targets[m.renameAt]; dir != "" {
+			i := slices.IndexFunc(m.proposal.Add, func(d store.Domain) bool { return m.proposal.Dirs[d.Name] == dir })
+			name = m.proposal.Add[i].Name
+		}
+		m.rename.SetValue(strings.TrimSuffix(name, tldSuffix))
+		m.rename.CursorEnd()
+		m.renameErr = ""
+		return m, nil
 	case "enter":
 		name := strings.TrimSuffix(strings.TrimSpace(m.rename.Value()), tldSuffix) + tldSuffix
+		if dir := m.renameTargets()[m.renameAt]; dir != "" {
+			return m.labelApp(dir, name)
+		}
 		if err := scan.ValidName(name); err != nil {
 			m.renameErr = err.Error()
 			return m, nil
@@ -211,13 +261,36 @@ func (m Model) renameKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+// labelApp gives the app in dir the name typed: <label>.<project>, or the
+// project's name alone, then scans again with it.
+func (m Model) labelApp(dir, name string) (tea.Model, tea.Cmd) {
+	project := m.proposal.Name
+	lbl, ok := strings.CutSuffix(name, "."+project)
+	switch {
+	case name == project:
+		lbl = ""
+	case !ok || lbl == "" || strings.Contains(lbl, "."):
+		m.renameErr = "an app's name is <label>." + project + " or " + project
+		return m, nil
+	}
+	if err := scan.CheckLabel(m.project, m.domains, project, dir, lbl); err != nil {
+		m.renameErr = err.Error()
+		return m, nil
+	}
+	labels := make(map[string]string, len(m.scanLabels)+1) // a fresh map: a running scan reads the old one
+	maps.Copy(labels, m.scanLabels)
+	labels[dir] = lbl
+	m.renaming, m.scanLabels = false, labels
+	return m, m.runScan(true)
+}
+
 // acceptScan adds the proposal's names, links its compose file to the
-// project's name and applies the list once. A port needs Caddy ready, as in
-// the form.
+// project's name, sets its .env lines and applies the list once. A port
+// needs Caddy ready, as in the form.
 func (m Model) acceptScan() (tea.Model, tea.Cmd) {
 	p := m.proposal
 	if !m.canAccept() {
-		m.mode = modeList
+		m.mode, m.scanName, m.scanLabels = modeList, "", nil
 		return m, nil
 	}
 	if m.busy {
@@ -260,6 +333,9 @@ func (m Model) acceptScan() (tea.Model, tea.Cmd) {
 	if p.Compose != "" {
 		cmd = m.thenLink(cmd, owner)
 	}
-	m.mode, m.proposal, m.selectName, m.scanName = modeList, scan.Proposal{}, p.Name, ""
+	if len(p.Env) > 0 {
+		cmd = m.thenFixEnv(cmd, p.Root, p.Env)
+	}
+	m.mode, m.proposal, m.selectName, m.scanName, m.scanLabels = modeList, scan.Proposal{}, p.Name, "", nil
 	return m.start(p.Name, cmd)
 }

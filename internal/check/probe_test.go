@@ -1,6 +1,7 @@
 package check_test
 
 import (
+	"cmp"
 	"context"
 	"crypto/x509"
 	"encoding/binary"
@@ -63,6 +64,9 @@ func TestResult_OK(t *testing.T) {
 
 func TestEnv_Probe(t *testing.T) {
 	t.Parallel()
+
+	stopped := dashboard
+	stopped.Port = appPort(t, "")
 
 	tests := []struct {
 		name      string
@@ -165,12 +169,12 @@ func TestEnv_Probe(t *testing.T) {
 			want:    []check.Result{{Name: "dashboard.crm.test", Address: "127.0.0.1", Port: 3000, Direct: true, System: true, HTTP: true}},
 		},
 		{
-			name:    "app down",
-			domains: []store.Domain{dashboard},
+			name:    "app down: nothing listens on its port",
+			domains: []store.Domain{stopped},
 			caddy:   respond(http.StatusBadGateway, "Server", "Caddy"),
 			want: []check.Result{{
-				Name: "dashboard.crm.test", Address: "127.0.0.1", Port: 3000, Direct: true, System: true,
-				Detail: "app down: nothing answers on 127.0.0.1:3000",
+				Name: "dashboard.crm.test", Address: "127.0.0.1", Port: stopped.Port, Direct: true, System: true, Down: true,
+				Detail: "app down: nothing answers on 127.0.0.1:" + strconv.Itoa(stopped.Port),
 			}},
 		},
 		{
@@ -501,6 +505,130 @@ func TestEnv_Probe_HTTPS(t *testing.T) {
 	}
 }
 
+// TestEnv_Probe_AppDown has Caddy answer that the app is down, then tells a
+// stopped app from one on Localhost's ::1 instead of its domain's address, and
+// from one on its address that answered Caddy badly. Its name fits httptest's
+// certificate for the HTTPS cases.
+func TestEnv_Probe_AppDown(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		listens   string           // where an app listens on the domain's port; "" means nowhere
+		noAddress bool             // macOS has no address for the name
+		https     http.HandlerFunc // the TLS stand-in for Caddy; nil means HTTPS is off
+		untrusted bool             // RootCAs does not hold the stand-in's certificate
+		want      check.Result     // {app} in Detail stands for the domain's port
+	}{
+		{
+			name: "the app isn't running",
+			want: check.Result{Down: true, Detail: "app down: nothing answers on 127.0.0.1:{app}"},
+		},
+		{
+			name:    "the app listens on Localhost instead",
+			listens: "::1",
+			want:    check.Result{Detail: "an app listens on [::1]:{app}, not on the name's address: lodo scan shows the host fix"},
+		},
+		{
+			name:    "the app answers caddy badly",
+			listens: "127.0.0.1",
+			https:   respond(http.StatusBadGateway, "Server", "Caddy"),
+			want:    check.Result{Detail: "app on 127.0.0.1:{app} gave Caddy no HTTP answer: does it serve HTTPS itself?"},
+		},
+		{
+			name:      "a lookup fails too",
+			noAddress: true,
+			want:      check.Result{Detail: "macOS: no address; app down: nothing answers on 127.0.0.1:{app}"},
+		},
+		{
+			name:  "https finds the same app down, said once",
+			https: respond(http.StatusBadGateway, "Server", "Caddy"),
+			want:  check.Result{Down: true, Detail: "app down: nothing answers on 127.0.0.1:{app}"},
+		},
+		{
+			name:    "https finds the same app on Localhost, said once",
+			listens: "::1",
+			https:   respond(http.StatusBadGateway, "Server", "Caddy"),
+			want:    check.Result{Detail: "an app listens on [::1]:{app}, not on the name's address: lodo scan shows the host fix"},
+		},
+		{
+			name:      "an untrusted certificate next to app down",
+			https:     respond(http.StatusBadGateway, "Server", "Caddy"),
+			untrusted: true,
+			want: check.Result{
+				Detail: "app down: nothing answers on 127.0.0.1:{app}; https: Caddy's certificate isn't trusted: run lodo setup",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			d := store.Domain{
+				Name: "app.example.com", Address: "127.0.0.1", Port: appPort(t, tt.listens), Enabled: true, HTTPS: tt.https != nil,
+			}
+			e, fake := newProbeEnv(t) // NewEnv's Localhost: 127.0.0.1, the domain's own, and ::1
+			e.DNS = startDNS(t, fromMap(map[string]string{d.Name: d.Address}))
+			fake.Set(dscacheutil(e.Paths, d.Name), macOSOutput(d.Name, d.Address))
+			if tt.noAddress {
+				fake.Set(dscacheutil(e.Paths, d.Name), "")
+			}
+			e.HTTPPort = startHTTP(t, respond(http.StatusBadGateway, "Server", "Caddy"))
+			if tt.https != nil {
+				srv := httptest.NewTLSServer(tt.https)
+				t.Cleanup(srv.Close)
+				e.HTTPSPort = srv.Listener.Addr().(*net.TCPAddr).Port
+				e.RootCAs = x509.NewCertPool()
+				if !tt.untrusted {
+					e.RootCAs.AddCert(srv.Certificate())
+				}
+			}
+
+			got := e.Probe(t.Context(), []store.Domain{d})
+			want := tt.want
+			want.Name, want.Address, want.Port, want.Secure = d.Name, d.Address, d.Port, d.HTTPS
+			want.Direct, want.System = true, !tt.noAddress
+			want.Detail = strings.ReplaceAll(want.Detail, "{app}", strconv.Itoa(d.Port))
+			if !slices.Equal(got, []check.Result{want}) {
+				t.Errorf("Probe =\n%+v\nwant\n%+v", got, []check.Result{want})
+			}
+		})
+	}
+}
+
+// TestEnv_Probe_SharedPort has Caddy find two names' apps down on one port
+// while something listens on Localhost there: lodo can't tell whose app it
+// is, so both fail with the same detail.
+func TestEnv_Probe_SharedPort(t *testing.T) {
+	t.Parallel()
+
+	port := appPort(t, "::1")
+	domains := []store.Domain{
+		{Name: "a.test", Address: "127.0.0.1", Port: port, Enabled: true},
+		{Name: "b.test", Address: "127.0.0.1", Port: port, Enabled: true},
+	}
+	e, fake := newProbeEnv(t)
+	answers := map[string]string{}
+	for _, d := range domains {
+		answers[d.Name] = d.Address
+		fake.Set(dscacheutil(e.Paths, d.Name), macOSOutput(d.Name, d.Address))
+	}
+	e.DNS = startDNS(t, fromMap(answers))
+	e.HTTPPort = startHTTP(t, respond(http.StatusBadGateway, "Server", "Caddy"))
+
+	got := e.Probe(t.Context(), domains)
+	var want []check.Result
+	for _, d := range domains {
+		want = append(want, check.Result{
+			Name: d.Name, Address: d.Address, Port: port, Direct: true, System: true,
+			Detail: "an app listens on [::1]:" + strconv.Itoa(port) + ", not on the name's address: lodo scan shows the host fix",
+		})
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("Probe =\n%+v\nwant\n%+v", got, want)
+	}
+}
+
 // TestEnv_Probe_HTTPSRequest checks the HTTPS probe sends GET / for the name,
 // with the name as Host and as the TLS server name.
 func TestEnv_Probe_HTTPSRequest(t *testing.T) {
@@ -656,6 +784,25 @@ func respond(status int, header ...string) http.HandlerFunc {
 		}
 		w.WriteHeader(status)
 	}
+}
+
+// appPort returns a free port where an app listens on host, or, when host is
+// "", nothing listens.
+func appPort(t *testing.T, host string) int {
+	t.Helper()
+	l, err := net.Listen("tcp", net.JoinHostPort(cmp.Or(host, "::1"), "0"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := l.Addr().(*net.TCPAddr).Port
+	if host == "" {
+		if err := l.Close(); err != nil {
+			t.Fatal(err)
+		}
+		return port
+	}
+	t.Cleanup(func() { _ = l.Close() }) // the kernel accepts connections; nothing reads them
+	return port
 }
 
 // closedUDP returns a local UDP address where nothing listens.

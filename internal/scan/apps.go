@@ -1,6 +1,7 @@
 package scan
 
 import (
+	"bytes"
 	"encoding/json"
 	"maps"
 	"os"
@@ -44,6 +45,25 @@ func findApps(root string) []App {
 		}
 	}
 	return apps
+}
+
+// noDevOrigins returns the folders of the next apps in apps whose next.config
+// doesn't name allowedDevOrigins: Next 16.2+ refuses hot reload from any host
+// but localhost and the one -H names.
+func noDevOrigins(root string, apps []App) []string {
+	var dirs []string
+	for _, a := range apps {
+		if a.Tool != "next" {
+			continue
+		}
+		if !slices.ContainsFunc(configNames("next.config"), func(name string) bool {
+			data, err := fsutil.ReadRegular(filepath.Join(root, filepath.FromSlash(a.Dir), name), fsutil.MaxProjectFile)
+			return err == nil && bytes.Contains(data, []byte("allowedDevOrigins"))
+		}) {
+			dirs = append(dirs, a.Dir)
+		}
+	}
+	return dirs
 }
 
 func newApp(dir string, srv server) App {

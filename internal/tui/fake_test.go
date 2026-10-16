@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"sync"
 	"time"
 
@@ -39,17 +40,21 @@ type fakeBackend struct {
 	saved         [][]store.Domain
 	applied       [][]store.Domain
 	linked        []string // each LinkEnv, as "<compose file> <address>"
+	envFixed      []string // each .env fix FixEnv got, as "<root> <file>:<line>"
+	envErr        error
 	reports       int
 }
 
 func (f *fakeBackend) PortsReady() error { return f.portsErr }
 
 // Scan proposes with the real scan.Propose, on the project set in the fake.
-func (f *fakeBackend) Scan(_, name string, domains []store.Domain) (scan.Project, scan.Proposal, bool) {
+func (f *fakeBackend) Scan(_ context.Context, _, name string, labels map[string]string, domains []store.Domain) (
+	scan.Project, scan.Proposal, bool,
+) {
 	if f.project.Root == "" {
 		return scan.Project{}, scan.Proposal{}, false
 	}
-	return f.project, scan.Propose(f.project, domains, name), true
+	return f.project, scan.Propose(f.project, domains, name, labels), true
 }
 
 func (f *fakeBackend) ReadCompose(path string) ([]byte, error) {
@@ -105,6 +110,16 @@ func (f *fakeBackend) LinkEnv(_ context.Context, composePath, address string) (s
 	defer f.mu.Unlock()
 	f.linked = append(f.linked, composePath+" "+address)
 	return filepath.Join(filepath.Dir(composePath), ".env"), f.linkErr
+}
+
+// FixEnv records each fix and writes nothing.
+func (f *fakeBackend) FixEnv(_ context.Context, root string, fixes []scan.Fix) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, fx := range fixes {
+		f.envFixed = append(f.envFixed, root+" "+fx.File+":"+strconv.Itoa(fx.Line))
+	}
+	return f.envErr
 }
 
 func (f *fakeBackend) Load() ([]store.Domain, error) {

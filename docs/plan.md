@@ -91,6 +91,20 @@ Settled 2026-10-08. The steps below follow them.
 - **The scan proposes, the user applies:** no LLM; every rule reads a file lodo can parse, and what it can't read
   (a port from env, an unknown dev command) becomes a note. Dev server lines are shown, never written: git
   tracks them. `--json` lets an agent such as Claude Code read the same proposal.
+- **Turbo projects read the host from `DOCKER_HOST_IP`** (2026-10-16): in a project with a `turbo.json` whose root
+  `.env` sets `DOCKER_HOST_IP` to the project's address, or will once `y` links the compose file that runs with it,
+  the host fixes use `${DOCKER_HOST_IP:-127.0.0.1}` (`compose.HostIP`), so the dev scripts git tracks name no Mac's
+  address. Otherwise they keep the literal address, which works without the `.env`. turbo starts the apps without
+  the root's `.env`, so the root's first line that runs turbo's `dev` as its command gets a fix that sets
+  `DOCKER_HOST_IP` from the first such line of the `.env` in its folder, when an app's dev script reads it; a value
+  outside `127.0.0.0/8` counts as none, and without one the apps fall back to `127.0.0.1`. turbo 2.x passes `DOCKER_*` to its tasks by default (the string is in turbo 2.11.6's binary), so
+  `turbo.json` gets no fix. An app on another address keeps its literal host.
+- **`y` in the review sets an app's `.env` URL lines** (2026-10-16): only `.env`, never `.env.example` or
+  `.env.local`, never a file git tracks, with `l`'s guards, and each line only while it still reads as scanned
+  (`scan.ApplyEnv`). A URL's user info prints as `***@` everywhere, `--json` too, so only the TUI writes the real
+  values.
+- **Next apps without `allowedDevOrigins` get a note** (2026-10-16): Next 16.2 and later refuse hot reload from
+  other hosts (`block-cross-site-dev.js` in next 16.3.8). lodo names the line to add and leaves `next.config` alone.
 - **Probes name `/etc/hosts` conflicts:** macOS and dnsmasq answer from `/etc/hosts` first, so an entry with another
   address is reported as the cause of a failed lookup.
 
@@ -316,32 +330,35 @@ A failure at any step shows in the status line. The saved file stays as written;
 - **Link** (`l`): the name gets the compose file of the project lodo started in, or keeps its own outside one, and
   `DOCKER_HOST_IP=<address>` goes into the `.env` that file runs with: the one a `package.json` script passes
   with `--env-file`, else the project root's (`compose.EnvFile`, `compose.SetEnv`). A `.env` outside the
-  project once symlinks are followed is refused, and so is one git tracks; the compose path is still saved. The scan's `y`, `l` in the preview, and a form save that changes
-  a linked name's compose file or address link too. Linking saves without an apply.
+  project once symlinks are followed is refused, and so is one git tracks; the compose path is still saved. The
+  scan's `y`, `l` in the preview, and a form save that changes a linked name's compose file or address link too;
+  the scan's `y` also sets the app `.env` lines it shows, with the same guards. Linking saves without an apply.
 - **HTTPS** (`s`): turns HTTPS on or off for the selected name and applies, like `space`. A name without a port
-  is refused: `https needs a port`. The `https` column shows `✓`, or `✗` when the probe
-  fails: a probe of `https://<name>` with normal certificate checks, so an untrusted root fails it with
+  is refused: `https needs a port`. The check cell adds `https ✓` or `https ✗` from a probe of
+  `https://<name>` with normal certificate checks, so an untrusted root fails it with
   "run lodo setup". With HTTPS on, the compose rewrite turns `http://localhost:<port>` into `https://<name>`.
 - **Log:** a `viewport` tailing `dnsmasq.log`, polled every 500 ms; `g` or `esc` returns.
 - **Scan:** started in a project, lodo scans it (`scan.Find`, `scan.Propose`) once the first check is done. When
-  none of the project's names is listed, the review opens: the names to add with address and port, the compose
-  file to link, the dev server lines to change by hand and the notes. `y` or `enter` adds and links them in one
-  change, `n` or `esc` goes back and saves nothing, so the review returns at the next start. A listed project
-  gets a status note instead, such as `scan: 1 line to change · i reviews`; nothing found shows nothing. `i`
-  scans again and opens the review. `e` in the review edits the project's name, with the `.test` suffix dimmed;
-  `enter` scans again under it, so the subdomains, address and fixes follow, and `esc` keeps the old one. The
-  project is named by the listed name whose `root` is its folder, else by the listed name that links a compose
-  file in it, else by its folder. `y` saves the folder as the main name's `root`, also on a listed name the user
-  picked. Mailpit in the project's best compose file gets `mail.<project>` with the port its inbox is published
-  on (`scan.webImages` lists the images lodo names), unless a listed name has that port on the address or the
-  project runs another compose file, or none. A link to a compose file that is gone counts as none, so the
-  review offers the project's file; `e` with the old name gives that name a renamed folder.
-- **Compose:** a compose path is saved without an apply: it changes no generated file. `p` previews the file rewritten by `compose.Rewrite` in a `viewport`, the changed lines
-  marked, with the `.env` line; `l` links. The preview scrolls sideways with the arrows only. Above the file it lists
-  the dev server lines without a host in the project's `package.json` scripts and the shell scripts they run
-  (`scan.HostFixes`), with the host added, for the user to copy: those files are tracked, so lodo doesn't write
-  them. `l`'s note says when there are any. lodo writes one project file: the linked `.env`, and only its
-  `DOCKER_HOST_IP` lines. It reads a project's files only when they are regular files of at most 1 MiB
+  none of the project's names is listed, the review opens: the names to add with address and port, the compose file
+  to link, the app `.env` lines to set (masked), the dev server lines to change by hand and the notes. `y` or
+  `enter` adds, links and sets them in one change, `n` or `esc` goes back and saves nothing, so the review returns
+  at the next start. A listed project gets a status note instead, such as `scan: 1 line to change · i reviews`;
+  nothing found shows nothing. `i` scans again and opens the review. `e` in the review edits the project's name,
+  with the `.test` suffix dimmed; `enter` scans again under it, so the subdomains, address and fixes follow, and
+  `esc` keeps the old one. `↑/↓` in that field names an app instead: `<label>.<project>`, or `<project>` alone
+  (`scan.CheckLabel`). The project is named by the listed name whose `root` is its folder, else by the listed name
+  that links a compose file in it, else by its folder. `y` saves the folder as the main name's `root`, also on a
+  listed name the user picked. Mailpit in the project's best compose file gets `mail.<project>` with the port its
+  inbox is published on (`scan.webImages` lists the images lodo names), unless a listed name has that port on the
+  address or the project runs another compose file, or none. A link to a compose file that is gone counts as none,
+  so the review offers the project's file; `e` with the old name gives that name a renamed folder.
+- **Compose:** a compose path is saved without an apply: it changes no generated file. `p` previews the file
+  rewritten by `compose.Rewrite` in a `viewport`, the changed lines marked, with the `.env` line; `l` links. The
+  preview scrolls sideways with the arrows only. Above the file it lists the dev server lines without a host in the
+  project's `package.json` scripts and the shell scripts they run (`scan.HostFixes`), with the host added, for the
+  user to copy: those files are tracked, so lodo doesn't write them. `l`'s note says when there are any. lodo
+  writes only `.env` lines in a project: `DOCKER_HOST_IP` in the linked `.env`, and the scan's URL lines in an
+  app's `.env`. It reads a project's files only when they are regular files of at most 1 MiB
   (`fsutil.ReadRegular`), and `compose.Find` skips a compose name that isn't one.
 - **Status bar:** checks 8, 1, 3 and 4, in that order. A green `●` is on and works, a dim `○` is off: turned off,
   or Caddy not running while no row has a port. A red `○` fails. Any red one says "run `lodo doctor`".
@@ -400,6 +417,16 @@ A failure at any step shows in the status line. The saved file stays as written;
 |     | --json` running; Homebrew's `Caddyfile` holds lodo's import line;                   | caddy`, `lodo setup`  |
 |     | `caddy validate` passes on lodo's file; port 80 belongs to Caddy, else `lsof -nP    |                      |
 |     | -iTCP:80 -sTCP:LISTEN` names the listener                                          |                      |
+
+Check 7 passes for a name whose app isn't running, `Down` on its result: the lookups pass, Caddy answers 502,
+nothing accepts a connection on the name's address and port, and no app turns up on `127.0.0.1` or `::1` at that
+port. The detail lists those names after "not running:", and `lodo apply` marks them `–` and still exits 0, since
+neither starts an app. An app that listens on `127.0.0.1` or `::1` instead of its name's address fails as
+"an app listens on [::1]:3000, not on the name's address". lodo can't tell whose app that is, so every stopped
+name on that port fails with the same detail, and check 7 lists names that share a detail once. An app that accepts on its address but gives Caddy no HTTP answer, such as
+one serving HTTPS itself, fails too. The fix is `lodo apply` when a failure needs it, `lodo scan` when every
+failure is an app on the wrong address, and none otherwise: an untrusted root, a hosts line and a bad answer
+each name their own. An HTTPS probe that finds the same app down is said once.
 
 With dnsmasq turned off, check 7 prints "turn dnsmasq on" instead of `lodo apply`, which leaves it off, and
 check 4 expects no lodo resolver file. One left over shows as off, with `lodo apply` to remove it, so it never
@@ -556,8 +583,8 @@ Commit: `feat: domain store, generated configs, caddyfile and resolver script`.
   for `media.test`, `test.media.test` and the unlisted `foo.media.test` (all `127.0.1.3`, which proves suffix
   matching on both sides); `ifconfig lo0 | grep 127.0.1`. Then ports: add `dashboard.media.test`,
   `127.0.1.3`, port 3000; `apply`; in another terminal `python3 -m http.server 3000 --bind 127.0.1.3`;
-  `curl -s http://dashboard.media.test/ | head -3` shows the listing; stop the server, `apply` reports
-  `http ✗ 502`. Then `uninstall`; `doctor` (expect failures); `setup` again. Record the output in
+  `curl -s http://dashboard.media.test/ | head -3` shows the listing; stop the server, `apply` marks the name
+  `–`, app down, and exits 0. Then `uninstall`; `doctor` (expect failures); `setup` again. Record the output in
   `docs/setup-log.md`.
 
 Tests for Phase 2 use the fake runner and temp paths only:
@@ -565,7 +592,9 @@ Tests for Phase 2 use the fake runner and temp paths only:
 - `check`: each check both ways with canned command output; the direct resolve against an in-test UDP server
   that answers one A record (packet built by hand, no DNS library).
 - `check`: the http check against an in-test `httptest` server: 200 passes, 502 reports "app down", a closed
-  port reports "caddy not answering".
+  port reports "caddy not answering". After the 502, nothing on the app's port marks the result `Down`; a
+  listener on `::1` there reports the wrong host, one on the app's own address a bad answer, and one that two
+  stopped names share leaves both `Down`.
 - `system`: the exact command sequence of `Setup` on a fresh Mac, with a system job present, with and without
   Caddy installed, and on a second run (no second backup); `Uninstall`'s sequence and that `domains.json`
   survives; `Apply` writes the three files before any command, restarts Caddy only when the Caddyfile changed,
@@ -693,6 +722,23 @@ Tests: fake project trees in `t.TempDir()` from the shapes in `~/Projects`: plai
 vite config port, `dev.sh` with `HOST_IP`, a port from env, lock without git, git without lock,
 `skills-lock.json` only. The review is a golden snapshot.
 
+### Phase 10: monorepos
+
+| Step | Work                                                                                       |
+| ---- | ------------------------------------------------------------------------------------------ |
+| 10.1 | Port: `PORT=` from `.env`/`.env.example` for nest, CRA, unknown; nest gets no default      |
+| 10.2 | `compose.MapURLs`, `Values.Point`: one localhost URL matcher, any scheme, user info kept   |
+| 10.3 | App `.env` URLs: a named port gives the name; another web port gives a note                |
+| 10.4 | A port bound to `DOCKER_HOST_IP` with a matching `.env` gives `<project>.test:<port>`      |
+| 10.5 | Turbo: `compose.HostIP` in the host fixes; a fix sets it from `.env` on the turbo line     |
+| 10.6 | TUI `y` sets `.env` lines (`ApplyEnv`, `writeEnv`, `system.Tracked`); `***@` masking       |
+| 10.7 | `e` with `↑/↓` names an app; the bare name; listed names on an app's port stick (alias)    |
+| 10.8 | `lodo scan` prints `set` lines; README, AGENTS.md, this table                              |
+
+Tests: `PORT=` from `.env` per tool; app `.env` lines in a tree shaped like fastbackr, tracked files left out;
+the generated turbo line runs under `/bin/sh` against real `.env` files; `ApplyEnv` on LF, CRLF and stale lines;
+`FixEnv` on real files with `run.Fake` for git; neither `lodo scan` nor its `--json` prints a URL's password.
+
 ## Tests
 
 - `go test -race ./...`, table-driven, `t.TempDir()` for every path, `run.Fake` for every command.
@@ -717,8 +763,10 @@ vite config port, `dev.sh` with `HOST_IP`, a port from env, lock without git, gi
   provides the aliases.
 - **Port 80 taken.** Docker publishing `:80` or another proxy keeps Caddy from starting. Doctor check 8 names
   the listener; nothing else lodo can do.
-- **Dev servers bound to localhost only.** Vite and some tools listen on `127.0.0.1`, so Caddy's upstream
-  `127.0.1.1:5173` gets a 502 until `--host 127.0.1.1`. The row shows "app down" and the README says why.
+- **Dev servers bound to localhost only.** Vite and some tools listen on `localhost`, which Node 17 and later put
+  on `::1` on macOS, so Caddy's upstream `127.0.1.1:5173` gets a 502 until `--host 127.0.1.1`. The probe then
+  tries `127.0.0.1` and `::1` at the app's port, finds the app on `[::1]:5173`, and check 7 says "an app
+  listens on [::1]:5173, not on the name's address" with `lodo scan` for the host fix.
 
 ## Troubleshooting (goes in the README)
 
