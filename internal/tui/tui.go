@@ -7,8 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/sangdth/lodo/internal/check"
@@ -38,13 +40,19 @@ type Backend interface {
 	// SetService turns dnsmasq or Caddy on or off.
 	SetService(ctx context.Context, service string, on bool) error
 	// Scan reads the project dir is in and proposes what the list lacks for
-	// it, under name when the user chose one; ok is false outside a project.
-	Scan(dir, name string, domains []store.Domain) (p scan.Project, proposal scan.Proposal, ok bool)
+	// it, under name when the user chose one and with the labels the user gave
+	// its apps; ok is false outside a project.
+	Scan(ctx context.Context, dir, name string, labels map[string]string, domains []store.Domain) (
+		p scan.Project, proposal scan.Proposal, ok bool)
 	// ReadCompose returns the compose file at path.
 	ReadCompose(path string) ([]byte, error)
 	// LinkEnv writes DOCKER_HOST_IP=address into the .env the compose file at
 	// composePath runs with, and returns that file.
 	LinkEnv(ctx context.Context, composePath, address string) (string, error)
+	// FixEnv writes the scan's .env fixes in the project at root, with
+	// LinkEnv's guards; a line that changed since the scan is refused. Errors
+	// from each file are joined.
+	FixEnv(ctx context.Context, root string, fixes []scan.Fix) error
 	// HostFixes returns the lines of the project at root that start a dev
 	// server on every address, with address added. lodo doesn't write them.
 	HostFixes(root, address string) []scan.Fix
@@ -90,35 +98,60 @@ func (b backend) PortsReady() error {
 	return nil
 }
 
-func (b backend) Scan(dir, name string, domains []store.Domain) (scan.Project, scan.Proposal, bool) {
-	p, ok := scan.Find(dir)
+func (b backend) Scan(ctx context.Context, dir, name string, labels map[string]string, domains []store.Domain) (
+	scan.Project, scan.Proposal, bool,
+) {
+	p, ok := scan.Find(dir, func(path string) bool { return system.Tracked(ctx, b.paths, b.runner, path) })
 	if !ok {
 		return scan.Project{}, scan.Proposal{}, false
 	}
-	return p, scan.Propose(p, domains, name), true
+	return p, scan.Propose(p, domains, name, labels), true
 }
 
 func (b backend) ReadCompose(path string) ([]byte, error) {
 	return fsutil.ReadRegular(path, fsutil.MaxProjectFile)
 }
 
-// LinkEnv writes only a .env inside the compose file's project
-// (compose.ProjectDir), once symlinks are followed: a package.json script's
-// --env-file or a committed symlink could name any file this user can write.
-// It refuses a .env that git tracks: the address belongs to this Mac, and a
-// teammate's Mac may not have it. Git runs without the repository's
-// fsmonitor and refuses a bare repository it finds on its own, so a cloned
-// project can't make it run a command. LinkEnv writes the file an in-project
-// symlink points at, and keeps the file's mode.
+// LinkEnv writes DOCKER_HOST_IP=address into the .env the compose file at
+// composePath runs with, inside the compose file's project
+// (compose.ProjectDir): a package.json script's --env-file or a committed
+// symlink could name any file this user can write.
 func (b backend) LinkEnv(ctx context.Context, composePath, address string) (string, error) {
-	env, err := envInside(compose.ProjectDir(composePath), compose.EnvFile(composePath))
+	return b.writeEnv(ctx, compose.ProjectDir(composePath), compose.EnvFile(composePath), true,
+		func(content []byte) ([]byte, error) { return compose.SetEnv(content, compose.EnvVar, address), nil })
+}
+
+func (b backend) FixEnv(ctx context.Context, root string, fixes []scan.Fix) error {
+	byFile := map[string][]scan.Fix{}
+	for _, f := range fixes {
+		byFile[f.File] = append(byFile[f.File], f)
+	}
+	var errs []error
+	for _, file := range slices.Sorted(maps.Keys(byFile)) {
+		group := byFile[file]
+		_, err := b.writeEnv(ctx, root, filepath.Join(root, filepath.FromSlash(file)), false,
+			func(content []byte) ([]byte, error) { return scan.ApplyEnv(content, group) })
+		errs = append(errs, err)
+	}
+	return errors.Join(errs...)
+}
+
+// writeEnv replaces the .env at env with edit's result, and returns that
+// file. It writes only inside root once symlinks are followed (envInside),
+// and never a file git tracks (system.Tracked): this Mac's addresses and
+// names don't belong in a shared file, and a teammate's Mac may not have
+// them. It writes the file an in-project symlink points at, through fsutil,
+// and keeps the file's mode. A missing file reaches edit as empty when create
+// is set, and is an error otherwise.
+func (b backend) writeEnv(ctx context.Context, root, env string, create bool, edit func([]byte) ([]byte, error)) (
+	string, error,
+) {
+	env, err := envInside(root, env)
 	if err != nil {
 		return env, err
 	}
-	git := []string{"-c", "safe.bareRepository=explicit", "-c", "core.fsmonitor=false", "-C", filepath.Dir(env),
-		"ls-files", "--error-unmatch", "--", filepath.Base(env)}
-	if _, err := b.runner.Run(ctx, b.paths.Git, git...); err == nil {
-		return env, fmt.Errorf("git tracks %s, so lodo leaves it: this Mac's address doesn't belong in a shared file", env)
+	if system.Tracked(ctx, b.paths, b.runner, env) {
+		return env, fmt.Errorf("git tracks %s, so lodo leaves it: this Mac's addresses and names don't belong in a shared file", env)
 	}
 	content, err := fsutil.ReadRegular(env, fsutil.MaxProjectFile)
 	mode := fs.FileMode(0o644)
@@ -129,8 +162,14 @@ func (b backend) LinkEnv(ctx context.Context, composePath, address string) (stri
 		}
 	case !errors.Is(err, fs.ErrNotExist):
 		return env, err // ReadRegular names env
+	case !create:
+		return env, fmt.Errorf("%s is gone: i scans again", env)
 	}
-	if _, err := fsutil.WriteFile(env, compose.SetEnv(content, compose.EnvVar, address), mode); err != nil {
+	out, err := edit(content)
+	if err != nil {
+		return env, err
+	}
+	if _, err := fsutil.WriteFile(env, out, mode); err != nil {
 		return env, fmt.Errorf("write %s: %w", env, err)
 	}
 	return env, nil

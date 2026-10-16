@@ -67,6 +67,7 @@ func (a app) setup(ctx context.Context) int {
 }
 
 // apply makes the system match domains.json and probes every enabled name.
+// A name whose app isn't running doesn't make it fail.
 func (a app) apply(ctx context.Context) int {
 	domains, err := store.Load(a.paths.DomainsJSON)
 	if err != nil {
@@ -84,8 +85,14 @@ func (a app) apply(ctx context.Context) int {
 		a.fail(applyErr)
 		return 1
 	}
+	return probeCode(results)
+}
+
+// probeCode is apply's exit code after the probes: 1 when a name fails for
+// more than its app not running, which apply can't fix.
+func probeCode(results []check.Result) int {
 	for _, r := range results {
-		if !r.OK() {
+		if !r.OK() && !r.Down {
 			return 1
 		}
 	}
@@ -149,8 +156,9 @@ func formatChecks(checks []check.Check) string {
 	return b.String()
 }
 
-// formatResults renders one line per probed name. A name with HTTPS on says
-// so after its port, since its line covers the HTTPS probe too.
+// formatResults renders one line per probed name, marked – when only its app
+// isn't running. A name with HTTPS on says so after its port, since its line
+// covers the HTTPS probe too.
 func formatResults(results []check.Result) string {
 	if len(results) == 0 {
 		return "no enabled domains\n"
@@ -171,7 +179,10 @@ func formatResults(results []check.Result) string {
 	var b strings.Builder
 	for i, r := range results {
 		mark := "✓"
-		if !r.OK() {
+		switch {
+		case r.Down:
+			mark = "–"
+		case !r.OK():
 			mark = "✗"
 		}
 		line := fmt.Sprintf("%s %-*s  %-*s  %s", mark, nameWidth, r.Name, targetWidth, targets[i], r.Detail)

@@ -29,7 +29,7 @@ func TestServices(t *testing.T) {
 				{Image: postgres, Ports: map[int]int{5432: 5432}},
 				{Image: postgres, Ports: map[int]int{5432: 5432}},
 				{Image: postgres}, // a variable sets the Mac's port
-				{Image: postgres, Ports: map[int]int{5432: 5433}}, // bound to DOCKER_HOST_IP
+				{Image: postgres, Ports: map[int]int{5432: 5433}, Bound: map[int]bool{5433: true}},
 				{Image: "redis:8-alpine", Ports: map[int]int{6379: 6379}},
 				{Image: "minio/minio:latest", Ports: map[int]int{9000: 9000, 9001: 9001}},
 				{Ports: map[int]int{3000: 3001}}, // built, not pulled; "3000" alone has no port on the Mac
@@ -48,6 +48,18 @@ func TestServices(t *testing.T) {
 				"      - target: 5353", "        published: 5353", "        protocol: udp"),
 			want: []compose.Service{{}},
 		},
+		{
+			name: "bound to DOCKER_HOST_IP",
+			src: yml("services:", "  db:", "    ports:", `      - "${DOCKER_HOST_IP:-127.0.0.1}:5434:5432"`,
+				"      - target: 6379", "        published: 6380", "        host_ip: ${DOCKER_HOST_IP}"),
+			want: []compose.Service{{Ports: map[int]int{5432: 5434, 6379: 6380}, Bound: map[int]bool{5434: true, 6380: true}}},
+		},
+		{
+			name: "bound to another address",
+			src: yml("services:", "  db:", "    ports:", `      - "127.0.0.1:5434:5432"`,
+				`      - "${DOCKER_HOST_IPX}:6380:6379"`),
+			want: []compose.Service{{Ports: map[int]int{5432: 5434, 6379: 6380}}},
+		},
 		{name: "no services", src: yml("name: flowy")},
 	}
 	for _, tt := range tests {
@@ -58,7 +70,7 @@ func TestServices(t *testing.T) {
 				t.Fatalf("Services: %v", err)
 			}
 			if !slices.EqualFunc(got, tt.want, func(a, b compose.Service) bool {
-				return a.Image == b.Image && maps.Equal(a.Ports, b.Ports)
+				return a.Image == b.Image && maps.Equal(a.Ports, b.Ports) && maps.Equal(a.Bound, b.Bound)
 			}) {
 				t.Errorf("Services =\n%+v\nwant\n%+v", got, tt.want)
 			}

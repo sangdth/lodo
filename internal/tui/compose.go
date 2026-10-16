@@ -30,7 +30,7 @@ type previewMsg struct {
 
 // readPreview reads owner's compose file and rewrites it for owner's project.
 func (m Model) readPreview(owner store.Domain) tea.Cmd {
-	b, values := m.backend, m.composeValues(owner)
+	b, values := m.backend, scan.ValuesFor(m.domains, owner)
 	return func() tea.Msg {
 		src, err := b.ReadCompose(owner.Compose)
 		if err != nil {
@@ -40,19 +40,6 @@ func (m Model) readPreview(owner store.Domain) tea.Cmd {
 		fixes := b.HostFixes(compose.ProjectDir(owner.Compose), owner.Address)
 		return previewMsg{owner: owner, out: out, changes: changes, fixes: fixes, err: err}
 	}
-}
-
-// composeValues are what owner's compose file gets: owner's name, the names
-// Caddy serves on owner's address, by port, and which of them have HTTPS on.
-func (m Model) composeValues(owner store.Domain) compose.Values {
-	names, secure := map[int]string{}, map[int]bool{}
-	for _, d := range m.domains {
-		if d.Enabled && d.Port > 0 && d.Address == owner.Address && store.Project(d.Name) == store.Project(owner.Name) {
-			names[d.Port] = d.Name
-			secure[d.Port] = d.HTTPS
-		}
-	}
-	return compose.Values{Domain: owner.Name, Names: names, Secure: secure}
 }
 
 // composeOwner returns the name whose compose file d uses: its own, or its

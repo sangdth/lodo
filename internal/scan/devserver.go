@@ -14,14 +14,19 @@ import (
 	"github.com/sangdth/lodo/internal/fsutil"
 )
 
-// Fix is a line that starts a dev server on every address, with the host
-// option added so it listens on its name's address only. lodo shows it and
-// never writes it: the file is the project's.
+// Fix is a line of a project and what it becomes. A Fix in Proposal.Fixes is
+// a dev server line the user changes: the host option added so it listens on
+// its name's address only, or DOCKER_HOST_IP set for turbo. lodo shows it and
+// never writes it: the file is the project's. One in Proposal.Env is a .env
+// line lodo writes on y (ApplyEnv): Old and New hold it with user info
+// masked, and before and after hold the real text.
 type Fix struct {
 	File string `json:"file"` // from the project's root, as apps/web/package.json or scripts/dev.sh
 	Line int    `json:"line"` // 1-based
 	Old  string `json:"old"`  // the line before, without its line end
 	New  string `json:"new"`  // the line after
+
+	before, after string
 }
 
 // tool is a dev server lodo knows: the command that starts it, the option
@@ -34,6 +39,7 @@ type tool struct {
 	hostRE  *regexp.Regexp // the host options it reads: group 1 the option, 2 or 3 its value; nil without host
 	port    int            // the port without a port option
 	configs []string       // config files that may set the port, from the app's folder
+	dotenv  bool           // reads PORT from the app's .env before it listens
 }
 
 // hostOption builds a hostRE for the options in alt, such as -H|--hostname.
@@ -77,8 +83,8 @@ var tools = []tool{
 		name: "webpack", cmd: regexp.MustCompile(`\bwebpack(?:-dev-server\b|[ \t]+serve\b)`), host: "--host", hostRE: hostOption(`--host`),
 		port: 8080,
 	},
-	{name: "nest", cmd: regexp.MustCompile(`\bnest[ \t]+start\b`), port: 3000},
-	{name: "create-react-app", cmd: regexp.MustCompile(`\breact-scripts[ \t]+start\b`), port: 3000},
+	{name: "nest", cmd: regexp.MustCompile(`\bnest[ \t]+start\b`), dotenv: true}, // the Nest CLI has no port of its own
+	{name: "create-react-app", cmd: regexp.MustCompile(`\breact-scripts[ \t]+start\b`), port: 3000, dotenv: true},
 	{name: "react-email", cmd: regexp.MustCompile(`\bemail[ \t]+dev\b`), port: 3000},
 }
 
@@ -277,8 +283,9 @@ func serverIn(text, dir string, shell bool) (server, bool) {
 	return server{}, false
 }
 
-// configPort returns the port the tool's config file in dir sets, the tool's
-// own when none does, and 0 when the file computes it.
+// configPort returns the port the tool's config file in dir sets, else PORT
+// in the app's .env for a tool that reads it, else the tool's own, and 0 when
+// the file computes it.
 func configPort(dir string, t *tool) int {
 	for _, name := range t.configs {
 		data, err := fsutil.ReadRegular(filepath.Join(dir, name), fsutil.MaxProjectFile)
@@ -291,6 +298,11 @@ func configPort(dir string, t *tool) int {
 		}
 		port, _ := strconv.Atoi(string(m[1]))
 		return port
+	}
+	if t.dotenv {
+		if port := envPort(dir); port > 0 {
+			return port
+		}
 	}
 	return t.port
 }
@@ -340,7 +352,8 @@ var runScriptRE = regexp.MustCompile(`(?:\bnpm:|\b(?:npm|pnpm|yarn|bun)[ \t]+(?:
 // devServer returns the dev server the dev script in dir starts: in the
 // script, in the scripts of the same package.json it runs, or in the shell
 // scripts it runs. A dev command lodo doesn't know still gives its port when
-// it sets one with -p or --port, as react-email and prisma studio do. known
+// it sets one with -p or --port, as react-email and prisma studio do, else
+// PORT in the app's .env. known
 // reports whether lodo knows the command; hasDev whether dir's package.json
 // has a dev script at all.
 func devServer(dir string) (srv server, known, hasDev bool) {
@@ -366,6 +379,8 @@ func devServer(dir string) (srv server, known, hasDev bool) {
 	}
 	if m := portRE.FindStringSubmatch(dev); m != nil {
 		srv.port, _ = strconv.Atoi(m[1])
+	} else {
+		srv.port = envPort(dir)
 	}
 	return srv, false, true
 }

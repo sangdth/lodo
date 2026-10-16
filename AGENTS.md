@@ -34,13 +34,18 @@ stops the commit.
 - `internal/brew`, `internal/dnsmasq`, `internal/caddy`: `brew services`, the generated dnsmasq config and
   resolver list, the generated Caddyfile.
 - `internal/system`: setup, apply and uninstall; the root script, sudoers rule and loopback plist templates;
-  lodo's blocks in Homebrew's dnsmasq.conf and Caddyfile. `Apply` refuses to run until setup has.
+  lodo's blocks in Homebrew's dnsmasq.conf and Caddyfile. `Apply` refuses to run until setup has. `Tracked`: the
+  one git call.
 - `internal/compose`: finds the project a folder is in (`ProjectRoot`) and its compose file, reads its services'
-  images and published ports (`Services`), and rewrites the file's ports and `localhost` URLs for lodo. It reads
-  files and never writes them.
+  images and published ports (`Services`), and rewrites the file's ports and `localhost` URLs for lodo; `MapURLs`
+  and `Values.Point` also serve the scan. It reads files and never writes them.
 - `internal/scan`: reads a project's apps, dev servers, ports, `.env` address and the compose web pages it names
-  (Mailpit's inbox), and proposes the names, compose link and host fixes the list lacks. All dev server rules and
-  the images lodo names (`webImages`) live here. It reads files and never writes them.
+  (Mailpit's inbox), and proposes the names, compose link and host fixes the list lacks. It also reads `PORT=` from
+  an app's `.env` (NestJS, Create React App, unknown commands), the localhost URL lines of each app's `.env`
+  (`Proposal.Env`, `ApplyEnv`) and the names Caddy serves per port (`ValuesFor`). In a turbo project whose root
+  `.env` holds the project's address, or gets it from `y`'s link, the host fixes use `compose.HostIP`, and the
+  root's turbo line loads it from `.env` (`turbo.go`). All dev server rules and the images lodo names (`webImages`)
+  live here. It reads files and never writes them.
 - `internal/check`: the eight doctor checks and the per-domain probes: dnsmasq directly, macOS, and HTTP through
   Caddy. `Report` returns both from one probe; `Prerequisites` runs checks 1 to 5 without probing.
 - `internal/tui`: the Bubble Tea v2 model. It talks to the system only through its `Backend` interface; tests
@@ -66,14 +71,19 @@ stops the commit.
   Caddyfile turns it off.
 - Caddy runs as the user and listens on port 80 of every address: macOS needs root to listen below port 1024 on
   one address, so a Caddy `bind` fails. Every generated site aborts connections from outside `127.0.0.0/8` and `::1`.
-- The TUI writes one project file: the `.env` a linked compose file runs with, only its `DOCKER_HOST_IP`
-  lines, through `fsutil`, only when it lies inside the project once symlinks are followed, and never one that
-  git tracks (git runs with `safe.bareRepository=explicit` and `core.fsmonitor=false`). Everything else in a
+- The TUI writes two kinds of `.env` lines in a project: `DOCKER_HOST_IP` in the `.env` a linked compose file runs
+  with, and the scan's URL lines in an app's `.env`, each only while it still reads as scanned (`scan.ApplyEnv`).
+  Both go through `fsutil`, only inside the project once symlinks are followed, never into a file git tracks
+  (`system.Tracked`; git runs with `safe.bareRepository=explicit` and `core.fsmonitor=false`). Everything else in a
   project stays read-only, and lodo reads project files only through `fsutil.ReadRegular`.
+- Everything lodo prints from a `.env` masks a URL's user info as `***@`: a `.env` `Fix` holds the masked line in
+  `Old`/`New` and the real one in unexported fields only `scan.ApplyEnv` reads.
 - The user picks a project's name. The folder's name is only a suggestion: every flow that proposes a project
   name (the scan's review, `lodo scan`) lets the user change it before anything is added, and the subdomains
   follow it (`<app>.<name>`). The chosen name keeps the project's folder as `Domain.Root`, so later scans use it
-  and never propose the folder's name next to it.
+  and never propose the folder's name next to it. `e` in the review also names an app: `<label>.<project>`, or
+  `<project>` alone. A later scan keeps a listed name of the project on an app's port and address as that app's
+  name.
 - Names end in `.test`, from `store.TLD`. macOS sends a name with one label before `.local` to Bonjour only, so
   `.local` can't serve project names like `media.local`.
 - Golden files live in each package's `testdata/` and use `github.com/charmbracelet/x/exp/golden`.

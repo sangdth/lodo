@@ -115,31 +115,50 @@ nearest folder above it with a lock file and its manifest (`pnpm-lock.yaml` and 
   Docusaurus, Storybook, Vue CLI, webpack, NestJS, Create React App and react-email. It follows `npm:next`-style
   scripts and the shell scripts `dev` runs.
 - each app's port: `-p` or `--port`, `PORT=` before the command, a literal `port:` in `vite.config` or
-  `astro.config`, else the framework's own: 3000 for Next and NestJS, 5173 for Vite, 4200 for Angular, and so
-  on. A port it can't read stays empty, with a note.
+  `astro.config`, else the framework's own: 3000 for Next, 5173 for Vite, 4200 for Angular, and so on. NestJS,
+  Create React App and an unknown command first read `PORT=` from the app's `.env`, then `.env.example`; NestJS
+  has no default. A port it can't read stays empty, with a note.
 - the compose file: up to 3 folders deep, `.dev` first, never in `node_modules`, `vendor` or `testdata`.
 - the web pages in that file: Mailpit (`axllent/mailpit`, from any registry, at any tag) and the port on your Mac
   its inbox, port 8025 in the container, is published on.
 - the address: a listed name's in the project, else `DOCKER_HOST_IP` from the root's `.env` or `.env.example`
   when no other project has it, else the lowest free one.
+- each app's `.env`, never `.env.example` and never one git tracks: its lines with a URL on `localhost` or
+  `127.0.0.1`. The root's `.env` counts only when the root is the app; in a workspace it feeds compose.
 
 It proposes the project's name, a subdomain per app, such as `admin.media.test` with its port, `mail.media.test`
-for Mailpit's inbox, the compose file to link, and the `dev` lines that listen on every address. All of a
-project's apps share its address, and so does the inbox. The inbox is skipped when a listed name has its port
-there, or when the project runs another compose file than the one the scan read, or none. When two
-want the same port, an app whose port only its code sets (NestJS, Create React App, an unknown command) keeps it,
-and the others move up: NestJS on 3000, then Next on 3001, Vite on 3002. The `dev` line the review shows then
-adds `--port 3001` too; until you change it, that name's check says `app down`. Two apps that can't move get two
-addresses. The project's name is yours: the scan suggests the folder's, such as `media.test`, and `e`
-in the review changes it; the subdomains follow. Once added, the name keeps the project's folder as `root` in
-`domains.json`, so later scans know it by that name. A name already listed that links a compose file in the
-project counts too. A link to a compose file that is gone, after you rename the project's folder or move the
-file, counts as none: the review offers the project's file again, and `e` with the old name, such as `calling`,
-gives that name the renamed folder. When none of the project's names is listed, the review opens: `y` or `enter` adds every name
-and links the compose file in one change, and `n` or `esc` goes back, so lodo offers it again next time. A listed project
-only gets a note in the status line, such as `scan: 1 line to change · i reviews`. `i` scans again at any time.
-`lodo scan` prints the same review, `lodo scan --json` the same data for scripts, and `--name hugger` names the
-project `hugger.test`.
+for Mailpit's inbox, the compose file to link, the `.env` lines to set, and the `dev` lines that listen on every
+address. All of a project's apps share its address, and so does the inbox. The inbox is skipped when a listed
+name has its port there, or when the project runs another compose file than the one the scan read, or none. When
+two want the same port, an app whose port only its code sets (NestJS, Create React App, an unknown command) keeps
+it, and the others move up: Create React App on 3000, then Next on 3001, Vite on 3002. The `dev` line the review
+shows then adds `--port 3001` too; until you change it, `lodo doctor` lists that name as not running. Two apps
+that can't move get two addresses. A Next app whose `next.config` has no `allowedDevOrigins` gets a note: Next 16.2 and later
+refuse hot reload from other hosts.
+
+In an app's `.env`, an http or ws URL on a port a name serves becomes that name, https when HTTPS is on:
+`API_URL=http://localhost:3001` becomes `API_URL=http://web.media.test`. Any URL on a port the compose file binds
+to `DOCKER_HOST_IP`, while the `.env` compose runs with sets the project's address, becomes
+`<project>.test:<port>`, such as `postgres://…@media.test:5432`. Another http or ws port gets a note, and the rest
+stays: `localhost` still reaches it. lodo prints a URL's user and password as `***`, in the review and in
+`lodo scan`.
+
+The project's name is yours: the scan suggests the folder's, such as `media.test`, and `e` in the review changes
+it; the subdomains follow. Once added, the name keeps the project's folder as `root` in `domains.json`, so later
+scans know it by that name. A name already listed that links a compose file in the project counts too. A link to
+a compose file that is gone, after you rename the project's folder or move the file, counts as none: the review
+offers the project's file again, and `e` with the old name, such as `calling`, gives that name the renamed folder.
+`↑/↓` in the name field picks an app instead: `api.media` names it `api.media.test`, and `media` alone gives it
+`media.test`. lodo refuses a name for an app whose port it can't tell, since a later scan couldn't find the name
+again. A later scan keeps a listed name of the project on an app's port and address as that app's. When the
+project is listed already, give `media.test` the app's port with `e` in the list, and delete the app's own name.
+
+When none of the project's names is listed, the review opens: `y` or `enter` adds every name, links the compose
+file and sets the `.env` lines shown as `set` in one change, and `n` or `esc` goes back, so lodo offers it again
+next time. A `.env` line is set with `l`'s guards below, and only while it still reads as the scan read it;
+restart the dev servers after, since they read `.env` when they start. A listed project only gets a note in the
+status line, such as `scan: 1 line to change · i reviews`. `i` scans again at any time. `lodo scan` prints the
+same review, `lodo scan --json` the same data for scripts, and `--name hugger` names the project `hugger.test`.
 
 ### Compose files
 
@@ -151,13 +170,16 @@ started, or `none`.
 - A port with no address, or with `127.0.0.1`, binds `${DOCKER_HOST_IP:-127.0.0.1}`. Compose takes only an IP
   there, not a name, and a port with no address takes the port on every address, so projects collide.
 - A `localhost` URL in `environment` takes the project's name, or the subdomain Caddy serves on that port:
-  `http://localhost:3000` becomes `http://dashboard.blog.test`.
+  `http://localhost:3000` becomes `http://dashboard.blog.test`. A user and password in the URL stay.
 - Healthchecks, commands and comments keep `localhost`: inside a container it is the container itself.
 - Above the file, each dev server started without a host in the project's `package.json` files, or in a shell
   script one of their scripts runs, such as `scripts/dev.sh`, gets one: `next dev -H <address>`, `vite --host
   <address>`, `wrangler dev --ip <address>`. Without it the server listens on every address, so two projects can't
-  both use port 3000. lodo doesn't edit these files, since git tracks them; you add the flag. After `l`, the status
-  line says when one needs it.
+  both use port 3000. In a turbo project, one with a `turbo.json`, whose root `.env` sets `DOCKER_HOST_IP` to
+  the project's address, or will once `y` links its compose file, the host is `${DOCKER_HOST_IP:-127.0.0.1}`, and
+  the root's line that runs turbo's `dev` gets `DOCKER_HOST_IP="$(sed … .env)"` in front: turbo starts the apps
+  without the root's `.env`. Otherwise the host is the address itself. lodo doesn't edit these files, since git tracks them; you add the flag. After
+  `l`, the status line says when one needs it.
 
 `l` links the selected name: the compose file of the project lodo started in, or outside one the name's own,
 becomes the name's, and `DOCKER_HOST_IP=<address>` goes into the `.env` that file runs with. That is the file a
@@ -169,8 +191,8 @@ compose file or address do the same.
 ### HTTPS
 
 `s` turns HTTPS on for a name with a port: Caddy then also serves `https://<name>`, with a certificate from its
-own local certificate authority, and `http://<name>` keeps working. The `https` column marks it: `✓` once a
-request over HTTPS reaches the app, `✗` when it doesn't.
+own local certificate authority, and `http://<name>` keeps working. The check column adds `https ✓` once a
+request over HTTPS reaches the app, `https ✗` when it doesn't.
 
 Browsers accept the certificate once macOS trusts Caddy's root. After you turn on the first HTTPS name, run
 `lodo setup` again: it copies the root to `~/.config/lodo/caddy-root.crt`, adds that copy to the System keychain
@@ -228,8 +250,9 @@ and `.test` never is. Only `localhost` is exempt. For Google sign-in, either:
 
 `lodo apply` writes lodo's files from `domains.json`, restarts dnsmasq, runs the resolver script, restarts Caddy
 when its sites changed or it stopped, then checks every enabled name, prints one line each and exits 1 if one
-fails. The list does the same after every change. It refuses to run before `lodo setup`. Use it after editing
-`domains.json` by hand:
+fails. The list does the same after every change. A name whose app isn't running is marked `–` in apply's
+output and doesn't count, since apply can't start it; the list still shows its `http ✗`. `lodo apply` refuses
+to run before `lodo setup`. Use it after editing `domains.json` by hand:
 
 ```json
 {"version": 1, "domains": [
@@ -248,12 +271,17 @@ fails. The list does the same after every change. It refuses to run before `lodo
 5. `resolver for .local`: there is no `/etc/resolver/local`.
 6. `generated files`: lodo's generated files in `~/.config/lodo` match `domains.json`.
 7. `names resolve`: each enabled name resolves through dnsmasq and macOS; with a port, Caddy reaches the app.
+   A name whose app isn't running still passes and is listed after `not running:`. An app that listens on
+   `127.0.0.1` or `::1` instead of its name's address fails, with `lodo scan` as the fix. lodo can't tell whose
+   app that is, so every stopped name on that port fails with it, listed once. An app on its own address that
+   gives Caddy no HTTP answer fails too. The fix is `lodo apply` when a failure needs it; otherwise each failure
+   names its own.
 8. `caddy`, only when an enabled name has a port: Caddy is installed, imports lodo's file, runs, passes
    `caddy validate`, and holds port 80.
 
 `lodo scan` prints what the project in the current folder lacks from the list, as the TUI's review shows it, and
-changes nothing; `--json` prints it for scripts, and `--name hugger` proposes it under `hugger.test`. It exits 1
-outside a project.
+changes nothing; only `git ls-files` runs, to skip the `.env` files git tracks. `--json` prints it for scripts,
+with the same `***` in URLs, and `--name hugger` proposes it under `hugger.test`. It exits 1 outside a project.
 
 `lodo uninstall` removes what setup installed; see [Uninstall](#uninstall). `lodo version` prints the version, and
 `lodo help` the usage.
@@ -291,8 +319,11 @@ Start with `lodo doctor`: every failed check prints the command that fixes it.
   at the line; remove it.
 - **`foo.blog.test` resolves although it isn't listed:** expected. dnsmasq's `address=` lines and the resolver
   files both match subdomains. Add a row only to give it another address or a port.
-- **`502 Bad Gateway` on `http://dashboard.blog.test`:** Caddy is up but nothing listens on `127.0.1.1:3000`; the
-  check says `app down`. Vite needs `--host 127.0.1.1`, and Docker ports bind `DOCKER_HOST_IP`.
+- **`502 Bad Gateway` on `http://dashboard.blog.test`:** Caddy is up but nothing listens on `127.0.1.1:3000`. When
+  the app isn't running, check 7 lists it as not running. When it listens on `localhost` instead, as Vite does
+  without `--host 127.0.1.1` (Node puts `localhost` on `::1`), the check says `an app listens on [::1]:3000,
+  not on the name's address`, and `lodo scan` shows the host fix. An app that serves HTTPS itself gets the same 502; the check
+  says it `gave Caddy no HTTP answer`. Docker ports bind `DOCKER_HOST_IP`.
 - **The wrong app answers:** a Node app listening on `*:3000` answers on every loopback address, so it shadows
   other projects' port 3000. Start each app on its own address: `next dev -H 127.0.1.3`.
 - **`http://dashboard.blog.test` refuses the connection:** Caddy isn't running or another program holds port 80.

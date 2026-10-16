@@ -131,7 +131,7 @@ func TestScan_WaitsForTheFirstCheck(t *testing.T) {
 
 	b := inNewFlowy()
 	m := New(t.Context(), b, unlisted, flowyOrigin)
-	project, proposal, ok := b.Scan("", "", unlisted)
+	project, proposal, ok := b.Scan(t.Context(), "", "", nil, unlisted)
 	next, _ := m.Update(scanMsg{project: project, proposal: proposal, ok: ok})
 	m = next.(Model)
 	if m.mode != modeList {
@@ -270,4 +270,224 @@ func rootOf(t *testing.T, b *fakeBackend, name string) string {
 		t.Fatalf("%s not saved", name)
 	}
 	return d.Root
+}
+
+// inFlowyWithEnv is inNewFlowy with two lines in apps/api/.env the scan
+// sets: Postgres on a port the compose file binds to DOCKER_HOST_IP, with a
+// password, and a URL on the root app's port.
+func inFlowyWithEnv() *fakeBackend {
+	b := inNewFlowy()
+	b.project.Env = []scan.EnvLine{
+		{File: "apps/api/.env", Line: 1, Key: "DATABASE_URL", Text: "DATABASE_URL=postgres://u:hunter2@localhost:5432/flowy"},
+		{File: "apps/api/.env", Line: 2, Key: "WEB_URL", Text: "WEB_URL=http://localhost:3000"},
+	}
+	b.project.Bound, b.project.ComposeAddress = map[int]bool{5432: true}, "127.0.1.2"
+	return b
+}
+
+func TestScan_SetsEnvLines(t *testing.T) {
+	t.Parallel()
+
+	b := inFlowyWithEnv()
+	m := readyIn(b, unlisted, flowyOrigin)
+	if got := ansi.Strip(m.View().Content); !strings.Contains(got, "set   apps/api/.env:2  WEB_URL=http://flowy.test") {
+		t.Fatalf("review lacks the .env line:\n%s", got)
+	}
+	m = send(m, "y")
+	if want := []string{flowyRoot + " apps/api/.env:1", flowyRoot + " apps/api/.env:2"}; !slices.Equal(b.envFixed, want) {
+		t.Errorf("set %q, want %q", b.envFixed, want)
+	}
+	if !strings.HasPrefix(m.note, "set 2 .env lines, restart the dev servers · linked flowy.test") {
+		t.Errorf("note = %q, want the .env lines first", m.note)
+	}
+}
+
+func TestScan_ReviewWithEnv(t *testing.T) {
+	t.Parallel()
+
+	m := readyIn(inFlowyWithEnv(), unlisted, flowyOrigin)
+	got := m.View().Content
+	if !strings.Contains(ansi.Strip(got), "DATABASE_URL=postgres://***@flowy.test:5432/flowy") {
+		t.Errorf("review lacks the masked URL:\n%s", ansi.Strip(got))
+	}
+	if strings.Contains(got, "hunter2") {
+		t.Errorf("review shows the password:\n%s", ansi.Strip(got))
+	}
+	golden.RequireEqual(t, got)
+}
+
+func TestScan_EnvError(t *testing.T) {
+	t.Parallel()
+
+	b := inFlowyWithEnv()
+	b.envErr = errors.New("apps/api/.env:2 changed since the scan: i scans again")
+	m := send(readyIn(b, unlisted, flowyOrigin), "y")
+	if got := ansi.Strip(m.statusLine()); !strings.Contains(got, "changed since the scan") {
+		t.Errorf("status line = %q, want the .env error", got)
+	}
+	if len(b.saved) != 1 || len(b.linked) != 1 {
+		t.Errorf("saved %v, linked %v; want the list saved and linked anyway", b.saved, b.linked)
+	}
+}
+
+func TestScan_OnlyEnv(t *testing.T) {
+	t.Parallel()
+
+	b := inFlowy()
+	b.project.Env = []scan.EnvLine{{File: "apps/api/.env", Line: 1, Key: "DATABASE_URL", Text: "DATABASE_URL=postgres://localhost:5432/flowy"}}
+	b.project.Bound, b.project.ComposeAddress = map[int]bool{5432: true}, "127.0.1.3"
+	linked := slices.Clone(sample)
+	linked[2].Compose = flowyDev
+	m := readyIn(b, linked, flowyOrigin)
+	if want := "scan: 1 .env line to set · i reviews"; m.note != want {
+		t.Errorf("note = %q, want %q", m.note, want)
+	}
+	m = send(m, "i")
+	if m.mode != modeScan || !m.canAccept() {
+		t.Fatalf("mode %v, canAccept %v; want a review y accepts", m.mode, m.canAccept())
+	}
+	m = send(m, "y")
+	if want := []string{flowyRoot + " apps/api/.env:1"}; !slices.Equal(b.envFixed, want) {
+		t.Errorf("set %q, want %q", b.envFixed, want)
+	}
+	if want := "set 1 .env line, restart the dev servers"; m.note != want || m.mode != modeList {
+		t.Errorf("mode %v, note %q; want the list and %q", m.mode, m.note, want)
+	}
+	if len(b.applied) != 0 {
+		t.Errorf("applied %v; the list didn't change", b.applied)
+	}
+}
+
+// inFlowyApps is a backend for flowy as a monorepo: a Next app in apps/web
+// on 3000 and a NestJS app in apps/api on 3300, none at the root.
+func inFlowyApps() *fakeBackend {
+	b := inFlowy()
+	b.project.Apps = []scan.App{{Dir: "apps/web", Tool: "next", Port: 3000}, {Dir: "apps/api", Tool: "nest", Port: 3300}}
+	return b
+}
+
+// retype empties the name field and types s.
+func retype(m Model, s string) Model {
+	for m.rename.Position() > 0 {
+		m = send(m, "backspace")
+	}
+	return typeText(m, s)
+}
+
+func TestScan_NameApp(t *testing.T) {
+	t.Parallel()
+
+	b := inFlowyApps()
+	m := send(send(readyIn(b, unlisted, flowyOrigin), "e"), "down")
+	if m.rename.Value() != "web.flowy" {
+		t.Fatalf("name field holds %q after down, want web.flowy", m.rename.Value())
+	}
+	golden.RequireEqual(t, m.View().Content)
+	if m = send(m, "up"); m.rename.Value() != "flowy" {
+		t.Errorf("name field holds %q after up, want the project's flowy", m.rename.Value())
+	}
+
+	m = send(retype(send(m, "down"), "flowy"), "enter")
+	if m.renaming || m.mode != modeScan {
+		t.Fatalf("renaming %v, mode %v; want the review again", m.renaming, m.mode)
+	}
+	want := store.Domain{Name: "flowy.test", Address: "127.0.1.2", Port: 3000, Enabled: true, Root: flowyRoot}
+	if got := m.proposal.Add; len(got) == 0 || got[0] != want {
+		t.Errorf("add = %+v, want %+v first", got, want)
+	}
+	if slices.ContainsFunc(m.proposal.Add, func(d store.Domain) bool { return d.Name == "web.flowy.test" }) {
+		t.Errorf("add = %+v, want no web.flowy.test: web has flowy.test", m.proposal.Add)
+	}
+	m = send(m, "y")
+	want.Compose = flowyDev
+	if len(b.saved) != 1 || !slices.Contains(b.saved[0], want) {
+		t.Errorf("saved %v, want it to hold %+v", b.saved, want)
+	}
+	if m.scanLabels != nil {
+		t.Errorf("labels = %v after y, want them cleared", m.scanLabels)
+	}
+}
+
+func TestScan_NameAppErrors(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		backend *fakeBackend
+		domains []store.Domain
+		typed   string
+		want    string
+	}{
+		{
+			name: "an app whose port lodo can't tell", backend: inNewFlowy(), domains: unlisted, typed: "server.flowy",
+			want: "lodo can't tell its port, so the name wouldn't stick: set PORT in its .env or a port in its dev script",
+		},
+		{name: "two labels", backend: inFlowyApps(), domains: unlisted, typed: "x.y.flowy", want: "an app's name is <label>.flowy.test or flowy.test"},
+		{name: "another project", backend: inFlowyApps(), domains: unlisted, typed: "api.other", want: "an app's name is <label>.flowy.test or flowy.test"},
+		{name: "an empty label", backend: inFlowyApps(), domains: unlisted, typed: ".flowy", want: "an app's name is <label>.flowy.test or flowy.test"},
+		{name: "the root's app has the bare name", backend: inNewFlowy(), domains: unlisted, typed: "flowy", want: "the root's app has flowy.test"},
+		{
+			name: "the bare name is listed", backend: inFlowyApps(), domains: sample, typed: "flowy",
+			want: "flowy.test is listed: give it the app's port with e in the list",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m := readyIn(tt.backend, tt.domains, flowyOrigin)
+			if m.mode != modeScan {
+				m = send(m, "i") // a listed project only gets a note
+			}
+			m = send(retype(send(send(m, "e"), "down"), tt.typed), "enter")
+			if !m.renaming || m.renameErr != tt.want || m.scanLabels != nil {
+				t.Errorf("renaming %v, error %q, labels %v; want the field kept with %q", m.renaming, m.renameErr, m.scanLabels, tt.want)
+			}
+		})
+	}
+}
+
+// TestScan_RescanClosesNameField checks that a scan landing while the name
+// field is open closes it: the field indexed the old proposal's apps, which
+// the new one may not have.
+func TestScan_RescanClosesNameField(t *testing.T) {
+	t.Parallel()
+
+	m := readyIn(inFlowyApps(), unlisted, flowyOrigin)
+	next, cmd := retype(send(m, "e"), "shop").Update(press("enter")) // the scan under shop.test runs; the old review stays
+	m = send(send(next.(Model), "e"), "down")
+	if !m.renaming || m.renameAt != 1 {
+		t.Fatalf("renaming %v at %d; want an app in the field", m.renaming, m.renameAt)
+	}
+	m = settle(m, cmd)
+	if m.renaming || m.renameAt != 0 {
+		t.Errorf("renaming %v at %d after a scan landed; want the field closed", m.renaming, m.renameAt)
+	}
+	_ = m.View()
+}
+
+func TestScan_EscClearsName(t *testing.T) {
+	t.Parallel()
+
+	m := readyIn(inFlowyApps(), unlisted, flowyOrigin)
+	m = send(retype(send(m, "e"), "shop"), "enter")
+	m = send(retype(send(send(m, "e"), "down"), "site.shop"), "enter")
+	if m.proposal.Name != "shop.test" || !slices.ContainsFunc(m.proposal.Add, func(d store.Domain) bool { return d.Name == "site.shop.test" }) {
+		t.Fatalf("name %q, add %+v; want shop.test with site.shop.test", m.proposal.Name, m.proposal.Add)
+	}
+	m = send(send(m, "esc"), "i")
+	if m.proposal.Name != "flowy.test" || !slices.ContainsFunc(m.proposal.Add, func(d store.Domain) bool { return d.Name == "web.flowy.test" }) {
+		t.Errorf("name %q, add %+v after esc and i; want the names typed forgotten", m.proposal.Name, m.proposal.Add)
+	}
+}
+
+func TestScan_RenameToEmptyLeavesReview(t *testing.T) {
+	t.Parallel()
+
+	b := inNewFlowy()
+	m := send(readyIn(b, unlisted, flowyOrigin), "e")
+	b.project.Apps, b.project.Compose = nil, nil // the project lost its apps and compose files since the review opened
+	m = send(m, "enter")
+	if m.mode != modeList || m.note != "scan found no dev server or compose file in ~/Projects/flowy" {
+		t.Errorf("mode %v, note %q; want the list and why", m.mode, m.note)
+	}
 }

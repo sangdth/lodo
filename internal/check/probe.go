@@ -25,6 +25,14 @@ const (
 	retryEvery    = 100 * time.Millisecond
 	systemTimeout = 6 * time.Second
 	httpWindow    = 3 * time.Second
+	localTimeout  = 500 * time.Millisecond // each dial to an app's port
+)
+
+// The ends of the problems lodo apply can't fix, each naming what does.
+const (
+	removeLine = ": remove that line"
+	runSetup   = ": run lodo setup"
+	scanHost   = ": lodo scan shows the host fix"
 )
 
 // Result is what the probes found for one enabled domain.
@@ -38,6 +46,13 @@ type Result struct {
 	Secure  bool   // the domain has HTTPS on, so the HTTPS probe applies
 	HTTPS   bool   // Caddy reached the app over HTTPS with a certificate macOS trusts; only when Secure
 	Detail  string // why probes failed, joined with "; "; empty when all passed
+
+	// Down means the app isn't running and nothing else failed: the lookups
+	// passed, Caddy answered that nothing listens on Address and Port, nothing
+	// accepts a connection there, and no app was found on Localhost instead.
+	// lodo can't start an app, so doctor and apply don't count it as a
+	// failure; OK is still false.
+	Down bool
 }
 
 // OK reports whether every probe that applies to the domain passed.
@@ -48,17 +63,36 @@ func (r Result) OK() bool {
 // Probe checks every enabled domain, all domains at once: dnsmasq answers
 // the name with its address, macOS resolves it to that address, and, for a
 // domain with a port, Caddy reaches the app. Results follow store.Sort order.
-// ctx bounds every probe.
+// ctx bounds every probe. A name whose app Caddy found stopped is then looked
+// for on Localhost, once per port: lodo can't tell whose app a listener there
+// is, so every stopped name on that port fails with the same detail, which
+// checkNames lists once.
 func (e Env) Probe(ctx context.Context, domains []store.Domain) []Result {
 	on := enabled(domains)
 	hosts, _ := readFile(e.Paths.Hosts) // no hosts file means no entries
 	entries := hostsAddresses(hosts)
 	results := make([]Result, len(on))
+	stopped := make([]bool, len(on))
 	var wg sync.WaitGroup
 	for i, d := range on {
-		wg.Go(func() { results[i] = e.probe(ctx, d, entries[d.Name]) })
+		wg.Go(func() { results[i], stopped[i] = e.probe(ctx, d, entries[d.Name]) })
 	}
 	wg.Wait()
+	elsewhere := map[int]string{} // per port, probeLocalhost's answer
+	for i, d := range on {
+		if !stopped[i] {
+			continue
+		}
+		wrong, ok := elsewhere[d.Port]
+		if !ok {
+			wrong = e.probeLocalhost(ctx, d)
+			elsewhere[d.Port] = wrong
+		}
+		if wrong != "" {
+			results[i].Detail = strings.Replace(results[i].Detail, appDown(d), wrong, 1)
+			results[i].Down = false
+		}
+	}
 	return results
 }
 
@@ -66,13 +100,16 @@ func (e Env) Probe(ctx context.Context, domains []store.Domain) []Result {
 // and HTTPS together. Each probe returns what went wrong, or "" when it
 // passed. inHosts are the addresses the hosts file lists for the name: macOS
 // and dnsmasq both answer from it first, so an entry with another address
-// explains a failed lookup better than the lookup does.
-func (e Env) probe(ctx context.Context, d store.Domain, inHosts []string) Result {
+// explains a failed lookup better than the lookup does. When Caddy finds the
+// app down, an HTTPS probe that found the same is said once, and one dial to
+// the domain's address and port tells a stopped app from one that answers
+// Caddy badly. It also reports whether the app is stopped.
+func (e Env) probe(ctx context.Context, d store.Domain, inHosts []string) (Result, bool) {
 	direct := e.probeDirect(ctx, d.Name, d.Address)
 	sys := e.probeSystem(ctx, d.Name, d.Address)
 	lookups := []string{direct, sys}
 	if (direct != "" || sys != "") && len(inHosts) > 0 && !slices.Contains(inHosts, d.Address) {
-		lookups = []string{e.Paths.Hosts + " maps " + d.Name + " to " + strings.Join(inHosts, ", ") + ": remove that line"}
+		lookups = []string{e.Paths.Hosts + " maps " + d.Name + " to " + strings.Join(inHosts, ", ") + removeLine}
 	}
 	var web, secure string
 	var wg sync.WaitGroup
@@ -83,8 +120,7 @@ func (e Env) probe(ctx context.Context, d store.Domain, inHosts []string) Result
 		wg.Go(func() { secure = e.probeHTTPS(ctx, d) })
 	}
 	wg.Wait()
-	problems := slices.DeleteFunc(append(lookups, web, secure), func(s string) bool { return s == "" })
-	return Result{
+	r := Result{
 		Name:    d.Name,
 		Address: d.Address,
 		Port:    d.Port,
@@ -93,8 +129,21 @@ func (e Env) probe(ctx context.Context, d store.Domain, inHosts []string) Result
 		HTTP:    d.Port > 0 && web == "",
 		Secure:  d.HTTPS,
 		HTTPS:   d.HTTPS && secure == "",
-		Detail:  strings.Join(problems, "; "),
 	}
+	stopped := web == appDown(d)
+	if stopped {
+		if secure == "https: "+web {
+			secure = "" // the same app is behind both probes: say it once
+		}
+		if listens(ctx, d.Address, d.Port) {
+			web, stopped = badAnswer(d), false
+		} else {
+			r.Down = r.Direct && r.System && secure == ""
+		}
+	}
+	problems := slices.DeleteFunc(append(lookups, web, secure), func(s string) bool { return s == "" })
+	r.Detail = strings.Join(problems, "; ")
+	return r, stopped
 }
 
 // probeDirect asks dnsmasq for name's IPv4 address, skipping the system
@@ -240,7 +289,7 @@ func (e Env) probeWeb(ctx context.Context, d store.Domain, scheme string, port i
 			return httpProblem(resp.StatusCode, resp.Header, d, port)
 		}
 		if _, ok := errors.AsType[*tls.CertificateVerificationError](err); ok {
-			return "Caddy's certificate isn't trusted: run lodo setup"
+			return "Caddy's certificate isn't trusted" + runSetup
 		}
 		// A refused connection keeps the default problem. Another failure, such
 		// as a handshake Caddy ends because it has no certificate for the name,
@@ -272,9 +321,70 @@ func httpProblem(status int, h http.Header, d store.Domain, httpPort int) string
 	server := h.Get("Server")
 	switch {
 	case server == "Caddy" && status == http.StatusBadGateway:
-		return "app down: nothing answers on " + net.JoinHostPort(d.Address, strconv.Itoa(d.Port))
+		return appDown(d)
 	case server == "Caddy":
 		return "caddy has no site for " + d.Name + ": run lodo apply"
 	}
 	return fmt.Sprintf("port %d on %s answered by %s, not Caddy", httpPort, d.Address, cmp.Or(server, "something"))
+}
+
+// appDown is the problem httpProblem reports when Caddy answered for the
+// site but nothing listens on the domain's address and port.
+func appDown(d store.Domain) string {
+	return "app down: nothing answers on " + net.JoinHostPort(d.Address, strconv.Itoa(d.Port))
+}
+
+// badAnswer is the problem for an app that accepts a connection on the
+// domain's address and port, yet Caddy got no HTTP answer from it.
+func badAnswer(d store.Domain) string {
+	return "app on " + net.JoinHostPort(d.Address, strconv.Itoa(d.Port)) + " gave Caddy no HTTP answer: does it serve HTTPS itself?"
+}
+
+// probeLocalhost dials each Localhost address but the domain's own on the
+// domain's port, after nothing answered on the domain's address: a dev server
+// started without a host often listens there instead. It returns that problem
+// for the first address that answers, or "" when none does.
+func (e Env) probeLocalhost(ctx context.Context, d store.Domain) string {
+	for _, host := range e.Localhost {
+		if host != d.Address && listens(ctx, host, d.Port) {
+			return wrongHost(host, d.Port)
+		}
+	}
+	return ""
+}
+
+// listens reports whether something accepts a TCP connection on host and
+// port, dialed once within localTimeout.
+func listens(ctx context.Context, host string, port int) bool {
+	ctx, cancel := context.WithTimeout(ctx, localTimeout)
+	defer cancel()
+	var dialer net.Dialer
+	conn, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort(host, strconv.Itoa(port)))
+	if err != nil {
+		return false
+	}
+	_ = conn.Close() // only the connection mattered
+	return true
+}
+
+// wrongHost is the problem for an app that listens on host and port instead
+// of its name's address. It leaves the address out, so every stopped name on
+// the port gets the same text.
+func wrongHost(host string, port int) string {
+	return "an app listens on " + net.JoinHostPort(host, strconv.Itoa(port)) + ", not on the name's address" + scanHost
+}
+
+// needsApply reports whether lodo apply can fix one of a failed result's
+// problems. It can't start an app or fix one that answers badly, and the
+// problems that end with another fix need that one.
+func needsApply(r Result) bool {
+	d := store.Domain{Address: r.Address, Port: r.Port}
+	for p := range strings.SplitSeq(r.Detail, "; ") {
+		p = strings.TrimPrefix(p, "https: ")
+		if p != appDown(d) && p != badAnswer(d) &&
+			!strings.HasSuffix(p, removeLine) && !strings.HasSuffix(p, runSetup) && !strings.HasSuffix(p, scanHost) {
+			return true
+		}
+	}
+	return false
 }

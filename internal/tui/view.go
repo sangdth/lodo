@@ -20,15 +20,16 @@ import (
 
 // Column widths, without the one-space padding the table adds on each side.
 // The name column fits its longest row; the compose column takes the rest.
+// The check column widens to secureWidth only while a name has HTTPS on.
 const (
 	addressWidth    = 15
 	portWidth       = 5
-	httpsWidth      = 5
 	ownWidth        = 3
 	checkWidth      = 13 // dns ✓  http ✓
+	secureWidth     = 22 // dns ✓  http ✓  https ✓
 	minNameWidth    = 12
 	minComposeWidth = 8
-	columns         = 7
+	columns         = 6
 )
 
 // The modal takes 80% of the terminal's width, but never less than
@@ -99,7 +100,7 @@ var help = map[mode]string{
 }
 
 // renameHelp is the review's keys while its name is edited.
-const renameHelp = " enter use this name  esc keep the old one\n"
+const renameHelp = " enter use this name  ↑/↓ an app's name  esc keep the old one\n"
 
 // scanFixesHelp is the review's keys when it holds only lines to change.
 const scanFixesHelp = " e name  n or esc back to the list  ↑/↓ ←/→ scroll\n q quit"
@@ -162,7 +163,7 @@ func (m Model) widths() (name, compose int) {
 	for _, d := range m.listed() {
 		name = max(name, ansi.StringWidth(indent(d)+"● "+d.Name))
 	}
-	room := m.innerWidth() - addressWidth - portWidth - httpsWidth - ownWidth - checkWidth - 2*columns
+	room := m.innerWidth() - addressWidth - portWidth - ownWidth - m.checkWidth() - 2*columns
 	compose = room - name
 	if compose < minComposeWidth {
 		compose = minComposeWidth
@@ -179,10 +180,9 @@ func (m *Model) layout() {
 		{Title: "name", Width: name},
 		{Title: "address", Width: addressWidth},
 		{Title: "port", Width: portWidth},
-		{Title: "https", Width: httpsWidth},
 		{Title: "compose", Width: compose},
 		{Title: "own", Width: ownWidth},
-		{Title: "check", Width: checkWidth},
+		{Title: "check", Width: m.checkWidth()},
 	})
 	m.table.SetWidth(m.innerWidth())
 	m.table.SetHeight(m.bodyHeight())
@@ -191,6 +191,14 @@ func (m *Model) layout() {
 	m.log.SetHeight(m.logHeight() - 1) // the log's title takes a line
 	m.preview.SetWidth(m.innerWidth())
 	m.preview.SetHeight(m.logHeight() - 2) // the preview's title and .env line take two
+}
+
+// checkWidth fits the check cell: wider while a listed name has HTTPS on.
+func (m Model) checkWidth() int {
+	if slices.ContainsFunc(m.listed(), func(d store.Domain) bool { return d.HTTPS }) {
+		return secureWidth
+	}
+	return checkWidth
 }
 
 // boxWidth is the modal's width with its border.
@@ -237,13 +245,13 @@ func (m Model) rows() []table.Row {
 		if store.IsOwn(d.Address) {
 			own = "own"
 		}
-		rows[i] = table.Row{indent(d) + mark + " " + d.Name, d.Address, port, m.httpsCell(d), m.composeCell(d, composeWidth), own, m.checkCell(d)}
+		rows[i] = table.Row{indent(d) + mark + " " + d.Name, d.Address, port, m.composeCell(d, composeWidth), own, m.checkCell(d)}
 	}
 	add := addRowText
 	if !m.onAddRow() {
 		add = m.styles.dim.Render(add)
 	}
-	return append(rows, table.Row{add, "", "", "", "", "", ""})
+	return append(rows, table.Row{add, "", "", "", "", ""})
 }
 
 // indent moves a subdomain's row in by two columns per label under its
@@ -278,19 +286,10 @@ func (m Model) checkCell(d store.Domain) string {
 	if d.Port > 0 {
 		cell += "  http " + mark(r.HTTP)
 	}
+	if r.Secure {
+		cell += "  https " + mark(r.HTTPS)
+	}
 	return cell
-}
-
-// httpsCell is empty while d has HTTPS off. Once d is on and probed, it says
-// how the HTTPS probe went; until then, and while d is off, it shows ✓.
-func (m Model) httpsCell(d store.Domain) string {
-	if !d.HTTPS {
-		return ""
-	}
-	if r, ok := m.results[d.Name]; ok && d.Enabled && r.Secure {
-		return mark(r.HTTPS)
-	}
-	return "✓"
 }
 
 func mark(ok bool) string {

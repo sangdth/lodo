@@ -33,7 +33,7 @@ func TestNew(t *testing.T) {
 	if !m.busy {
 		t.Error("not busy before the first report")
 	}
-	if got := m.rows()[0][6]; got != "…" {
+	if got := m.rows()[0][5]; got != "…" {
 		t.Errorf("check cell before the first report = %q, want …", got)
 	}
 	spinning := m.spinner.View() + " crm.test"
@@ -76,7 +76,7 @@ func TestModel_Toggle(t *testing.T) {
 	if m.domains[1].Enabled || m.busy || m.err != nil {
 		t.Errorf("after the change: %+v, busy %v, err %v", m.domains[1], m.busy, m.err)
 	}
-	if got := m.rows()[1][6]; got != "–" {
+	if got := m.rows()[1][5]; got != "–" {
 		t.Errorf("check cell of a disabled name = %q, want –", got)
 	}
 }
@@ -569,7 +569,7 @@ func TestModel_WindowSize(t *testing.T) {
 
 	m := ready(&fakeBackend{}, sample)
 	longest := ansi.StringWidth("  ● dashboard.crm.test")
-	fixed := addressWidth + portWidth + httpsWidth + ownWidth + checkWidth + 2*columns
+	fixed := addressWidth + portWidth + ownWidth + checkWidth + 2*columns
 	tests := []struct {
 		terminal, box, name int
 	}{
@@ -584,8 +584,8 @@ func TestModel_WindowSize(t *testing.T) {
 		if cols[0].Width != tt.name {
 			t.Errorf("name column = %d wide at %d columns, want %d", cols[0].Width, tt.terminal, tt.name)
 		}
-		if want := tt.box - 2 - tt.name - fixed; cols[4].Width != want {
-			t.Errorf("compose column = %d wide at %d columns, want %d, the rest", cols[4].Width, tt.terminal, want)
+		if want := tt.box - 2 - tt.name - fixed; cols[3].Width != want {
+			t.Errorf("compose column = %d wide at %d columns, want %d, the rest", cols[3].Width, tt.terminal, want)
 		}
 	}
 	next, _ := m.Update(tea.WindowSizeMsg{Width: 20, Height: 2})
@@ -659,15 +659,16 @@ func TestModel_HTTPSKey(t *testing.T) {
 	if !m.domains[1].HTTPS || m.busy || m.err != nil {
 		t.Errorf("after the change: %+v, busy %v, err %v", m.domains[1], m.busy, m.err)
 	}
-	if got := m.rows()[1][3]; got != "✓" {
-		t.Errorf("https cell = %q, want ✓", got)
+	if got := m.rows()[1][5]; got != "dns ✓  http ✓  https ✓" {
+		t.Errorf("check cell = %q, want the https probe after http", got)
 	}
-	if got := m.rows()[1][6]; got != "dns ✓  http ✓" {
-		t.Errorf("check cell = %q, want the https probe only in the https cell", got)
+	if got := m.table.Columns()[5].Width; got != secureWidth {
+		t.Errorf("check column = %d wide, want %d while a name has https on", got, secureWidth)
 	}
 
 	m = send(m, "s")
-	if m.domains[1].HTTPS || len(b.applied) != 2 || m.rows()[1][3] != "" || m.rows()[1][6] != "dns ✓  http ✓" {
+	if m.domains[1].HTTPS || len(b.applied) != 2 || m.rows()[1][5] != "dns ✓  http ✓" ||
+		m.table.Columns()[5].Width != checkWidth {
 		t.Errorf("after s again: %+v, applied %d, row %q; want https off", m.domains[1], len(b.applied), m.rows()[1])
 	}
 }
@@ -685,7 +686,7 @@ func TestModel_HTTPSKeyNeedsAPort(t *testing.T) {
 	}
 }
 
-func TestModel_HTTPSCell(t *testing.T) {
+func TestModel_HTTPSCheckCell(t *testing.T) {
 	t.Parallel()
 
 	domains := slices.Clone(sample)
@@ -693,24 +694,20 @@ func TestModel_HTTPSCell(t *testing.T) {
 	tests := []struct {
 		name    string
 		backend *fakeBackend
-		https   string
-		check   string
+		want    string
 	}{
-		{name: "passes", backend: &fakeBackend{}, https: "✓", check: "dns ✓  http ✓"},
-		{name: "fails", backend: &fakeBackend{failing: map[string]string{"dashboard.crm.test": "https: bad certificate"}}, https: "✗", check: "dns ✗  http ✗"},
+		{name: "passes", backend: &fakeBackend{}, want: "dns ✓  http ✓  https ✓"},
+		{name: "fails", backend: &fakeBackend{failing: map[string]string{"dashboard.crm.test": "https: bad certificate"}}, want: "dns ✗  http ✗  https ✗"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			m := ready(tt.backend, domains)
-			if got := m.rows()[1][3]; got != tt.https {
-				t.Errorf("https cell = %q, want %q", got, tt.https)
+			if got := m.rows()[1][5]; got != tt.want {
+				t.Errorf("check cell = %q, want %q", got, tt.want)
 			}
-			if got := m.rows()[1][6]; got != tt.check {
-				t.Errorf("check cell = %q, want %q", got, tt.check)
-			}
-			if got := m.rows()[0][3]; got != "" {
-				t.Errorf("https cell with https off = %q, want empty", got)
+			if got := m.rows()[0][5]; got != "dns ✓" {
+				t.Errorf("check cell without https = %q, want dns only", got)
 			}
 		})
 	}

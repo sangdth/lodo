@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/sangdth/lodo/internal/compose"
@@ -29,20 +30,35 @@ type Project struct {
 	Apps       []App    `json:"apps"`
 	Pages      []Page   `json:"pages"`
 	EnvAddress string   `json:"-"` // DOCKER_HOST_IP from the root's .env or .env.example, when it is an own address
+
+	Env            []EnvLine    `json:"-"` // the lines of each app's .env that mention localhost or 127.0.0.1, none from a file git tracks
+	Shared         []string     `json:"-"` // the app .env files git tracks that hold one, from the root
+	Bound          map[int]bool `json:"-"` // the ports on this Mac the best compose file binds to DOCKER_HOST_IP
+	ComposeAddress string       `json:"-"` // DOCKER_HOST_IP in the .env that file runs with (compose.EnvFile), when it is an own address
+	NoDevOrigins   []string     `json:"-"` // the folders of next apps whose next.config has no allowedDevOrigins
 }
 
 // Find reads the project dir is in. ok is false outside one
 // (compose.ProjectRoot). A file it can't read counts as missing: the scan is
-// only an offer.
-func Find(dir string) (Project, bool) {
+// only an offer. tracked reports whether git tracks a file; nil means nothing
+// is tracked.
+func Find(dir string, tracked func(path string) bool) (Project, bool) {
 	root, ok := compose.ProjectRoot(dir)
 	if !ok {
 		return Project{}, false
 	}
 	files, _ := compose.Find(root)
-	return Project{
-		Root: root, Name: Name(root), Compose: files, Apps: findApps(root), Pages: findPages(files), EnvAddress: envAddress(root),
-	}, true
+	apps := findApps(root)
+	p := Project{
+		Root: root, Name: Name(root), Compose: files, Apps: apps, EnvAddress: envAddress(root),
+		NoDevOrigins: noDevOrigins(root, apps),
+	}
+	p.Env, p.Shared = findEnv(root, apps, tracked)
+	if len(files) > 0 {
+		p.Pages, p.Bound = readCompose(files)
+		p.ComposeAddress = envMatch(hostIPRE, store.IsOwn, compose.EnvFile(files[0]))
+	}
+	return p, true
 }
 
 // nonLabel matches what a folder's name holds that a DNS label can't.
@@ -72,12 +88,33 @@ var hostIPRE = regexp.MustCompile(`(?m)^[ \t]*(?:export[ \t]+)?` + compose.EnvVa
 // gives DOCKER_HOST_IP, so lodo matches what the project expects. Only that
 // line is read.
 func envAddress(root string) string {
-	for _, name := range []string{".env", ".env.example"} {
-		data, err := fsutil.ReadRegular(filepath.Join(root, name), fsutil.MaxProjectFile)
+	return envMatch(hostIPRE, store.IsOwn, filepath.Join(root, ".env"), filepath.Join(root, ".env.example"))
+}
+
+// portLineRE matches the PORT= line of a .env, not a comment. The group is the
+// port.
+var portLineRE = regexp.MustCompile(`(?m)^[ \t]*(?:export[ \t]+)?PORT[ \t]*=[ \t]*["']?(\d{1,5})\b`)
+
+// envPort returns the port PORT sets in the .env of the app in dir, else in
+// its .env.example, and 0 without one.
+func envPort(dir string) int {
+	valid := func(s string) bool {
+		port, err := strconv.Atoi(s)
+		return err == nil && port >= 1 && port <= 65535
+	}
+	port, _ := strconv.Atoi(envMatch(portLineRE, valid, filepath.Join(dir, ".env"), filepath.Join(dir, ".env.example")))
+	return port
+}
+
+// envMatch returns group 1 of re in the first of files that has a match valid
+// accepts. A file it can't read counts as missing.
+func envMatch(re *regexp.Regexp, valid func(string) bool, files ...string) string {
+	for _, file := range files {
+		data, err := fsutil.ReadRegular(file, fsutil.MaxProjectFile)
 		if err != nil {
 			continue
 		}
-		if m := hostIPRE.FindSubmatch(data); m != nil && store.IsOwn(string(m[1])) {
+		if m := re.FindSubmatch(data); m != nil && valid(string(m[1])) {
 			return string(m[1])
 		}
 	}
@@ -95,12 +132,15 @@ type Proposal struct {
 	Add     []store.Domain `json:"add"`               // names to add, the project's first
 	Compose string         `json:"compose,omitempty"` // the compose file to link to Name; empty when there is none or one is linked
 	Fixes   []Fix          `json:"fixes"`             // lines to change by hand
+	Env     []Fix          `json:"env"`               // .env lines lodo sets on y, masked (ApplyEnv)
 	Notes   []string       `json:"notes"`             // what lodo couldn't decide
+
+	Dirs map[string]string `json:"-"` // each name in Add to its app's folder
 }
 
 // Empty reports whether the proposal changes nothing.
 func (p Proposal) Empty() bool {
-	return len(p.Add) == 0 && p.Compose == "" && len(p.Fixes) == 0 && !p.Claim
+	return len(p.Add) == 0 && p.Compose == "" && len(p.Fixes) == 0 && !p.Claim && len(p.Env) == 0
 }
 
 // ValidName checks a name the user chose for a project: a valid name with one
@@ -143,9 +183,12 @@ func projectName(p Project, domains []store.Domain) string {
 // used for the fixes, and a listed name the user chose gets the folder as Root
 // (Claim). The project's best compose file is offered when no name of the
 // project links one that is still there (linked). A project with no app and no
-// compose file gets nothing.
-func Propose(p Project, domains []store.Domain, name string) Proposal {
-	prop := Proposal{Root: p.Root, Add: []store.Domain{}, Fixes: []Fix{}, Notes: []string{}}
+// compose file gets nothing. labels maps an app's folder to the label the user
+// gave it, "" for the project's name alone (CheckLabel); an app without one
+// keeps a listed name of the project on its port (aliasOf). The apps' .env
+// lines that point at this Mac's own host get the names (envFixes).
+func Propose(p Project, domains []store.Domain, name string, labels map[string]string) Proposal {
+	prop := Proposal{Root: p.Root, Add: []store.Domain{}, Fixes: []Fix{}, Env: []Fix{}, Notes: []string{}, Dirs: map[string]string{}}
 	if name != "" {
 		if err := ValidName(name); err != nil {
 			prop.Notes = append(prop.Notes, name+": "+err.Error())
@@ -168,32 +211,61 @@ func Propose(p Project, domains []store.Domain, name string) Proposal {
 		return prop
 	}
 	apps := []entry{{dir: ".", name: p.Name}}
+	own := map[string]bool{} // the names apps get by default
+	_, listed := find(domains, p.Name)
 	for _, a := range p.Apps {
-		if a.Dir == "." {
-			apps[0].app = a
-			if a.Port == 0 {
-				prop.Notes = append(prop.Notes, p.Name+": lodo can't tell its dev server's port; e sets it")
-			}
+		if a.Dir != "." {
+			own[label(path.Base(a.Dir))+"."+p.Name] = true
+			continue
+		}
+		apps[0].app, own[p.Name] = a, true
+		if a.Port == 0 && !listed {
+			prop.Notes = append(prop.Notes, p.Name+": "+noPort)
 		}
 	}
 	for _, a := range p.Apps {
 		if a.Dir == "." {
 			continue
 		}
-		name := label(path.Base(a.Dir)) + "." + p.Name
+		name, bare := label(path.Base(a.Dir))+"."+p.Name, false
+		if lbl, ok := labels[a.Dir]; ok {
+			switch err := CheckLabel(p, domains, p.Name, a.Dir, lbl); {
+			case err != nil:
+				prop.Notes = append(prop.Notes, a.Dir+": "+err.Error())
+			case lbl != "":
+				name = lbl + "." + p.Name
+			case apps[0].dir == ".":
+				name, bare = p.Name, true
+			default:
+				prop.Notes = append(prop.Notes, a.Dir+": "+apps[0].dir+" has "+p.Name)
+			}
+		} else if _, listed := find(domains, name); !listed && a.Port > 0 {
+			if alias, ok := aliasOf(domains, p.Name, prop.Address, a.Port, own); ok {
+				name, own[alias] = alias, true // one app per listed name; the next keeps its folder's
+			}
+		}
 		if store.ValidateName(name) != nil {
 			prop.Notes = append(prop.Notes, a.Dir+": its folder's name makes no valid name")
 			continue
 		}
 		if _, listed := find(domains, name); !listed {
+			if a.Port == 0 {
+				prop.Notes = append(prop.Notes, name+": "+noPort)
+			}
 			switch {
-			case a.Port == 0:
-				prop.Notes = append(prop.Notes, name+": lodo can't tell its dev server's port; e sets it")
 			case a.Tool == "":
 				prop.Notes = append(prop.Notes, name+": lodo doesn't know its dev command; start it on the name's address")
 			case !HasHost(a.Tool):
 				prop.Notes = append(prop.Notes, name+": "+a.Tool+" has no host option; make the app listen on the name's address")
 			}
+		}
+		if bare {
+			apps[0] = entry{dir: a.Dir, name: name, app: a} // the project's name serves the app
+			continue
+		}
+		if i := slices.IndexFunc(apps[1:], func(e entry) bool { return e.name == name }); i >= 0 {
+			prop.Notes = append(prop.Notes, a.Dir+": "+apps[i+1].dir+" has "+name)
+			continue
 		}
 		apps = append(apps, entry{dir: a.Dir, name: name, app: a})
 	}
@@ -205,13 +277,23 @@ func Propose(p Project, domains []store.Domain, name string) Proposal {
 	for _, e := range apps {
 		if d, ok := find(list, e.name); ok {
 			addresses[e.dir] = d.Address
+			if e.name == p.Name {
+				addresses["."] = d.Address // the root's scripts follow the project's name
+			}
 			if d.Port > 0 && e.app.Port > 0 && d.Port != e.app.Port {
 				moved[e.dir] = d.Port
+			}
+			switch {
+			case e.app.Dir == "" || d.Port > 0:
+			case e.app.Port > 0:
+				prop.Notes = append(prop.Notes, fmt.Sprintf("%s: listed without a port; its dev server takes %d: set it with e in the list", e.name, e.app.Port))
+			default:
+				prop.Notes = append(prop.Notes, e.name+": listed without a port, and lodo can't tell its dev server's; set it with e in the list")
 			}
 			continue
 		}
 		d := store.Domain{Name: e.name, Address: prop.Address, Port: ports[e.dir], Enabled: true}
-		if e.dir == "." {
+		if e.name == p.Name {
 			d.Root = p.Root
 		}
 		if d.Port > 0 && portTaken(list, d.Address, d.Port) {
@@ -232,14 +314,22 @@ func Propose(p Project, domains []store.Domain, name string) Proposal {
 			continue
 		}
 		list, addresses[e.dir] = next, d.Address
+		if e.name == p.Name {
+			addresses["."] = d.Address
+		}
 		if d.Port > 0 && d.Port != e.app.Port {
 			moved[e.dir] = d.Port
 		}
 		prop.Add = append(prop.Add, d)
+		if e.app.Dir != "" {
+			prop.Dirs[d.Name] = e.app.Dir
+		}
 	}
 
-	if owner, ok := find(list, p.Name); ok && len(p.Compose) > 0 {
-		used := owner.Compose // the compose file the project runs once the proposal is applied
+	owner, ok := find(list, p.Name)
+	used := "" // the compose file the project runs once the proposal is applied
+	if ok && len(p.Compose) > 0 {
+		used = owner.Compose
 		if !linked(owner, p.Compose) {
 			used = p.Compose[0]
 			if i := slices.IndexFunc(list, func(d store.Domain) bool { return linksInside(d, p.Root) && linked(d, p.Compose) }); i >= 0 {
@@ -264,8 +354,74 @@ func Propose(p Project, domains []store.Domain, name string) Proposal {
 			}
 		}
 	}
-	prop.Fixes = fixesFor(p, addresses, moved)
+	if ok {
+		var bound map[int]bool // only while compose runs that file with the project's address
+		if len(p.Compose) > 0 && used == p.Compose[0] && p.ComposeAddress == owner.Address {
+			bound = p.Bound
+		}
+		env, notes := envFixes(p, ValuesFor(list, owner), bound)
+		prop.Env, prop.Notes = append(prop.Env, env...), append(prop.Notes, notes...)
+	}
+	if len(p.NoDevOrigins) > 0 {
+		var names []string
+		for _, dir := range p.NoDevOrigins {
+			if dir == "." {
+				dir = p.Name
+			}
+			names = append(names, path.Base(dir))
+		}
+		prop.Notes = append(prop.Notes, strings.Join(names, ", ")+": Next 16.2+ refuses hot reload from other hosts; add allowedDevOrigins: ['"+
+			p.Name+"', '*."+p.Name+"'] to next.config")
+	}
+	rootEnv := filepath.Join(p.Root, ".env")
+	hostIP := isTurbo(p.Root) && (envMatch(hostIPRE, store.IsOwn, rootEnv) == prop.Address ||
+		prop.Compose != "" && compose.EnvFile(prop.Compose) == rootEnv && owner.Address == prop.Address) // y's LinkEnv writes it
+	prop.Fixes = fixesFor(p, prop.Address, hostIP, addresses, moved)
 	return prop
+}
+
+// noPort is the note for an app whose port lodo can't read.
+const noPort = "lodo can't tell its dev server's port; set it with e in the list"
+
+// CheckLabel says why app dir can't take lbl in project: an invalid name,
+// another app's name by default, a name listed on another port, the bare name
+// when the root is an app or the bare name is listed, or an app whose port
+// lodo can't tell, whose name a later scan couldn't find. lbl "" means the
+// project's name alone.
+func CheckLabel(p Project, domains []store.Domain, project, dir, lbl string) error {
+	if lbl != "" {
+		if err := store.ValidateName(lbl + "." + project); err != nil {
+			return err
+		}
+		if i := slices.IndexFunc(p.Apps, func(a App) bool { return a.Dir != dir && a.Dir != "." && label(path.Base(a.Dir)) == lbl }); i >= 0 {
+			return errors.New(p.Apps[i].Dir + " has " + lbl + "." + project)
+		}
+	} else if slices.ContainsFunc(p.Apps, func(a App) bool { return a.Dir == "." }) {
+		return errors.New("the root's app has " + project)
+	} else if _, listed := find(domains, project); listed {
+		return errors.New(project + " is listed: give it the app's port with e in the list")
+	}
+	i := slices.IndexFunc(p.Apps, func(a App) bool { return a.Dir == dir })
+	if i < 0 || p.Apps[i].Port == 0 {
+		return errors.New("lodo can't tell its port, so the name wouldn't stick: set PORT in its .env or a port in its dev script")
+	}
+	if d, listed := find(domains, lbl+"."+project); lbl != "" && listed && d.Port > 0 && d.Port != p.Apps[i].Port {
+		return fmt.Errorf("%s is listed on port %d, not this app's %d", d.Name, d.Port, p.Apps[i].Port)
+	}
+	return nil
+}
+
+// aliasOf returns the listed name of project that routes port on address and
+// that no app is named after by default (own): the bare name or label the
+// user gave that app.
+func aliasOf(domains []store.Domain, project, address string, port int, own map[string]bool) (string, bool) {
+	i := slices.IndexFunc(domains, func(d store.Domain) bool {
+		return d.Address == address && d.Port == port && store.Project(d.Name) == project && !own[d.Name]
+	})
+	if i < 0 {
+		return "", false
+	}
+	return domains[i].Name, true
 }
 
 // entry is a name Propose gives: the project's, with the root app when there
@@ -326,9 +482,13 @@ func projectAddress(p Project, domains []store.Domain) (string, bool) {
 }
 
 // fixesFor returns the fixes in the root's package.json and in each app's,
-// each with its name's address and, for an app that must move, its port. The root gets the project's address when it
-// is no app.
-func fixesFor(p Project, addresses map[string]string, ports map[string]int) []Fix {
+// each with its name's address and, for an app that must move, its port. The
+// root gets the project's address, projectAddr, when it is no app. With
+// hostIP, set in a turbo project whose root .env holds projectAddr once the
+// proposal is applied, a script on projectAddr gets compose.HostIP instead,
+// which the root's turbo line sets (withTurbo); an app moved to another
+// address keeps its own.
+func fixesFor(p Project, projectAddr string, hostIP bool, addresses map[string]string, ports map[string]int) []Fix {
 	dirs := []string{"."}
 	for _, a := range p.Apps {
 		if a.Dir != "." {
@@ -341,16 +501,24 @@ func fixesFor(p Project, addresses map[string]string, ports map[string]int) []Fi
 		if !ok {
 			addr, ok = addresses["."]
 		}
+		if hostIP && addr == projectAddr {
+			addr = compose.HostIP
+		}
 		if ok {
 			fixes = append(fixes, fixesIn(p.Root, dir, addr, ports[dir])...)
 		}
+	}
+	if hostIP {
+		return withTurbo(p.Root, dirs, fixes)
 	}
 	return fixes
 }
 
 // HostFixes returns the lines in the project at root that start a dev server
 // on every address, with address added: in the root's package.json and in
-// each app's, and in the shell scripts their scripts run.
+// each app's, and in the shell scripts their scripts run. A turbo project
+// whose root .env sets DOCKER_HOST_IP to address gets compose.HostIP and its
+// turbo line (withTurbo).
 func HostFixes(root, address string) []Fix {
 	dirs := []string{"."}
 	for _, a := range findApps(root) {
@@ -358,9 +526,35 @@ func HostFixes(root, address string) []Fix {
 			dirs = append(dirs, a.Dir)
 		}
 	}
+	hostIP := isTurbo(root) && envMatch(hostIPRE, store.IsOwn, filepath.Join(root, ".env")) == address
+	if hostIP {
+		address = compose.HostIP
+	}
 	var fixes []Fix
 	for _, dir := range dirs {
 		fixes = append(fixes, fixesIn(root, dir, address, 0)...)
+	}
+	if hostIP {
+		return withTurbo(root, dirs, fixes)
+	}
+	return fixes
+}
+
+// withTurbo puts the root's turbo line (turboFix) before fixes when an app's
+// dev script reads DOCKER_HOST_IP: a fix sets it, or the app's package.json
+// names it already. Without one the line would change nothing.
+//
+// shortcut: it doesn't look in the shell scripts an app's dev script runs;
+// check shellScripts too if an app sets its host there.
+func withTurbo(root string, dirs []string, fixes []Fix) []Fix {
+	reads := slices.ContainsFunc(fixes, func(f Fix) bool { return strings.Contains(f.New, compose.EnvVar) })
+	for _, dir := range dirs {
+		if _, text, ok := readPackage(filepath.Join(root, filepath.FromSlash(dir))); ok && dir != "." && strings.Contains(text, compose.EnvVar) {
+			reads = true
+		}
+	}
+	if f, ok := turboFix(root); ok && reads {
+		return append([]Fix{f}, fixes...)
 	}
 	return fixes
 }

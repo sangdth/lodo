@@ -96,6 +96,9 @@ func TestNewEnv(t *testing.T) {
 	if e.RootUID != 0 {
 		t.Errorf("RootUID = %d, want 0", e.RootUID)
 	}
+	if want := []string{"127.0.0.1", "::1"}; !slices.Equal(e.Localhost, want) {
+		t.Errorf("Localhost = %q, want %q", e.Localhost, want)
+	}
 }
 
 func TestEnv_Run(t *testing.T) {
@@ -514,19 +517,84 @@ func TestEnv_Run_NamesResolve(t *testing.T) {
 			change: func(t *testing.T, m *mac) {
 				t.Helper()
 				m.env.HTTPPort = startHTTP(t, respond(http.StatusBadGateway, "Server", "Caddy"))
+				m.domains = slices.Clone(m.domains)
+				m.domains[1].Port = appPort(t, "")
 			},
-			want: namesCheck.fail("dashboard.crm.test: app down: nothing answers on 127.0.0.1:3000", "lodo apply"),
+			want: namesCheck.pass("2 of 2 resolve; not running: dashboard.crm.test"),
 		},
 		{
-			name:    "more names fail than the detail lists",
+			name: "a name fails next to an app that isn't running",
+			change: func(t *testing.T, m *mac) {
+				t.Helper()
+				m.env.HTTPPort = startHTTP(t, respond(http.StatusBadGateway, "Server", "Caddy"))
+				m.fake.Set(dscacheutil(m.p, "crm.test"), macOSOutput("crm.test", "127.0.1.9"))
+				m.domains = slices.Clone(m.domains)
+				m.domains[1].Port = appPort(t, "")
+			},
+			want: namesCheck.fail("crm.test: macOS: 127.0.1.9, want 127.0.1.1; not running: dashboard.crm.test", "lodo apply"),
+		},
+		{
+			name: "an app listens on Localhost instead",
+			change: func(t *testing.T, m *mac) {
+				t.Helper()
+				m.env.HTTPPort = startHTTP(t, respond(http.StatusBadGateway, "Server", "Caddy"))
+				m.env.Localhost = []string{"::1"}
+				m.app = appPort(t, "::1")
+				m.domains = slices.Clone(m.domains)
+				m.domains[1].Port = m.app
+			},
+			want: namesCheck.fail("dashboard.crm.test: an app listens on [::1]:{app}, not on the name's address: lodo scan shows the host fix",
+				"lodo scan in the app's project, then start the app with the host it shows"),
+		},
+		{
+			name: "one app on Localhost, two names on its port",
+			domains: []store.Domain{
+				{Name: "crm.test", Address: "127.0.1.1", Enabled: true},
+				{Name: "a.crm.test", Address: "127.0.0.1", Port: 1, Enabled: true},
+				{Name: "b.crm.test", Address: "127.0.0.1", Port: 1, Enabled: true},
+			},
+			change: func(t *testing.T, m *mac) {
+				t.Helper()
+				m.env.HTTPPort = startHTTP(t, respond(http.StatusBadGateway, "Server", "Caddy"))
+				m.env.Localhost = []string{"::1"}
+				m.app = appPort(t, "::1")
+				m.domains = slices.Clone(m.domains)
+				m.domains[1].Port, m.domains[2].Port = m.app, m.app
+			},
+			want: namesCheck.fail("a.crm.test, b.crm.test: "+
+				"an app listens on [::1]:{app}, not on the name's address: lodo scan shows the host fix",
+				"lodo scan in the app's project, then start the app with the host it shows"),
+		},
+		{
+			name: "an app answers caddy badly",
+			change: func(t *testing.T, m *mac) {
+				t.Helper()
+				m.env.HTTPPort = startHTTP(t, respond(http.StatusBadGateway, "Server", "Caddy"))
+				m.app = appPort(t, "127.0.0.1")
+				m.domains = slices.Clone(m.domains)
+				m.domains[1].Port = m.app
+			},
+			want: namesCheck.fail(
+				"dashboard.crm.test: app on 127.0.0.1:{app} gave Caddy no HTTP answer: does it serve HTTPS itself?", ""),
+		},
+		{
+			name: "a hosts line names its own fix",
+			change: func(t *testing.T, m *mac) {
+				t.Helper()
+				writeFile(t, m.p.Hosts, "127.0.1.9 crm.test\n")
+				m.fake.Set(dscacheutil(m.p, "crm.test"), macOSOutput("crm.test", "127.0.1.9"))
+			},
+			want: namesCheck.fail("crm.test: {root}/etc/hosts maps crm.test to 127.0.1.9: remove that line", ""),
+		},
+		{
+			name:    "more names fail the same way than the detail lists",
 			domains: fiveDomains,
 			change: func(_ *testing.T, m *mac) {
 				for _, d := range m.domains {
 					m.fake.Set(dscacheutil(m.p, d.Name), "")
 				}
 			},
-			want: namesCheck.fail(
-				"a.test: macOS: no address; b.test: macOS: no address; c.test: macOS: no address; and 2 more", "lodo apply"),
+			want: namesCheck.fail("a.test, b.test, c.test, and 2 more: macOS: no address", "lodo apply"),
 		},
 	})
 }
@@ -715,7 +783,7 @@ type runCase struct {
 	name    string
 	domains []store.Domain             // nil means healthyDomains
 	change  func(t *testing.T, m *mac) // nil changes nothing
-	want    check.Check                // {root} stands for the temp root, {port} for the HTTP port
+	want    check.Check                // {root} stands for the temp root, {port} for the HTTP port, {app} for mac.app
 }
 
 // runCases runs every check on a Mac changed as each case says and compares
@@ -749,6 +817,7 @@ type mac struct {
 	fake    *run.Fake
 	env     check.Env
 	domains []store.Domain
+	app     int // the port of an app a case started, for {app}
 }
 
 func newMac(t *testing.T, domains []store.Domain) *mac {
@@ -795,9 +864,9 @@ func newMac(t *testing.T, domains []store.Domain) *mac {
 }
 
 // expand fills in the placeholders of an expected check: {root} for the temp
-// root that holds every path, {port} for the HTTP port.
+// root that holds every path, {port} for the HTTP port, {app} for m.app.
 func (m *mac) expand(c check.Check) check.Check {
-	r := strings.NewReplacer("{root}", m.root, "{port}", strconv.Itoa(m.env.HTTPPort))
+	r := strings.NewReplacer("{root}", m.root, "{port}", strconv.Itoa(m.env.HTTPPort), "{app}", strconv.Itoa(m.app))
 	c.Detail, c.Fix = r.Replace(c.Detail), r.Replace(c.Fix)
 	return c
 }

@@ -8,8 +8,8 @@
 [90m│[m[32m  add   flowy.test      127.0.1.2  :3000[m                                      [90m│[m
 [90m│[m[32m  add   api.flowy.test  127.0.1.2[m                                             [90m│[m
 [90m│[m[32m  link  ./compose.dev.yaml · DOCKER_HOST_IP=127.0.1.2 in its .env[m             [90m│[m
-[90m│[m[90m  note  api.flowy.test: lodo can't tell its dev server's port; e sets it[m      [90m│[m
-[90m│[m                                                                              [90m│[m
+[90m│[m[90m  note  api.flowy.test: lodo can't tell its dev server's port; set it with e i[m[90m│[m
+[90m│[m[90m  note  api.flowy.test: lodo doesn't know its dev command; start it on the nam[m[90m│[m
 [90m│[m                                                                              [90m│[m
 [90m│[m                                                                              [90m│[m
 [90m│[m                                                                              [90m│[m

@@ -57,14 +57,16 @@ type Model struct {
 	backend Backend
 	origin  Start // where lodo started
 
-	project   scan.Project  // the project lodo started in; Root is empty outside one
-	proposal  scan.Proposal // what the last scan found missing from the list
-	scanned   bool          // the first scan is done
-	offered   bool          // the startup offer ran, or had nothing to offer
-	scanName  string        // the project's name the user chose in the review; empty lets the scan pick
-	renaming  bool          // e in the review: the keys type the project's name
-	rename    textinput.Model
-	renameErr string // why the typed name can't be the project's
+	project    scan.Project      // the project lodo started in; Root is empty outside one
+	proposal   scan.Proposal     // what the last scan found missing from the list
+	scanned    bool              // the first scan is done
+	offered    bool              // the startup offer ran, or had nothing to offer
+	scanName   string            // the project's name the user chose in the review; empty lets the scan pick
+	scanLabels map[string]string // the labels the user gave apps in the review, by folder; replaced, never changed
+	renaming   bool              // e in the review: the keys type the project's name or an app's
+	renameAt   int               // what the name field names: 0 the project, else an app in renameTargets
+	rename     textinput.Model
+	renameErr  string // why the typed name can't be the project's or the app's
 
 	mode       mode
 	form       form
@@ -264,6 +266,25 @@ func (m Model) thenLink(cmd tea.Cmd, d store.Domain) tea.Cmd {
 			hint = " · dev servers need a host: p shows it"
 		}
 		msg.note = "linked " + d.Name + hint + " · " + compose.EnvVar + "=" + d.Address + " in " + shortPath(env, home)
+		return msg
+	}
+}
+
+// thenFixEnv runs cmd, then, once it saved the list, sets the scan's .env
+// lines in the project at root.
+func (m Model) thenFixEnv(cmd tea.Cmd, root string, fixes []scan.Fix) tea.Cmd {
+	ctx, b := m.ctx, m.backend
+	return func() tea.Msg {
+		msg, ok := cmd().(changedMsg)
+		if !ok || !msg.stored {
+			return msg
+		}
+		if err := b.FixEnv(ctx, root, fixes); err != nil {
+			msg.err = errors.Join(msg.err, err)
+			return msg
+		}
+		// What to restart goes first: a narrow status line cuts the end.
+		msg.note = strings.TrimSuffix("set "+plural(len(fixes), ".env line")+", restart the dev servers · "+msg.note, " · ")
 		return msg
 	}
 }

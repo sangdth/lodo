@@ -122,7 +122,7 @@ func runApp(command string, sf scanFlags, stdout, stderr io.Writer) int {
 			a.fail(fmt.Errorf("find the current folder: %w", err))
 			return 1
 		}
-		return a.scan(dir, sf)
+		return a.scan(ctx, dir, sf)
 	default:
 		return a.uninstall(ctx)
 	}

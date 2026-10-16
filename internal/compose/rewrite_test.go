@@ -189,6 +189,9 @@ func TestRewrite_URLs(t *testing.T) {
 		{name: "port too long", value: "http://localhost:123456"},
 		{name: "user info", value: "http://localhost@example.com"},
 		{name: "scheme inside a word", value: "xhttp://localhost:3000"},
+		{name: "user info stays", value: "http://u:p@localhost:3000", want: "http://u:p@dashboard.flowy.test"},
+		{name: "scheme after a dash", value: "foo-http://localhost:3000"},
+		{name: "backslash before the user info's @", value: `http://evil.com\@localhost:3000`},
 	}
 	forms := []struct {
 		name   string
@@ -260,6 +263,107 @@ func TestRewrite_SecureURLs(t *testing.T) {
 			checkRewrite(t, []byte(src), out, changes)
 			if want := yml("services:", "  app:", "    environment:", "      APP_URL: "+tt.want); string(out) != want {
 				t.Errorf("Rewrite =\n%s\nwant\n%s", out, want)
+			}
+		})
+	}
+}
+
+// TestMapURLs checks what MapURLs reads from each localhost URL, and that it
+// replaces only the URLs its callback takes.
+func TestMapURLs(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		s    string
+		keep string // a scheme the callback keeps
+		want string // empty means s stays
+		urls []compose.LocalURL
+	}{
+		{
+			name: "user info with an @", s: "postgres://u:p@ss@localhost:5434/db", want: "X/db",
+			urls: []compose.LocalURL{{Scheme: "postgres", UserInfo: "u:p@ss@", Port: "5434"}},
+		},
+		{
+			name: "password alone", s: "redis://:pw@127.0.0.1:6379", want: "X",
+			urls: []compose.LocalURL{{Scheme: "redis", UserInfo: ":pw@", Port: "6379"}},
+		},
+		{
+			name: "scheme after another", s: "jdbc:postgresql://localhost:5432", want: "jdbc:X",
+			urls: []compose.LocalURL{{Scheme: "postgresql", Port: "5432"}},
+		},
+		{name: "longer host", s: "http://localhost.example.com"},
+		{name: "address in a longer host", s: "http://127.0.0.1.nip.io:3000"},
+		{name: "port too long", s: "http://localhost:123456"},
+		{
+			name: "port from a variable", s: "http://localhost:${PORT}", want: "X:${PORT}",
+			urls: []compose.LocalURL{{Scheme: "http"}},
+		},
+		{
+			name: "the callback keeps one", s: "redis://localhost:6379 http://localhost:3000", keep: "redis",
+			want: "redis://localhost:6379 X",
+			urls: []compose.LocalURL{{Scheme: "redis", Port: "6379"}, {Scheme: "http", Port: "3000"}},
+		},
+		{
+			name: "the callback keeps all", s: "http://localhost:3000", keep: "http",
+			urls: []compose.LocalURL{{Scheme: "http", Port: "3000"}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var urls []compose.LocalURL
+			got, ok := compose.MapURLs(tt.s, func(u compose.LocalURL) (string, bool) {
+				urls = append(urls, u)
+				return "X", u.Scheme != tt.keep
+			})
+			want := cmp.Or(tt.want, tt.s)
+			if got != want || ok != (tt.want != "") {
+				t.Errorf("MapURLs(%q) = %q, %v; want %q, %v", tt.s, got, ok, want, tt.want != "")
+			}
+			if !slices.Equal(urls, tt.urls) {
+				t.Errorf("MapURLs(%q) read %+v, want %+v", tt.s, urls, tt.urls)
+			}
+		})
+	}
+}
+
+// TestValues_Point checks where Point sends each kind of URL.
+func TestValues_Point(t *testing.T) {
+	t.Parallel()
+
+	values := compose.Values{
+		Domain: "flowy.test",
+		Names:  map[int]string{3000: "dashboard.flowy.test", 4000: "api.flowy.test"},
+		Secure: map[int]bool{4000: true},
+	}
+	tests := []struct {
+		name  string
+		u     compose.LocalURL
+		want  string
+		named bool
+	}{
+		{name: "named http drops its port", u: compose.LocalURL{Scheme: "http", Port: "3000"}, want: "http://dashboard.flowy.test", named: true},
+		{name: "secure name gives https", u: compose.LocalURL{Scheme: "http", Port: "4000"}, want: "https://api.flowy.test", named: true},
+		{name: "secure name gives wss", u: compose.LocalURL{Scheme: "ws", Port: "4000"}, want: "wss://api.flowy.test", named: true},
+		{name: "https keeps a named port", u: compose.LocalURL{Scheme: "https", Port: "3000"}, want: "https://flowy.test:3000"},
+		{
+			name: "user info stays", u: compose.LocalURL{Scheme: "HTTP", UserInfo: "u:p@", Port: "3000"},
+			want: "HTTP://u:p@dashboard.flowy.test", named: true,
+		},
+		{
+			name: "other scheme keeps its port", u: compose.LocalURL{Scheme: "postgres", UserInfo: "u:p@", Port: "3000"},
+			want: "postgres://u:p@flowy.test:3000",
+		},
+		{name: "no port", u: compose.LocalURL{Scheme: "http"}, want: "http://flowy.test"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got, named := values.Point(tt.u); got != tt.want || named != tt.named {
+				t.Errorf("Point(%+v) = %q, %v; want %q, %v", tt.u, got, named, tt.want, tt.named)
 			}
 		})
 	}
