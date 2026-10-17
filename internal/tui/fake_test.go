@@ -30,12 +30,12 @@ type fakeBackend struct {
 	portsErr      error
 	serviceErr    error
 	project       scan.Project      // what Scan finds for any folder; Root is empty for none
+	scans         int               // Scan calls
 	composeFiles  map[string]string // ReadCompose's files, by path
 	off           map[string]bool   // services turned off
 	setServices   []string          // each SetService call, such as "caddy off"
 	linkErr       error
-	hostFixes     []scan.Fix // what HostFixes returns for any project
-	log           string     // dnsmasq's log
+	log           string // dnsmasq's log
 	tailErr       error
 	saved         [][]store.Domain
 	applied       [][]store.Domain
@@ -43,14 +43,20 @@ type fakeBackend struct {
 	envFixed      []string // each .env fix FixEnv got, as "<root> <file>:<line>"
 	envErr        error
 	reports       int
+	folders       map[string]bool // the folders on disk, for Gone
 }
 
 func (f *fakeBackend) PortsReady() error { return f.portsErr }
+
+func (f *fakeBackend) Gone(path string) bool { return !f.folders[path] }
 
 // Scan proposes with the real scan.Propose, on the project set in the fake.
 func (f *fakeBackend) Scan(_ context.Context, _, name string, labels map[string]string, domains []store.Domain) (
 	scan.Project, scan.Proposal, bool,
 ) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.scans++
 	if f.project.Root == "" {
 		return scan.Project{}, scan.Proposal{}, false
 	}
@@ -101,8 +107,6 @@ func (f *fakeBackend) appendLog(s string) {
 	defer f.mu.Unlock()
 	f.log += s
 }
-
-func (f *fakeBackend) HostFixes(string, string) []scan.Fix { return f.hostFixes }
 
 // LinkEnv records the link and names the .env next to the compose file.
 func (f *fakeBackend) LinkEnv(_ context.Context, composePath, address string) (string, error) {
@@ -180,13 +184,13 @@ func (f *fakeBackend) Report(_ context.Context, domains []store.Domain) ([]check
 		}
 	}
 	if !ports {
-		checks[7] = check.Check{ID: 8, Skipped: true}
+		checks[check.IDCaddy-1] = check.Check{ID: check.IDCaddy, Skipped: true}
 	}
 	if f.off["dnsmasq"] {
-		checks[0] = check.Check{ID: 1, Skipped: true, Off: true}
+		checks[check.IDDnsmasq-1] = check.Check{ID: check.IDDnsmasq, Skipped: true, Off: true}
 	}
 	if f.off["caddy"] {
-		checks[7] = check.Check{ID: 8, Skipped: true, Off: true}
+		checks[check.IDCaddy-1] = check.Check{ID: check.IDCaddy, Skipped: true, Off: true}
 	}
 	return checks, results
 }
@@ -210,7 +214,7 @@ var sample = []store.Domain{
 
 // settle runs cmd and every command its messages lead to, then returns the
 // model at rest. The spinner's next frame is skipped: it would only wait.
-func settle(m Model, cmd tea.Cmd) Model {
+func settle[M tea.Model](m M, cmd tea.Cmd) M {
 	for queue := []tea.Cmd{cmd}; len(queue) > 0; {
 		c := queue[0]
 		queue = queue[1:]
@@ -223,7 +227,7 @@ func settle(m Model, cmd tea.Cmd) Model {
 		case spinner.TickMsg, tea.QuitMsg, logTickMsg:
 		default:
 			next, more := m.Update(msg)
-			m = next.(Model)
+			m = next.(M)
 			queue = append(queue, more)
 		}
 	}
@@ -269,7 +273,7 @@ func press(k string) tea.KeyPressMsg {
 }
 
 // typeText types s one key at a time.
-func typeText(m Model, s string) Model {
+func typeText[M tea.Model](m M, s string) M {
 	for _, r := range s {
 		m = send(m, string(r))
 	}
@@ -285,7 +289,7 @@ func clearField(m Model) Model {
 }
 
 // send presses a key and settles what it started.
-func send(m Model, k string) Model {
+func send[M tea.Model](m M, k string) M {
 	next, cmd := m.Update(press(k))
-	return settle(next.(Model), cmd)
+	return settle(next.(M), cmd)
 }

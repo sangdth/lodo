@@ -1,7 +1,6 @@
 package scan
 
 import (
-	"bytes"
 	"encoding/json"
 	"maps"
 	"os"
@@ -19,9 +18,8 @@ const maxApps = 50
 
 // App is a folder of a project whose dev script starts a dev server.
 type App struct {
-	Dir  string `json:"dir"`            // from the project's root, with slashes; . for the root
-	Tool string `json:"tool,omitempty"` // next, vite, astro, nuxt or wrangler; empty when lodo doesn't know the command
-	Port int    `json:"port,omitempty"` // 0 when lodo can't tell
+	Dir  string // from the project's root, with slashes; . for the root
+	Port int    // 0 when lodo can't tell
 }
 
 // findApps returns the apps in the project at root. Without workspaces, the
@@ -33,12 +31,12 @@ func findApps(root string) []App {
 	dirs := workspaces(root)
 	var apps []App
 	if srv, known, hasDev := devServer(root); known || (hasDev && len(dirs) == 0) {
-		apps = append(apps, newApp(".", srv))
+		apps = append(apps, App{Dir: ".", Port: srv.port})
 	}
 	for _, dir := range dirs {
 		srv, known, hasDev := devServer(filepath.Join(root, filepath.FromSlash(dir)))
 		if known || (hasDev && strings.HasPrefix(dir, "apps/")) {
-			apps = append(apps, newApp(dir, srv))
+			apps = append(apps, App{Dir: dir, Port: srv.port})
 		}
 		if len(apps) == maxApps {
 			break
@@ -47,40 +45,13 @@ func findApps(root string) []App {
 	return apps
 }
 
-// noDevOrigins returns the folders of the next apps in apps whose next.config
-// doesn't name allowedDevOrigins: Next 16.2+ refuses hot reload from any host
-// but localhost and the one -H names.
-func noDevOrigins(root string, apps []App) []string {
-	var dirs []string
-	for _, a := range apps {
-		if a.Tool != "next" {
-			continue
-		}
-		if !slices.ContainsFunc(configNames("next.config"), func(name string) bool {
-			data, err := fsutil.ReadRegular(filepath.Join(root, filepath.FromSlash(a.Dir), name), fsutil.MaxProjectFile)
-			return err == nil && bytes.Contains(data, []byte("allowedDevOrigins"))
-		}) {
-			dirs = append(dirs, a.Dir)
-		}
-	}
-	return dirs
-}
-
-func newApp(dir string, srv server) App {
-	a := App{Dir: dir, Port: srv.port}
-	if srv.tool != nil {
-		a.Tool = srv.tool.name
-	}
-	return a
-}
-
 // workspaces returns the package folders the root's pnpm-workspace.yaml or
 // package.json workspaces name, from root, with slashes, sorted. ** counts as
 // one folder, and exclusions are skipped: a folder they would drop is only
 // one more app to look at.
 func workspaces(root string) []string {
 	var patterns []string
-	if data, err := fsutil.ReadRegular(filepath.Join(root, "pnpm-workspace.yaml"), fsutil.MaxProjectFile); err == nil {
+	if data, err := fsutil.ReadRegular(filepath.Join(root, "pnpm-workspace.yaml")); err == nil {
 		var ws struct {
 			Packages []string `yaml:"packages"`
 		}
@@ -88,7 +59,7 @@ func workspaces(root string) []string {
 			patterns = append(patterns, ws.Packages...)
 		}
 	}
-	if pkg, _, ok := readPackage(root); ok && len(pkg.Workspaces) > 0 {
+	if pkg, ok := readPackage(root); ok && len(pkg.Workspaces) > 0 {
 		var list []string
 		var obj struct {
 			Packages []string `json:"packages"`

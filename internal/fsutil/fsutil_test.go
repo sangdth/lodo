@@ -21,8 +21,8 @@ func TestWriteFile(t *testing.T) {
 		wantChanged bool
 	}{
 		{name: "new file", data: "a\n", wantChanged: true},
-		{name: "different content", existing: ptr("old\n"), data: "new\n", wantChanged: true},
-		{name: "same content", existing: ptr("same\n"), data: "same\n", wantChanged: false},
+		{name: "different content", existing: new("old\n"), data: "new\n", wantChanged: true},
+		{name: "same content", existing: new("same\n"), data: "same\n", wantChanged: false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -121,24 +121,24 @@ func TestReadRegular(t *testing.T) {
 			name: "over the limit",
 			setup: func(t *testing.T, dir string) string {
 				t.Helper()
-				return writeTemp(t, dir, "f", "abcde")
+				return writeTemp(t, dir, "f", strings.Repeat("a", fsutil.MaxProjectFile+1))
 			},
-			wantErr: "larger than 4 bytes",
+			wantErr: "larger than 1048576 bytes",
 		},
 		{
 			name: "exactly the limit",
 			setup: func(t *testing.T, dir string) string {
 				t.Helper()
-				return writeTemp(t, dir, "f", "abcd")
+				return writeTemp(t, dir, "f", strings.Repeat("a", fsutil.MaxProjectFile))
 			},
-			want: "abcd",
+			want: strings.Repeat("a", fsutil.MaxProjectFile),
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := fsutil.ReadRegular(tt.setup(t, t.TempDir()), 4)
+			got, err := fsutil.ReadRegular(tt.setup(t, t.TempDir()))
 			if tt.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 					t.Fatalf("err = %v, want %q", err, tt.wantErr)
@@ -158,7 +158,7 @@ func TestReadRegular(t *testing.T) {
 func TestReadRegular_Missing(t *testing.T) {
 	t.Parallel()
 
-	_, err := fsutil.ReadRegular(filepath.Join(t.TempDir(), "missing"), fsutil.MaxProjectFile)
+	_, err := fsutil.ReadRegular(filepath.Join(t.TempDir(), "missing"))
 	if !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("err = %v, want fs.ErrNotExist", err)
 	}
@@ -180,5 +180,3 @@ func symlink(t *testing.T, target, link string) string {
 	}
 	return link
 }
-
-func ptr(s string) *string { return &s }

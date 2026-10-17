@@ -33,7 +33,7 @@ var envFileRE = regexp.MustCompile(`--env-file(?:=|\s+)(?:"([^"]+)"|'([^']+)'|(\
 // a command that names path. npm runs scripts at root, so a relative env file
 // starts there.
 func scriptEnvFile(root, path string) (string, bool) {
-	data, err := fsutil.ReadRegular(filepath.Join(root, "package.json"), fsutil.MaxProjectFile)
+	data, err := fsutil.ReadRegular(filepath.Join(root, "package.json"))
 	if err != nil {
 		return "", false
 	}

@@ -112,7 +112,7 @@ func TestPropose_Env(t *testing.T) {
 				list[0].Compose = tt.linked
 			}
 			p := Project{
-				Root: "/p/shop", Name: "shop.test", Compose: []string{compose, prod}, Apps: []App{{Dir: "apps/web", Tool: "next", Port: 3000}},
+				Root: "/p/shop", Name: "shop.test", Compose: []string{compose, prod}, Apps: []App{{Dir: "apps/web", Port: 3000}},
 				Env:   []EnvLine{{File: "apps/web/.env", Line: 1, Key: keyRE.FindStringSubmatch(tt.text)[1], Text: tt.text}},
 				Bound: tt.bound, ComposeAddress: tt.address,
 			}
@@ -127,8 +127,8 @@ func TestPropose_Env(t *testing.T) {
 			if !slices.Equal(got.Notes, tt.notes) {
 				t.Errorf("Notes = %q, want %q", got.Notes, tt.notes)
 			}
-			if got.Empty() != (len(want) == 0) {
-				t.Errorf("Empty = %v with Env %+v", got.Empty(), got.Env)
+			if got.CanAccept() != (len(want) > 0) {
+				t.Errorf("CanAccept = %v with Env %+v", got.CanAccept(), got.Env)
 			}
 			shown := slices.Clone(got.Notes)
 			for _, f := range got.Env {
@@ -149,7 +149,7 @@ func TestPropose_Env(t *testing.T) {
 		})
 	}
 
-	got := Propose(Project{Root: "/p/shop", Name: "shop.test", Apps: []App{{Dir: "apps/web", Tool: "next", Port: 3000}}, Shared: []string{"apps/web/.env"}}, domains, "", nil)
+	got := Propose(Project{Root: "/p/shop", Name: "shop.test", Apps: []App{{Dir: "apps/web", Port: 3000}}, Shared: []string{"apps/web/.env"}}, domains, "", nil)
 	if want := []string{"apps/web/.env: git tracks it, so lodo leaves its localhost URLs"}; !slices.Equal(got.Notes, want) {
 		t.Errorf("shared: Notes = %q, want %q", got.Notes, want)
 	}

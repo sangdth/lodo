@@ -12,6 +12,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/sangdth/lodo/internal/check"
 	"github.com/sangdth/lodo/internal/store"
 )
 
@@ -40,7 +41,7 @@ func TestNew(t *testing.T) {
 	if got := m.table.Rows()[0][0]; got != spinning {
 		t.Errorf("enabled row before the first report = %q, want %q", got, spinning)
 	}
-	if got := m.table.Rows()[3][0]; got != "○ old.test" {
+	if got := ansi.Strip(m.table.Rows()[3][0]); got != "○ old.test" {
 		t.Errorf("disabled row before the first report = %q, want ○ old.test", got)
 	}
 	if got := strings.TrimSpace(m.statusLine()); got != "" {
@@ -203,7 +204,7 @@ func TestModel_ServiceFails(t *testing.T) {
 func TestModel_StatusBarMarks(t *testing.T) {
 	t.Parallel()
 
-	b := &fakeBackend{failingChecks: map[int]string{3: "job not loaded"}, off: map[string]bool{"dnsmasq": true}}
+	b := &fakeBackend{failingChecks: map[int]string{check.IDLoopback: "job not loaded"}, off: map[string]bool{"dnsmasq": true}}
 	m := ready(b, sample)
 	if bar, want := ansi.Strip(m.statusBar()), "caddy ●   dnsmasq ○   loopback ○   resolvers ● "; !strings.HasSuffix(bar, want) {
 		t.Errorf("status bar = %q, want %q", bar, want)
@@ -284,8 +285,81 @@ func TestModel_RowsIndentTheMark(t *testing.T) {
 
 	m := ready(&fakeBackend{}, sample)
 	for i, want := range []string{"● crm.test", "  ● dashboard.crm.test", "● flowy.test", "○ old.test"} {
-		if got := m.table.Rows()[i][0]; got != want {
+		if got := ansi.Strip(m.table.Rows()[i][0]); got != want {
 			t.Errorf("row %d = %q, want %q", i, got, want)
+		}
+	}
+}
+
+func TestModel_NameMark(t *testing.T) {
+	t.Parallel()
+
+	s := newStyles()
+	green, red, dim := s.ok.Render("●"), s.bad.Render("○"), s.dim.Render("○")
+	appDown := &fakeBackend{failing: map[string]string{"dashboard.crm.test": "app down: nothing answers on 127.0.1.1:3000"}}
+	caddyOff := &fakeBackend{off: map[string]bool{"caddy": true}}
+	tests := []struct {
+		name    string
+		backend *fakeBackend
+		row     int // row 0 is under the cursor
+		want    string
+	}{
+		{name: "every check passed", backend: &fakeBackend{}, row: 1, want: "  " + green + " dashboard.crm.test"},
+		{name: "a check failed", backend: appDown, row: 1, want: "  " + red + " dashboard.crm.test"},
+		{name: "no port: dns alone", backend: &fakeBackend{}, row: 2, want: green + " flowy.test"},
+		{name: "turned off", backend: &fakeBackend{}, row: 3, want: dim + " old.test"},
+		{name: "caddy turned off", backend: caddyOff, row: 1, want: "  " + dim + " dashboard.crm.test"},
+		{name: "caddy off, no port", backend: caddyOff, row: 2, want: green + " flowy.test"},
+		{name: "dnsmasq turned off", backend: &fakeBackend{off: map[string]bool{"dnsmasq": true}}, row: 2, want: dim + " flowy.test"},
+		{name: "under the cursor", backend: &fakeBackend{failing: map[string]string{"crm.test": "dnsmasq: no answer"}}, row: 0, want: "○ crm.test"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := ready(tt.backend, sample).rows()[tt.row][0]; got != tt.want {
+				t.Errorf("name cell = %q, want %q", got, tt.want)
+			}
+		})
+	}
+	t.Run("no result yet", func(t *testing.T) {
+		t.Parallel()
+		m := ready(&fakeBackend{}, sample)
+		delete(m.results, "flowy.test")
+		if got, want := m.rows()[2][0], dim+" flowy.test"; got != want {
+			t.Errorf("name cell = %q, want %q", got, want)
+		}
+	})
+	t.Run("keys on the services", func(t *testing.T) {
+		t.Parallel()
+		m := ready(&fakeBackend{failing: map[string]string{"crm.test": "dnsmasq: no answer"}}, sample)
+		next, _ := m.Update(press("tab"))
+		if got, want := next.(Model).table.Rows()[0][0], red+" crm.test"; got != want {
+			t.Errorf("row under the cursor without its highlight = %q, want %q", got, want)
+		}
+	})
+}
+
+func TestModel_MarkFollowsTheCursor(t *testing.T) {
+	t.Parallel()
+
+	m := ready(&fakeBackend{}, sample)
+	next, _ := m.Update(press("down"))
+	rows := next.(Model).table.Rows()
+	if want := newStyles().ok.Render("●") + " crm.test"; rows[0][0] != want {
+		t.Errorf("row left behind = %q, want %q", rows[0][0], want)
+	}
+	if want := "  ● dashboard.crm.test"; rows[1][0] != want {
+		t.Errorf("row under the cursor = %q, want %q", rows[1][0], want)
+	}
+}
+
+func TestModel_EnabledColumn(t *testing.T) {
+	t.Parallel()
+
+	m := ready(&fakeBackend{}, sample)
+	for i, want := range []string{"✓", "✓", "✓", ""} {
+		if got := m.rows()[i][1]; got != want {
+			t.Errorf("%s's enabled cell = %q, want %q", sample[i].Name, got, want)
 		}
 	}
 }
@@ -569,14 +643,14 @@ func TestModel_WindowSize(t *testing.T) {
 
 	m := ready(&fakeBackend{}, sample)
 	longest := ansi.StringWidth("  ● dashboard.crm.test")
-	fixed := addressWidth + portWidth + ownWidth + checkWidth + 2*columns
+	fixed := enabledWidth + addressWidth + portWidth + checkWidth + 2*columns
 	tests := []struct {
 		terminal, box, name int
 	}{
 		{terminal: 200, box: 160, name: longest}, // 80%
-		{terminal: 120, box: 96, name: longest},
-		{terminal: 100, box: minBoxWidth, name: longest},                // the floor still fits a 22-character name
-		{terminal: 80, box: 80, name: 80 - 2 - fixed - minComposeWidth}, // narrower than the floor: the whole terminal
+		{terminal: 140, box: 112, name: longest},
+		{terminal: 110, box: minBoxWidth, name: longest}, // the floor still fits a 22-character name
+		{terminal: 80, box: 80, name: longest},           // narrower than the floor: the whole terminal
 	}
 	for _, tt := range tests {
 		next, _ := m.Update(tea.WindowSizeMsg{Width: tt.terminal, Height: 40})
@@ -584,13 +658,19 @@ func TestModel_WindowSize(t *testing.T) {
 		if cols[0].Width != tt.name {
 			t.Errorf("name column = %d wide at %d columns, want %d", cols[0].Width, tt.terminal, tt.name)
 		}
-		if want := tt.box - 2 - tt.name - fixed; cols[3].Width != want {
-			t.Errorf("compose column = %d wide at %d columns, want %d, the rest", cols[3].Width, tt.terminal, want)
+		if want := tt.box - 2 - tt.name - fixed; cols[4].Width != want {
+			t.Errorf("compose column = %d wide at %d columns, want %d, the rest", cols[4].Width, tt.terminal, want)
 		}
 	}
 	next, _ := m.Update(tea.WindowSizeMsg{Width: 20, Height: 2})
 	if got := next.(Model).table.Columns()[0].Width; got != minNameWidth {
 		t.Errorf("name column = %d wide in a tiny terminal, want %d", got, minNameWidth)
+	}
+	secure := slices.Clone(sample)
+	secure[1].HTTPS = true
+	floor, _ := ready(&fakeBackend{}, secure).Update(tea.WindowSizeMsg{Width: minBoxWidth, Height: 40})
+	if got := floor.(Model).table.Columns()[0].Width; got != longest {
+		t.Errorf("name column = %d wide at the floor with https on, want %d", got, longest)
 	}
 }
 
@@ -659,7 +739,7 @@ func TestModel_HTTPSKey(t *testing.T) {
 	if !m.domains[1].HTTPS || m.busy || m.err != nil {
 		t.Errorf("after the change: %+v, busy %v, err %v", m.domains[1], m.busy, m.err)
 	}
-	if got := m.rows()[1][5]; got != "dns ✓  http ✓  https ✓" {
+	if got := m.rows()[1][5]; got != "dns ✓  https ✓" {
 		t.Errorf("check cell = %q, want the https probe after http", got)
 	}
 	if got := m.table.Columns()[5].Width; got != secureWidth {
@@ -667,7 +747,7 @@ func TestModel_HTTPSKey(t *testing.T) {
 	}
 
 	m = send(m, "s")
-	if m.domains[1].HTTPS || len(b.applied) != 2 || m.rows()[1][5] != "dns ✓  http ✓" ||
+	if m.domains[1].HTTPS || len(b.applied) != 2 || m.rows()[1][5] != "dns ✓" ||
 		m.table.Columns()[5].Width != checkWidth {
 		t.Errorf("after s again: %+v, applied %d, row %q; want https off", m.domains[1], len(b.applied), m.rows()[1])
 	}
@@ -696,8 +776,8 @@ func TestModel_HTTPSCheckCell(t *testing.T) {
 		backend *fakeBackend
 		want    string
 	}{
-		{name: "passes", backend: &fakeBackend{}, want: "dns ✓  http ✓  https ✓"},
-		{name: "fails", backend: &fakeBackend{failing: map[string]string{"dashboard.crm.test": "https: bad certificate"}}, want: "dns ✗  http ✗  https ✗"},
+		{name: "passes", backend: &fakeBackend{}, want: "dns ✓  https ✓"},
+		{name: "fails", backend: &fakeBackend{failing: map[string]string{"dashboard.crm.test": "https: bad certificate"}}, want: "dns ✗  https ✗"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

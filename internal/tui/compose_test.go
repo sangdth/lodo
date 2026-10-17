@@ -151,29 +151,6 @@ func TestPreview_HTTPSName(t *testing.T) {
 	}
 }
 
-// devFix is a package.json line HostFixes would fix for flowy.test.
-var devFix = []scan.Fix{{File: "package.json", Line: 6, Old: `    "dev": "next dev",`, New: `    "dev": "next dev -H 127.0.1.3",`}}
-
-func TestPreview_HostFixes(t *testing.T) {
-	t.Parallel()
-
-	domains := slices.Clone(sample)
-	domains[2].Compose = flowyDev
-	b := inFlowy()
-	b.hostFixes = devFix
-	m := readyIn(b, domains, Start{Home: home})
-	m = send(send(send(m, "down"), "down"), "p") // flowy.test
-	if m.mode != modePreview {
-		t.Fatalf("mode = %v after p, err %v; want the preview", m.mode, m.err)
-	}
-	view := ansi.Strip(m.View().Content)
-	for _, want := range []string{"add the host yourself", "package.json:6", `~     "dev": "next dev -H 127.0.1.3",`} {
-		if !strings.Contains(view, want) {
-			t.Errorf("preview lacks %q:\n%s", want, view)
-		}
-	}
-}
-
 func TestPreview_Refused(t *testing.T) {
 	t.Parallel()
 
@@ -229,16 +206,16 @@ func TestColumns(t *testing.T) {
 	for _, c := range m.table.Columns() {
 		titles = append(titles, c.Title)
 	}
-	if want := []string{"name", "address", "port", "compose", "own", "check"}; !slices.Equal(titles, want) {
+	if want := []string{"name", "enabled", "address", "port", "compose", "check"}; !slices.Equal(titles, want) {
 		t.Errorf("columns = %q, want %q", titles, want)
 	}
 	if got, want := m.table.Columns()[0].Width, ansi.StringWidth("  ● dashboard.crm.test"); got != want {
 		t.Errorf("name column = %d wide, want %d, the longest row", got, want)
 	}
-	if got := m.table.Rows()[2][3]; got != "~/Projects/flowy/compose.dev.yaml" {
+	if got := m.table.Rows()[2][4]; got != "~/Projects/flowy/compose.dev.yaml" {
 		t.Errorf("flowy.test's compose cell = %q, want the path from home", got)
 	}
-	if got := m.table.Rows()[3][3]; got != "–" {
+	if got := m.table.Rows()[3][4]; got != "–" {
 		t.Errorf("old.test's compose cell = %q, want – for no", got)
 	}
 }
@@ -246,7 +223,7 @@ func TestColumns(t *testing.T) {
 func TestComposeCell_CutsFromTheLeft(t *testing.T) {
 	t.Parallel()
 
-	m := Model{origin: Start{Home: home}}
+	m := Model{deps: deps{origin: Start{Home: home}}}
 	d := store.Domain{Compose: flowyRoot + "/apps/web/compose.dev.yaml"}
 	for width, want := range map[int]string{
 		60: "~/Projects/flowy/apps/web/compose.dev.yaml",
@@ -282,14 +259,8 @@ func TestLink(t *testing.T) {
 			wantCompose: flowyProd, wantNote: "linked flowy.test · DOCKER_HOST_IP=127.0.1.3 in ~/Projects/flowy/.env",
 		},
 		{
-			name: "a dev server needs a host: the note says so before the path", domains: withFile, origin: flowyOrigin,
-			backend:     &fakeBackend{project: scan.Project{Root: flowyRoot, Compose: []string{flowyDev}}, hostFixes: devFix},
-			wantCompose: flowyDev,
-			wantNote:    "linked flowy.test · dev servers need a host: p shows it · DOCKER_HOST_IP=127.0.1.3 in ~/Projects/flowy/.env",
-		},
-		{
 			name: "no file at all", backend: &fakeBackend{}, domains: sample, origin: Start{Home: home},
-			wantErr: "no compose file to link: start lodo in the project, or e to set one",
+			wantErr: "no compose file to link: start lodo ps in the project, or e to set one",
 		},
 		{
 			name: "the .env can't be written: the link stays", domains: withFile, origin: flowyOrigin,
@@ -519,7 +490,7 @@ func TestBackend_FixEnv(t *testing.T) {
 			name: "changed since the scan", files: map[string]string{"web": "SECRET=x\nAPI_URL=http://localhost:4000\n"},
 			want: map[string]string{"web": "SECRET=x\nAPI_URL=http://localhost:4000\n"}, wantErr: "changed since the scan",
 		},
-		{name: "gone", files: map[string]string{}, want: map[string]string{}, wantErr: "is gone: i scans again"},
+		{name: "gone", files: map[string]string{}, want: map[string]string{}, wantErr: "is gone: scan again: lodo dev --edit, or i in lodo ps"},
 		{name: "tracked by git", files: map[string]string{"web": web}, tracked: "web", want: map[string]string{"web": web}, wantErr: "git tracks "},
 		{
 			name: "a symlink out of the project", files: map[string]string{"web": web}, outside: true,
@@ -576,7 +547,7 @@ func TestBackend_FixEnv(t *testing.T) {
 			}
 			proposal := scan.Propose(scan.Project{
 				Root: root, Name: "shop.test", Env: lines,
-				Apps: []scan.App{{Dir: "apps/web", Tool: "next", Port: 3000}, {Dir: "apps/api"}},
+				Apps: []scan.App{{Dir: "apps/web", Port: 3000}, {Dir: "apps/api"}},
 			}, nil, "", nil)
 
 			err = NewBackend(p, r).FixEnv(t.Context(), root, proposal.Env)

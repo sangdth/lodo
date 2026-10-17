@@ -25,29 +25,29 @@ func TestTail(t *testing.T) {
 		wantOffset int64
 	}{
 		{name: "missing file", want: "", wantOffset: 0},
-		{name: "file appears", after: ptr("a\n"), want: "a\n", wantOffset: 2},
-		{name: "append", before: ptr("a\n"), after: ptr("a\nb\nc"), want: "b\nc", wantOffset: 5},
-		{name: "nothing new", before: ptr("a\n"), after: ptr("a\n"), want: "", wantOffset: 2},
-		{name: "truncated", before: ptr("a\nb\n"), after: ptr("c\n"), want: "c\n", wantOffset: 2},
-		{name: "file removed", before: ptr("a\n"), want: "", wantOffset: 0},
+		{name: "file appears", after: new("a\n"), want: "a\n", wantOffset: 2},
+		{name: "append", before: new("a\n"), after: new("a\nb\nc"), want: "b\nc", wantOffset: 5},
+		{name: "nothing new", before: new("a\n"), after: new("a\n"), want: "", wantOffset: 2},
+		{name: "truncated", before: new("a\nb\n"), after: new("c\n"), want: "c\n", wantOffset: 2},
+		{name: "file removed", before: new("a\n"), want: "", wantOffset: 0},
 		{
 			name:  "gap of exactly MaxTail comes back whole",
-			after: ptr(lines(64, 0, 1024)), want: lines(64, 0, 1024), wantOffset: 65536,
+			after: new(lines(64, 0, 1024)), want: lines(64, 0, 1024), wantOffset: 65536,
 		},
 		{
 			// The window starts 64 bytes into line 344.
 			name:   "gap over MaxTail starts at the next line",
-			before: ptr("a\n"), after: ptr("a\n" + lines(100, 0, 1000)),
+			before: new("a\n"), after: new("a\n" + lines(100, 0, 1000)),
 			want: lines(100, 345, 1000), wantOffset: 100002,
 		},
 		{
 			// The window starts exactly at line 76, so no line is dropped.
 			name:  "gap over MaxTail on a line boundary keeps the first line",
-			after: ptr(lines(64, 0, 1100)), want: lines(64, 76, 1100), wantOffset: 70400,
+			after: new(lines(64, 0, 1100)), want: lines(64, 76, 1100), wantOffset: 70400,
 		},
 		{
 			name:  "gap over MaxTail with no line break",
-			after: ptr(strings.Repeat("x", dnsmasq.MaxTail+10)),
+			after: new(strings.Repeat("x", dnsmasq.MaxTail+10)),
 			want:  strings.Repeat("x", dnsmasq.MaxTail), wantOffset: dnsmasq.MaxTail + 10,
 		},
 	}
@@ -116,5 +116,3 @@ func write(t *testing.T, path string, content *string) {
 		t.Fatal(err)
 	}
 }
-
-func ptr(s string) *string { return &s }

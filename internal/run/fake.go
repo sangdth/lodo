@@ -14,6 +14,8 @@ type Fake struct {
 	answers map[string]answer
 	calls   []string
 	inputs  map[string][]string
+	dir     string   // of the last Replace
+	env     []string // of the last Replace
 }
 
 type answer struct {
@@ -55,6 +57,14 @@ func (f *Fake) Inputs(line string) []string {
 	return slices.Clone(f.inputs[line])
 }
 
+// Replaced returns the dir and env of the last Replace; Calls holds its
+// command line.
+func (f *Fake) Replaced() (dir string, env []string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.dir, slices.Clone(f.env)
+}
+
 // Run implements Runner.
 func (f *Fake) Run(_ context.Context, name string, args ...string) (string, error) {
 	line := Line(name, args...)
@@ -78,5 +88,15 @@ func (f *Fake) RunInput(ctx context.Context, stdin, name string, args ...string)
 // RunTTY implements Runner.
 func (f *Fake) RunTTY(ctx context.Context, name string, args ...string) error {
 	_, err := f.Run(ctx, name, args...)
+	return err
+}
+
+// Replace implements Runner. It records dir and env for Replaced and answers
+// like Run, so a test's Replace returns.
+func (f *Fake) Replace(dir, name string, args, env []string) error {
+	f.mu.Lock()
+	f.dir, f.env = dir, slices.Clone(env)
+	f.mu.Unlock()
+	_, err := f.Run(context.Background(), name, args...)
 	return err
 }

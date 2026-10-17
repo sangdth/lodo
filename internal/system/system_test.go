@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -173,12 +174,12 @@ func TestWriteFiles(t *testing.T) {
 	t.Parallel()
 
 	p := paths.ForTest(t.TempDir())
-	c, err := system.WriteFiles(p, sample)
+	changed, err := system.WriteFiles(p, sample)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c != (system.Changes{Dnsmasq: true, Resolvers: true, Caddy: true}) {
-		t.Errorf("first write: changes = %+v, want all", c)
+	if want := []string{p.DnsmasqConf, p.Resolvers, p.Caddyfile}; !slices.Equal(changed, want) {
+		t.Errorf("first write: changed = %v, want all: %v", changed, want)
 	}
 	for path, want := range map[string]string{
 		p.DnsmasqConf: dnsmasq.Config(sample, p.Log),
@@ -197,19 +198,19 @@ func TestWriteFiles(t *testing.T) {
 	steps := []struct {
 		name    string
 		domains []store.Domain
-		want    system.Changes
+		want    []string
 	}{
-		{name: "same list", domains: sample, want: system.Changes{}},
-		{name: "port change", domains: withPort(sample, "dashboard.crm.test", 3001), want: system.Changes{Caddy: true}},
-		{name: "toggle", domains: toggled(withPort(sample, "dashboard.crm.test", 3001), "crm.test"), want: system.Changes{Dnsmasq: true, Resolvers: true}},
+		{name: "same list", domains: sample},
+		{name: "port change", domains: withPort(sample, "dashboard.crm.test", 3001), want: []string{p.Caddyfile}},
+		{name: "toggle", domains: toggled(withPort(sample, "dashboard.crm.test", 3001), "crm.test"), want: []string{p.DnsmasqConf, p.Resolvers}},
 	}
 	for _, s := range steps {
-		c, err := system.WriteFiles(p, s.domains)
+		changed, err := system.WriteFiles(p, s.domains)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if c != s.want {
-			t.Errorf("%s: changes = %+v, want %+v", s.name, c, s.want)
+		if !slices.Equal(changed, s.want) {
+			t.Errorf("%s: changed = %v, want %v", s.name, changed, s.want)
 		}
 	}
 }

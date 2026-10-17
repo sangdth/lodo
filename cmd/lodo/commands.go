@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -25,23 +26,67 @@ type app struct {
 	env    check.Env
 	stdout io.Writer
 	stderr io.Writer
+
+	// form runs the setup form for the project dir is in on the terminal;
+	// saved reports whether domains.json holds the project's names. Tests
+	// replace it, and lookPath, which finds a command on PATH.
+	form     func(ctx context.Context, domains []store.Domain, dir string) (saved bool, err error)
+	lookPath func(file string) (string, error)
 }
 
 func newApp(p paths.Paths, r run.Runner, stdout, stderr io.Writer) app {
-	return app{paths: p, runner: r, env: check.NewEnv(p, r), stdout: stdout, stderr: stderr}
+	a := app{paths: p, runner: r, env: check.NewEnv(p, r), stdout: stdout, stderr: stderr, lookPath: exec.LookPath}
+	a.form = a.setupForm
+	return a
 }
 
-// tui opens the terminal UI. It refuses while checks 1 to 5 fail: those need
-// lodo setup or a manual fix, which the TUI can't do.
-func (a app) tui(ctx context.Context) int {
+// command runs one of dispatch's commands that read or change the system.
+func (a app) command(ctx context.Context, command string, o options) int {
+	switch command {
+	case "ps":
+		return a.tui(ctx)
+	case "setup":
+		return a.setup(ctx)
+	case "apply":
+		return a.apply(ctx)
+	case "doctor":
+		return a.doctor(ctx)
+	case "uninstall":
+		return a.uninstall(ctx)
+	}
+	dir, err := os.Getwd()
+	if err != nil {
+		a.fail(fmt.Errorf("find the current folder: %w", err))
+		return 1
+	}
+	if command == "scan" {
+		return a.scan(ctx, dir, o)
+	}
+	return a.dev(ctx, dir, o.edit)
+}
+
+// ready loads domains.json and refuses while checks 1 to 5 fail: those need
+// lodo setup or a manual fix, which neither the dashboard nor lodo dev can do.
+// what names the command that waits, such as "lodo ps opens"; ok is false once
+// ready printed why.
+func (a app) ready(ctx context.Context, what string) (domains []store.Domain, ok bool) {
 	domains, err := store.Load(a.paths.DomainsJSON)
 	if err != nil {
 		a.fail(err)
-		return 1
+		return nil, false
 	}
 	if failed := check.Failed(a.env.Prerequisites(ctx, domains)); len(failed) > 0 {
 		fmt.Fprint(a.stderr, formatChecks(failed))
-		fmt.Fprintln(a.stderr, "lodo opens once these pass; lodo doctor shows every check.")
+		fmt.Fprintf(a.stderr, "%s once these pass; lodo doctor shows every check.\n", what)
+		return nil, false
+	}
+	return domains, true
+}
+
+// tui opens the dashboard, once ready.
+func (a app) tui(ctx context.Context) int {
+	domains, ok := a.ready(ctx, "lodo ps opens")
+	if !ok {
 		return 1
 	}
 	ctx, cancel := context.WithCancel(ctx)

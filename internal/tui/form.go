@@ -22,10 +22,6 @@ const (
 	fieldCount
 )
 
-// tldSuffix ends every name. A form shows its suffix after the name field,
-// dimmed, so only the labels before it are typed.
-const tldSuffix = "." + store.TLD
-
 // fieldIndex maps store's field names to the form's fields.
 var fieldIndex = map[string]int{
 	store.FieldName:    fieldName,
@@ -52,7 +48,7 @@ type form struct {
 // newAddForm opens an empty form whose address follows the name. With a
 // parent, the name ends in .<parent> and only the labels before it are typed.
 func newAddForm(domains []store.Domain, parent string, start Start) form {
-	f := form{origin: start, parent: parent, suffix: tldSuffix}
+	f := form{origin: start, parent: parent, suffix: store.Suffix}
 	if parent != "" {
 		f.suffix = "." + parent
 	}
@@ -65,7 +61,7 @@ func newAddForm(domains []store.Domain, parent string, start Start) form {
 // newEditForm opens a form holding d. Its address stays as typed. A
 // subdomain keeps its parent: only the labels before .<parent> are typed.
 func newEditForm(domains []store.Domain, d store.Domain, start Start) form {
-	f := form{origin: start, editing: d.Name, original: d, suffix: tldSuffix, addressTouched: true}
+	f := form{origin: start, editing: d.Name, original: d, suffix: store.Suffix, addressTouched: true}
 	if parent, ok := store.Parent(domains, d.Name); ok {
 		f.parent, f.suffix = parent.Name, "."+parent.Name
 	}
@@ -75,7 +71,7 @@ func newEditForm(domains []store.Domain, d store.Domain, start Start) form {
 	if d.Port > 0 {
 		f.inputs[fieldPort].SetValue(strconv.Itoa(d.Port))
 	}
-	f.inputs[fieldCompose].SetValue(shortPath(d.Compose, start.Home))
+	f.inputs[fieldCompose].SetValue(ShortPath(d.Compose, start.Home))
 	if free, err := store.NextFree(domains); err == nil {
 		f.hint = "next free: " + free
 	}
@@ -95,7 +91,7 @@ func newInputs(suffix string) [fieldCount]textinput.Model {
 	}
 	inputs[fieldName].SetWidth(store.MaxNameLen) // never scrolls; formView draws it at the text's width
 	inputs[fieldName].Placeholder = "app.flowy"
-	if suffix != tldSuffix {
+	if suffix != store.Suffix {
 		inputs[fieldName].Placeholder = "api"
 	}
 	inputs[fieldAddress].SetWidth(16)
@@ -171,7 +167,7 @@ func (f form) domain() (store.Domain, error) {
 func (f form) compose() string {
 	v := strings.TrimSpace(f.inputs[fieldCompose].Value())
 	switch {
-	case v == "" || v == store.NoCompose:
+	case !store.HasCompose(v):
 		return v
 	case strings.HasPrefix(v, "~/") && f.origin.Home != "":
 		v = filepath.Join(f.origin.Home, v[2:])

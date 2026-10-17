@@ -1,5 +1,6 @@
 // Package tui is lodo's terminal UI: the domain list with each name's checks,
-// a status bar for the system parts, and the keys that change the list.
+// a status bar for the system parts, the keys that change the list, and the
+// setup form for a project, which lodo dev also runs on its own.
 package tui
 
 import (
@@ -11,7 +12,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
 
 	"github.com/sangdth/lodo/internal/check"
 	"github.com/sangdth/lodo/internal/compose"
@@ -37,6 +37,9 @@ type Backend interface {
 	Report(ctx context.Context, domains []store.Domain) ([]check.Check, []check.Result)
 	// PortsReady says why a domain with a port can't work yet, or returns nil.
 	PortsReady() error
+	// Gone reports whether nothing is at path any more, such as a project's
+	// folder since it was renamed or moved.
+	Gone(path string) bool
 	// SetService turns dnsmasq or Caddy on or off.
 	SetService(ctx context.Context, service string, on bool) error
 	// Scan reads the project dir is in and proposes what the list lacks for
@@ -53,9 +56,6 @@ type Backend interface {
 	// LinkEnv's guards; a line that changed since the scan is refused. Errors
 	// from each file are joined.
 	FixEnv(ctx context.Context, root string, fixes []scan.Fix) error
-	// HostFixes returns the lines of the project at root that start a dev
-	// server on every address, with address added. lodo doesn't write them.
-	HostFixes(root, address string) []scan.Fix
 	// Tail returns what dnsmasq logged since offset, and the next offset.
 	Tail(offset int64) (string, int64, error)
 }
@@ -98,6 +98,11 @@ func (b backend) PortsReady() error {
 	return nil
 }
 
+func (b backend) Gone(path string) bool {
+	_, err := os.Stat(path)
+	return errors.Is(err, fs.ErrNotExist)
+}
+
 func (b backend) Scan(ctx context.Context, dir, name string, labels map[string]string, domains []store.Domain) (
 	scan.Project, scan.Proposal, bool,
 ) {
@@ -109,7 +114,7 @@ func (b backend) Scan(ctx context.Context, dir, name string, labels map[string]s
 }
 
 func (b backend) ReadCompose(path string) ([]byte, error) {
-	return fsutil.ReadRegular(path, fsutil.MaxProjectFile)
+	return fsutil.ReadRegular(path)
 }
 
 // LinkEnv writes DOCKER_HOST_IP=address into the .env the compose file at
@@ -153,7 +158,7 @@ func (b backend) writeEnv(ctx context.Context, root, env string, create bool, ed
 	if system.Tracked(ctx, b.paths, b.runner, env) {
 		return env, fmt.Errorf("git tracks %s, so lodo leaves it: this Mac's addresses and names don't belong in a shared file", env)
 	}
-	content, err := fsutil.ReadRegular(env, fsutil.MaxProjectFile)
+	content, err := fsutil.ReadRegular(env)
 	mode := fs.FileMode(0o644)
 	switch {
 	case err == nil:
@@ -163,7 +168,7 @@ func (b backend) writeEnv(ctx context.Context, root, env string, create bool, ed
 	case !errors.Is(err, fs.ErrNotExist):
 		return env, err // ReadRegular names env
 	case !create:
-		return env, fmt.Errorf("%s is gone: i scans again", env)
+		return env, fmt.Errorf("%s is gone: scan again: lodo dev --edit, or i in lodo ps", env)
 	}
 	out, err := edit(content)
 	if err != nil {
@@ -194,12 +199,10 @@ func envInside(root, env string) (string, error) {
 		return env, fmt.Errorf("resolve %s: %w", env, err)
 	}
 	rel, err := filepath.Rel(realRoot, real)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+	if err != nil || !filepath.IsLocal(rel) {
 		return real, fmt.Errorf("lodo writes only a .env inside the project: %s is outside %s", real, realRoot)
 	}
 	return real, nil
 }
-
-func (b backend) HostFixes(root, address string) []scan.Fix { return scan.HostFixes(root, address) }
 
 func (b backend) Tail(offset int64) (string, int64, error) { return dnsmasq.Tail(b.paths.Log, offset) }
