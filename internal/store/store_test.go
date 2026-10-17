@@ -50,6 +50,26 @@ func TestValidateName(t *testing.T) {
 	}
 }
 
+func TestValidateProject(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		in      string
+		wantMsg string // empty means valid
+	}{
+		{name: "project", in: "flowy.test"},
+		{name: "subdomain", in: "api.flowy.test", wantMsg: "a project's name has one label before .test"},
+		{name: "invalid name", in: "Flowy.test", wantMsg: "name must be lowercase"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			assertFieldErr(t, store.ValidateProject(tt.in), store.FieldName, tt.wantMsg)
+		})
+	}
+}
+
 func TestValidateAddress(t *testing.T) {
 	t.Parallel()
 
@@ -513,12 +533,12 @@ func TestLoad(t *testing.T) {
 		wantErrs string // substring
 	}{
 		{name: "missing file is empty", content: nil, want: nil},
-		{name: "sorted on load", content: ptr(`{"version":1,"domains":[{"name":"flowy.test","address":"127.0.1.3","enabled":true},{"name":"crm.test","address":"127.0.1.1","enabled":false}]}`), want: []string{"crm.test", "flowy.test"}},
-		{name: "bad json", content: ptr(`{`), wantErrs: "parse "},
-		{name: "unknown field", content: ptr(`{"version":1,"domains":[{"name":"crm.test","addr":"127.0.1.1"}]}`), wantErrs: `unknown field "addr"`},
-		{name: "wrong version", content: ptr(`{"version":2,"domains":[]}`), wantErrs: "format version 2, this lodo reads version 1"},
-		{name: "invalid domain", content: ptr(`{"version":1,"domains":[{"name":"crm.com","address":"127.0.1.1","enabled":true}]}`), wantErrs: `"crm.com": name must end in .test`},
-		{name: "relative compose path", content: ptr(`{"version":1,"domains":[{"name":"crm.test","address":"127.0.1.1","compose":"compose.yml"}]}`), wantErrs: `"crm.test": compose file must be an absolute path`},
+		{name: "sorted on load", content: new(`{"version":1,"domains":[{"name":"flowy.test","address":"127.0.1.3","enabled":true},{"name":"crm.test","address":"127.0.1.1","enabled":false}]}`), want: []string{"crm.test", "flowy.test"}},
+		{name: "bad json", content: new(`{`), wantErrs: "parse "},
+		{name: "unknown field", content: new(`{"version":1,"domains":[{"name":"crm.test","addr":"127.0.1.1"}]}`), wantErrs: `unknown field "addr"`},
+		{name: "wrong version", content: new(`{"version":2,"domains":[]}`), wantErrs: "format version 2, this lodo reads version 1"},
+		{name: "invalid domain", content: new(`{"version":1,"domains":[{"name":"crm.com","address":"127.0.1.1","enabled":true}]}`), wantErrs: `"crm.com": name must end in .test`},
+		{name: "relative compose path", content: new(`{"version":1,"domains":[{"name":"crm.test","address":"127.0.1.1","compose":"compose.yml"}]}`), wantErrs: `"crm.test": compose file must be an absolute path`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -649,12 +669,8 @@ func names(ds []store.Domain) []string {
 }
 
 func find(ds []store.Domain, name string) store.Domain {
-	for _, d := range ds {
-		if d.Name == name {
-			return d
-		}
-	}
-	return store.Domain{}
+	d, _ := store.Find(ds, name)
+	return d
 }
 
 func errString(err error) string {
@@ -663,5 +679,3 @@ func errString(err error) string {
 	}
 	return err.Error()
 }
-
-func ptr(s string) *string { return &s }

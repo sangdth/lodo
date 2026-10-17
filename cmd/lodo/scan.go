@@ -12,6 +12,7 @@ import (
 	"github.com/sangdth/lodo/internal/scan"
 	"github.com/sangdth/lodo/internal/store"
 	"github.com/sangdth/lodo/internal/system"
+	"github.com/sangdth/lodo/internal/tui"
 )
 
 // scan prints what the project dir is in lacks from the list, under the name
@@ -21,8 +22,8 @@ import (
 func (a app) scan(ctx context.Context, dir string, sf scanFlags) int {
 	name := ""
 	if sf.name != "" {
-		name = strings.TrimSuffix(sf.name, "."+store.TLD) + "." + store.TLD
-		if err := scan.ValidName(name); err != nil {
+		name = strings.TrimSuffix(sf.name, store.Suffix) + store.Suffix
+		if err := store.ValidateProject(name); err != nil {
 			a.fail(fmt.Errorf("--name %s: %w", sf.name, err))
 			return 2
 		}
@@ -34,7 +35,7 @@ func (a app) scan(ctx context.Context, dir string, sf scanFlags) int {
 	}
 	p, ok := scan.Find(dir, func(path string) bool { return system.Tracked(ctx, a.paths, a.runner, path) })
 	if !ok {
-		fmt.Fprintln(a.stderr, "✗ not in a project: lodo scans the git root, or a folder with a lock file, it starts in")
+		a.fail(scan.ErrNoProject)
 		return 1
 	}
 	proposal := scan.Propose(p, domains, name, nil)
@@ -55,15 +56,11 @@ func (a app) scan(ctx context.Context, dir string, sf scanFlags) int {
 // link, each .env line lodo sets and each line to change by hand with its old
 // and new text, and the notes. The .env lines come masked.
 func formatProposal(p scan.Proposal, home string) string {
-	root := p.Root
-	if home != "" && strings.HasPrefix(root, home+string(filepath.Separator)) {
-		root = "~" + root[len(home):]
-	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "scan of %s\n", root)
+	fmt.Fprintf(&b, "scan of %s\n", tui.ShortPath(p.Root, home))
 	switch {
 	case p.Name == "":
-		b.WriteString("its folder's name makes no ." + store.TLD + " name\n")
+		b.WriteString("its folder's name makes no " + store.Suffix + " name\n")
 		return b.String()
 	case p.Empty() && len(p.Notes) == 0 && !p.Listed:
 		b.WriteString("found no dev server or compose file\n")
@@ -102,7 +99,7 @@ func formatProposal(p scan.Proposal, home string) string {
 	for _, n := range p.Notes {
 		b.WriteString("note  " + n + "\n")
 	}
-	if len(p.Add) > 0 || p.Compose != "" || p.Claim || len(p.Env) > 0 {
+	if p.CanAccept() {
 		b.WriteString("\nrun lodo here and press y to add, link and set these; e names the project or an app\n")
 	}
 	return b.String()

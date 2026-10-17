@@ -15,6 +15,11 @@ import (
 	"github.com/sangdth/lodo/internal/store"
 )
 
+// localOnly opens every site: it closes a connection that comes from outside
+// this Mac without an answer. remote_ip matches the connection's own address,
+// never a forwarded header.
+const localOnly = "\t@outside not remote_ip 127.0.0.0/8 ::1\n\tabort @outside\n"
+
 // Config returns lodo's Caddyfile: one site per enabled domain with a port, in
 // store.Sort order, that forwards http://<name> to <address>:<port>. The
 // http:// prefix keeps Caddy on port 80, without automatic HTTPS. A domain with
@@ -24,17 +29,12 @@ import (
 // macOS lets a user listen on port 80 only that way, so each site starts by
 // aborting any connection from outside this Mac. With no such domain it is the
 // header line alone, which Caddy takes as a config with no sites.
-// localOnly opens every site: it closes a connection that comes from outside
-// this Mac without an answer. remote_ip matches the connection's own address,
-// never a forwarded header.
-const localOnly = "\t@outside not remote_ip 127.0.0.0/8 ::1\n\tabort @outside\n"
-
 func Config(domains []store.Domain) string {
 	var b strings.Builder
 	b.WriteString(store.GeneratedHeader)
 	for _, d := range store.Sort(domains) {
 		switch {
-		case !d.Enabled || d.Port == 0:
+		case !d.HasSite():
 		case d.HTTPS:
 			fmt.Fprintf(&b, "\nhttp://%s, https://%s {\n%s\ttls internal\n\treverse_proxy %s:%d\n}\n",
 				d.Name, d.Name, localOnly, d.Address, d.Port)

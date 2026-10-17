@@ -11,7 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
 
 	"github.com/sangdth/lodo/internal/check"
 	"github.com/sangdth/lodo/internal/compose"
@@ -53,9 +52,10 @@ type Backend interface {
 	// LinkEnv's guards; a line that changed since the scan is refused. Errors
 	// from each file are joined.
 	FixEnv(ctx context.Context, root string, fixes []scan.Fix) error
-	// HostFixes returns the lines of the project at root that start a dev
-	// server on every address, with address added. lodo doesn't write them.
-	HostFixes(root, address string) []scan.Fix
+	// HostFixes returns the lines of the compose file's project
+	// (compose.ProjectDir) that start a dev server on every address, with
+	// address added. lodo doesn't write them.
+	HostFixes(composePath, address string) []scan.Fix
 	// Tail returns what dnsmasq logged since offset, and the next offset.
 	Tail(offset int64) (string, int64, error)
 }
@@ -109,7 +109,7 @@ func (b backend) Scan(ctx context.Context, dir, name string, labels map[string]s
 }
 
 func (b backend) ReadCompose(path string) ([]byte, error) {
-	return fsutil.ReadRegular(path, fsutil.MaxProjectFile)
+	return fsutil.ReadRegular(path)
 }
 
 // LinkEnv writes DOCKER_HOST_IP=address into the .env the compose file at
@@ -153,7 +153,7 @@ func (b backend) writeEnv(ctx context.Context, root, env string, create bool, ed
 	if system.Tracked(ctx, b.paths, b.runner, env) {
 		return env, fmt.Errorf("git tracks %s, so lodo leaves it: this Mac's addresses and names don't belong in a shared file", env)
 	}
-	content, err := fsutil.ReadRegular(env, fsutil.MaxProjectFile)
+	content, err := fsutil.ReadRegular(env)
 	mode := fs.FileMode(0o644)
 	switch {
 	case err == nil:
@@ -194,12 +194,14 @@ func envInside(root, env string) (string, error) {
 		return env, fmt.Errorf("resolve %s: %w", env, err)
 	}
 	rel, err := filepath.Rel(realRoot, real)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+	if err != nil || !filepath.IsLocal(rel) {
 		return real, fmt.Errorf("lodo writes only a .env inside the project: %s is outside %s", real, realRoot)
 	}
 	return real, nil
 }
 
-func (b backend) HostFixes(root, address string) []scan.Fix { return scan.HostFixes(root, address) }
+func (b backend) HostFixes(composePath, address string) []scan.Fix {
+	return scan.HostFixes(compose.ProjectDir(composePath), address)
+}
 
 func (b backend) Tail(offset int64) (string, int64, error) { return dnsmasq.Tail(b.paths.Log, offset) }

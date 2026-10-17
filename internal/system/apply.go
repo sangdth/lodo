@@ -32,7 +32,7 @@ func Apply(ctx context.Context, p paths.Paths, r run.Runner, domains []store.Dom
 	if !SetupDone(p) {
 		return ErrNotSetUp
 	}
-	changes, err := WriteFiles(p, domains)
+	changed, err := WriteFiles(p, domains)
 	if err != nil {
 		return err
 	}
@@ -46,7 +46,7 @@ func Apply(ctx context.Context, p paths.Paths, r run.Runner, domains []store.Dom
 	if err := runScript(ctx, p, r, names); err != nil {
 		return err
 	}
-	return applyCaddy(ctx, p, r, domains, changes.Caddy)
+	return applyCaddy(ctx, p, r, domains, slices.Contains(changed, p.Caddyfile))
 }
 
 // runScript runs the resolver script through sudo with names, as
@@ -64,7 +64,7 @@ func runScript(ctx context.Context, p paths.Paths, r run.Runner, names string) e
 var errCaddyNotSetUp = errors.New("a domain has a port but Caddy is not set up for lodo: brew install caddy, then lodo setup")
 
 func applyCaddy(ctx context.Context, p paths.Paths, r run.Runner, domains []store.Domain, changed bool) error {
-	needed := slices.ContainsFunc(domains, func(d store.Domain) bool { return d.Enabled && d.Port > 0 })
+	needed := slices.ContainsFunc(domains, store.Domain.HasSite)
 	if !CaddySetUp(p) {
 		if needed {
 			return errCaddyNotSetUp

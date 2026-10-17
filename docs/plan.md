@@ -503,7 +503,7 @@ Each step ends with `go test -race ./...`, `go vet ./...` and `gofmt -l .` clean
 |      |                    | (longest listed suffix), `NextFree` (`ErrBlockFull`); pure `Add`, `Update`, `Remove`,  |
 |      |                    | `Toggle` that return a new slice and enforce the uniqueness rules                      |
 | 1.4  | `internal/brew`    | `Restart` and `Stop(ctx, r, brew, service)`; `Info(ctx, r, brew, service)` returns     |
-|      |                    | `Status{Running, Loaded, User, PID}` from `brew services info <service> --json`        |
+|      |                    | `Status{Running, User, PID, Registered}` from `brew services info <service> --json`    |
 | 1.5  | `internal/dnsmasq` | `Config(domains, logPath)`, `ResolverList(domains)`; `Tail(path, offset)` that         |
 |      |                    | restarts from 0 when the file shrank                                                   |
 | 1.6  | `internal/caddy`   | `Config(domains)`: one `http://<name> { reverse_proxy <address>:<port> }` site per     |

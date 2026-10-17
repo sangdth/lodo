@@ -25,6 +25,9 @@ import (
 // name with one label before .local to Bonjour only.
 const TLD = "test"
 
+// Suffix ends every name.
+const Suffix = "." + TLD
+
 // label matches one DNS label: a-z, 0-9 and inner '-', 1-63 characters.
 const label = `[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?`
 
@@ -75,9 +78,16 @@ type Domain struct {
 	Root    string `json:"root,omitempty"`    // the project folder this is the name of, absolute; set by the scan
 }
 
+// HasSite reports whether Caddy serves d: it is on and has a port.
+func (d Domain) HasSite() bool { return d.Enabled && d.Port > 0 }
+
 // NoCompose is a domain's compose value once the user said its project has no
 // compose file for lodo, so lodo stops asking.
 const NoCompose = "none"
+
+// HasCompose reports whether a compose value names a file: it is neither
+// empty nor NoCompose.
+func HasCompose(compose string) bool { return compose != "" && compose != NoCompose }
 
 // The fields a FieldError can concern.
 const (
@@ -100,7 +110,6 @@ func fieldErr(field, msg string) error { return &FieldError{Field: field, Msg: m
 // ValidateName checks a name: lowercase labels of a-z, 0-9 and inner '-',
 // ending in .test, with at least one label before it.
 func ValidateName(name string) error {
-	suffix := "." + TLD
 	switch {
 	case name == "":
 		return fieldErr(FieldName, "name is empty")
@@ -108,12 +117,24 @@ func ValidateName(name string) error {
 		return fieldErr(FieldName, fmt.Sprintf("name is longer than %d characters", MaxNameLen))
 	case strings.ToLower(name) != name:
 		return fieldErr(FieldName, "name must be lowercase")
-	case !strings.HasSuffix(name, suffix):
-		return fieldErr(FieldName, "name must end in "+suffix)
-	case name == suffix:
-		return fieldErr(FieldName, "name needs a label before "+suffix)
+	case !strings.HasSuffix(name, Suffix):
+		return fieldErr(FieldName, "name must end in "+Suffix)
+	case name == Suffix:
+		return fieldErr(FieldName, "name needs a label before "+Suffix)
 	case !nameRE.MatchString(name):
 		return fieldErr(FieldName, "name may use only a-z, 0-9 and '-' inside labels of 1-63 characters")
+	}
+	return nil
+}
+
+// ValidateProject checks a name the user chose for a project: a valid name
+// with one label before .test, since a project is its last two labels.
+func ValidateProject(name string) error {
+	if err := ValidateName(name); err != nil {
+		return err
+	}
+	if Project(name) != name {
+		return fieldErr(FieldName, "a project's name has one label before "+Suffix)
 	}
 	return nil
 }
@@ -147,7 +168,7 @@ func ValidatePort(port int) error {
 // path to a .yml or .yaml file.
 func ValidateCompose(compose string) error {
 	switch ext := strings.ToLower(filepath.Ext(compose)); {
-	case compose == "" || compose == NoCompose:
+	case !HasCompose(compose):
 		return nil
 	case !filepath.IsAbs(compose):
 		return fieldErr(FieldCompose, "compose file must be an absolute path")
@@ -210,6 +231,19 @@ func Parent(domains []Domain, name string) (Domain, bool) {
 		}
 	}
 	return parent, found
+}
+
+// Find returns the listed domain called name.
+func Find(domains []Domain, name string) (Domain, bool) {
+	if i := index(domains, name); i >= 0 {
+		return domains[i], true
+	}
+	return Domain{}, false
+}
+
+// index returns where the domain called name is in domains, or -1.
+func index(domains []Domain, name string) int {
+	return slices.IndexFunc(domains, func(d Domain) bool { return d.Name == name })
 }
 
 // NextFree returns the lowest own address no domain uses, on or off.
@@ -301,7 +335,7 @@ func Add(domains []Domain, d Domain) ([]Domain, error) {
 // Update returns the list with the domain called name replaced by d, or the
 // rule d breaks. Other domains never change.
 func Update(domains []Domain, name string, d Domain) ([]Domain, error) {
-	i := slices.IndexFunc(domains, func(x Domain) bool { return x.Name == name })
+	i := index(domains, name)
 	if i < 0 {
 		return nil, fmt.Errorf("%s is not listed", name)
 	}
@@ -315,7 +349,7 @@ func Update(domains []Domain, name string, d Domain) ([]Domain, error) {
 // Remove returns the list without the domain called name and the domains
 // under it: a name's subdomains go with it.
 func Remove(domains []Domain, name string) ([]Domain, error) {
-	if !slices.ContainsFunc(domains, func(x Domain) bool { return x.Name == name }) {
+	if index(domains, name) < 0 {
 		return nil, fmt.Errorf("%s is not listed", name)
 	}
 	return slices.DeleteFunc(slices.Clone(domains), func(x Domain) bool {
@@ -337,7 +371,7 @@ func Under(domains []Domain, name string) []Domain {
 
 // Toggle returns the list with the domain called name switched on or off.
 func Toggle(domains []Domain, name string) ([]Domain, error) {
-	i := slices.IndexFunc(domains, func(x Domain) bool { return x.Name == name })
+	i := index(domains, name)
 	if i < 0 {
 		return nil, fmt.Errorf("%s is not listed", name)
 	}

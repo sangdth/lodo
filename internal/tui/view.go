@@ -51,10 +51,10 @@ var statusParts = []struct {
 	id    int
 	label string
 }{
-	{8, "caddy"},
-	{1, "dnsmasq"},
-	{3, "loopback"},
-	{4, "resolvers"},
+	{check.IDCaddy, "caddy"},
+	{check.IDDnsmasq, "dnsmasq"},
+	{check.IDLoopback, "loopback"},
+	{check.IDResolvers, "resolvers"},
 }
 
 // services are the status bar's parts that space turns on and off, in the
@@ -149,7 +149,7 @@ func (m Model) keys() string {
 		return addRowHelp
 	case m.mode == modeScan && m.renaming:
 		return renameHelp
-	case m.mode == modeScan && !m.canAccept():
+	case m.mode == modeScan && !m.proposal.CanAccept():
 		return scanFixesHelp
 	}
 	return help[m.mode]
@@ -457,10 +457,10 @@ func (m Model) suffixed(in textinput.Model, suffix string) string {
 // expected reports whether r fails only because of a service turned off:
 // dnsmasq off fails every name, Caddy off fails the http probes.
 func (m Model) expected(r check.Result) bool {
-	if c, ok := m.check(serviceCheck("dnsmasq")); ok && c.Off {
+	if c, ok := m.check(check.IDDnsmasq); ok && c.Off {
 		return true
 	}
-	c, ok := m.check(serviceCheck("caddy"))
+	c, ok := m.check(check.IDCaddy)
 	return ok && c.Off && r.Direct && r.System
 }
 

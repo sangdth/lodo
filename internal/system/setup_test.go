@@ -169,7 +169,7 @@ func TestSetup_RemovesResolverLocal(t *testing.T) {
 	t.Parallel()
 
 	p, r := newMac(t, false)
-	local := filepath.Join(p.ResolverDir, "local")
+	local := p.ResolverLocal
 	writeFile(t, local, "nameserver 127.0.0.1\n")
 	if err := system.Setup(context.Background(), p, r, &strings.Builder{}); err != nil {
 		t.Fatal(err)

@@ -31,11 +31,13 @@ stops the commit.
 - `internal/run`: the only code that runs commands. `run.Fake` records them in tests.
 - `internal/fsutil`: atomic writes that skip unchanged content.
 - `internal/store`: `domains.json` and every domain rule: names, addresses, ports, projects, the own block, order.
+  Other packages call its helpers (`Find`, `HasCompose`, `Domain.HasSite`, `ValidateProject`, `Suffix`) rather
+  than spell a rule out again.
 - `internal/brew`, `internal/dnsmasq`, `internal/caddy`: `brew services`, the generated dnsmasq config and
   resolver list, the generated Caddyfile.
 - `internal/system`: setup, apply and uninstall; the root script, sudoers rule and loopback plist templates;
   lodo's blocks in Homebrew's dnsmasq.conf and Caddyfile. `Apply` refuses to run until setup has. `Tracked`: the
-  one git call.
+  one git call. `Generated`: the three generated files, which `WriteFiles` writes and doctor compares.
 - `internal/compose`: finds the project a folder is in (`ProjectRoot`) and its compose file, reads its services'
   images and published ports (`Services`), and rewrites the file's ports and `localhost` URLs for lodo; `MapURLs`
   and `Values.Point` also serve the scan. It reads files and never writes them.
@@ -47,7 +49,8 @@ stops the commit.
   root's turbo line loads it from `.env` (`turbo.go`). All dev server rules and the images lodo names (`webImages`)
   live here. It reads files and never writes them.
 - `internal/check`: the eight doctor checks and the per-domain probes: dnsmasq directly, macOS, and HTTP through
-  Caddy. `Report` returns both from one probe; `Prerequisites` runs checks 1 to 5 without probing.
+  Caddy. `Report` returns both from one probe; `Prerequisites` runs checks 1 to 5 without probing. Code names a
+  check by its ID constant (`check.IDDnsmasq` … `check.IDCaddy`), never by a bare number.
 - `internal/tui`: the Bubble Tea v2 model. It talks to the system only through its `Backend` interface; tests
   use a fake backend, and snapshot `View().Content` with golden files.
 

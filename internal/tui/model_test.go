@@ -12,6 +12,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/sangdth/lodo/internal/check"
 	"github.com/sangdth/lodo/internal/store"
 )
 
@@ -203,7 +204,7 @@ func TestModel_ServiceFails(t *testing.T) {
 func TestModel_StatusBarMarks(t *testing.T) {
 	t.Parallel()
 
-	b := &fakeBackend{failingChecks: map[int]string{3: "job not loaded"}, off: map[string]bool{"dnsmasq": true}}
+	b := &fakeBackend{failingChecks: map[int]string{check.IDLoopback: "job not loaded"}, off: map[string]bool{"dnsmasq": true}}
 	m := ready(b, sample)
 	if bar, want := ansi.Strip(m.statusBar()), "caddy ●   dnsmasq ○   loopback ○   resolvers ● "; !strings.HasSuffix(bar, want) {
 		t.Errorf("status bar = %q, want %q", bar, want)

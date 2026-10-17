@@ -60,7 +60,7 @@ func Setup(ctx context.Context, p paths.Paths, r run.Runner, out io.Writer) erro
 		{"resolver script installed", "lodo setup", func() (string, error) { return "", installScript(ctx, p, r) }},
 		{"sudoers rule installed", "lodo setup", func() (string, error) { return "", installSudoers(ctx, p, r) }},
 		{"loopback addresses " + store.OwnAddress(store.OwnFirst) + "–" + store.OwnAddress(store.OwnLast) + " on lo0", "lodo setup", func() (string, error) { return "", installLoopback(ctx, p, r) }},
-		{"no " + filepath.Join(p.ResolverDir, "local"), "sudo rm " + filepath.Join(p.ResolverDir, "local"), func() (string, error) { return removeResolverLocal(ctx, p, r) }},
+		{"no " + p.ResolverLocal, "sudo rm " + p.ResolverLocal, func() (string, error) { return removeResolverLocal(ctx, p, r) }},
 		{"dnsmasq runs as you on port 53535", "brew services restart dnsmasq", func() (string, error) {
 			return "", brew.Restart(ctx, r, p.Brew, "dnsmasq")
 		}},
@@ -205,11 +205,10 @@ func proveScript(ctx context.Context, p paths.Paths, r run.Runner) error {
 }
 
 func removeResolverLocal(ctx context.Context, p paths.Paths, r run.Runner) (string, error) {
-	local := filepath.Join(p.ResolverDir, "local")
-	if !exists(local) {
+	if !exists(p.ResolverLocal) {
 		return "", nil
 	}
-	if _, err := r.Run(ctx, p.Sudo, "-n", p.Rm, "-f", local); err != nil {
+	if _, err := r.Run(ctx, p.Sudo, "-n", p.Rm, "-f", p.ResolverLocal); err != nil {
 		return "", err
 	}
 	return "removed it: it sent every .local name away from Bonjour", nil
@@ -315,10 +314,10 @@ func ownedRegular(info fs.FileInfo) error {
 }
 
 // readCaddyRoot gets trustTries tries, trustWait apart, while Caddy starts.
-const (
-	trustTries = 5
-	trustWait  = 400 * time.Millisecond
-)
+// Tests set trustWait to 0.
+const trustTries = 5
+
+var trustWait = 400 * time.Millisecond
 
 // installFile stages content and installs it as root with mode.
 func installFile(ctx context.Context, p paths.Paths, r run.Runner, content, target, mode string) error {

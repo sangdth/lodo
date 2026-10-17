@@ -180,13 +180,13 @@ func (f *fakeBackend) Report(_ context.Context, domains []store.Domain) ([]check
 		}
 	}
 	if !ports {
-		checks[7] = check.Check{ID: 8, Skipped: true}
+		checks[check.IDCaddy-1] = check.Check{ID: check.IDCaddy, Skipped: true}
 	}
 	if f.off["dnsmasq"] {
-		checks[0] = check.Check{ID: 1, Skipped: true, Off: true}
+		checks[check.IDDnsmasq-1] = check.Check{ID: check.IDDnsmasq, Skipped: true, Off: true}
 	}
 	if f.off["caddy"] {
-		checks[7] = check.Check{ID: 8, Skipped: true, Off: true}
+		checks[check.IDCaddy-1] = check.Check{ID: check.IDCaddy, Skipped: true, Off: true}
 	}
 	return checks, results
 }

@@ -288,7 +288,7 @@ func serverIn(text, dir string, shell bool) (server, bool) {
 // the file computes it.
 func configPort(dir string, t *tool) int {
 	for _, name := range t.configs {
-		data, err := fsutil.ReadRegular(filepath.Join(dir, name), fsutil.MaxProjectFile)
+		data, err := fsutil.ReadRegular(filepath.Join(dir, name))
 		if err != nil {
 			continue
 		}
@@ -315,7 +315,7 @@ type packageJSON struct {
 
 // readPackage reads the package.json in dir: its scripts and their text.
 func readPackage(dir string) (packageJSON, string, bool) {
-	data, err := fsutil.ReadRegular(filepath.Join(dir, "package.json"), fsutil.MaxProjectFile)
+	data, err := fsutil.ReadRegular(filepath.Join(dir, "package.json"))
 	if err != nil {
 		return packageJSON{}, "", false
 	}
@@ -369,7 +369,7 @@ func devServer(dir string) (srv server, known, hasDev bool) {
 		}
 	}
 	for _, rel := range shellScripts(texts...) {
-		data, err := fsutil.ReadRegular(filepath.Join(dir, rel), fsutil.MaxProjectFile)
+		data, err := fsutil.ReadRegular(filepath.Join(dir, rel))
 		if err != nil {
 			continue
 		}
@@ -434,7 +434,7 @@ func fixesIn(root, dir, address string, port int) []Fix {
 	}
 	devShell := shellScripts(dev...)
 	for _, rel := range shellScripts(values...) {
-		data, err := fsutil.ReadRegular(filepath.Join(full, rel), fsutil.MaxProjectFile)
+		data, err := fsutil.ReadRegular(filepath.Join(full, rel))
 		if err != nil {
 			continue
 		}

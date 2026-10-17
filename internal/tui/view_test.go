@@ -10,6 +10,8 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/exp/golden"
+
+	"github.com/sangdth/lodo/internal/check"
 )
 
 func TestModel_View(t *testing.T) {
@@ -46,7 +48,7 @@ func TestModel_StatusLine(t *testing.T) {
 		},
 		{
 			name:    "a system part fails",
-			backend: &fakeBackend{failingChecks: map[int]string{1: "not running", 3: "job not loaded"}},
+			backend: &fakeBackend{failingChecks: map[int]string{check.IDDnsmasq: "not running", check.IDLoopback: "job not loaded"}},
 			want:    "dnsmasq, loopback need attention: run lodo doctor",
 		},
 		{

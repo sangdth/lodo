@@ -262,10 +262,10 @@ func (m Model) thenLink(cmd tea.Cmd, d store.Domain) tea.Cmd {
 		// The host hint goes before the .env's path, which a narrow status
 		// line cuts.
 		hint := ""
-		if len(b.HostFixes(compose.ProjectDir(d.Compose), d.Address)) > 0 {
+		if len(b.HostFixes(d.Compose, d.Address)) > 0 {
 			hint = " · dev servers need a host: p shows it"
 		}
-		msg.note = "linked " + d.Name + hint + " · " + compose.EnvVar + "=" + d.Address + " in " + shortPath(env, home)
+		msg.note = "linked " + d.Name + hint + " · " + compose.EnvVar + "=" + d.Address + " in " + ShortPath(env, home)
 		return msg
 	}
 }

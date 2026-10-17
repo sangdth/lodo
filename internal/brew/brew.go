@@ -14,13 +14,9 @@ import (
 // such as the pid of a stopped service, decode to zero values, and fields lodo
 // does not read are ignored.
 type Status struct {
-	Name       string `json:"name"`       // the formula, such as "dnsmasq"
 	Running    bool   `json:"running"`    // the job has a process
-	Loaded     bool   `json:"loaded"`     // launchd has the job loaded
 	User       string `json:"user"`       // who the job runs as; empty when brew reports none
 	PID        int    `json:"pid"`        // 0 when not running
-	Status     string `json:"status"`     // brew's summary, such as "started", "none" or "error"
-	File       string `json:"file"`       // the launchd plist brew uses for the job
 	Registered bool   `json:"registered"` // the job starts at login; Stop clears it, a crash does not
 }
 

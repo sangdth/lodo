@@ -72,7 +72,7 @@ func turboFix(root string) (Fix, bool) {
 		}
 	}
 	for _, rel := range shellScripts(dev...) {
-		data, err := fsutil.ReadRegular(filepath.Join(root, rel), fsutil.MaxProjectFile)
+		data, err := fsutil.ReadRegular(filepath.Join(root, rel))
 		if err != nil {
 			continue
 		}

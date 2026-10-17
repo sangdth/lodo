@@ -41,6 +41,7 @@ type Paths struct {
 	Script        string // the resolver script, run through sudo
 	Sudoers       string
 	ResolverDir   string
+	ResolverLocal string // a resolver file that sends every .local name away from Bonjour; setup removes it
 
 	// SystemKeychain holds the roots every user's browsers trust.
 	SystemKeychain string
@@ -113,6 +114,7 @@ func build(root, home, user string) Paths {
 		Script:        sys("/Library/Application Support/lodo/apply-resolvers.sh"),
 		Sudoers:       sys("/etc/sudoers.d/lodo"),
 		ResolverDir:   sys("/etc/resolver"),
+		ResolverLocal: sys("/etc/resolver/local"),
 
 		SystemKeychain: sys("/Library/Keychains/System.keychain"),
 

@@ -137,7 +137,7 @@ func TestScan_WaitsForTheFirstCheck(t *testing.T) {
 	if m.mode != modeList {
 		t.Fatalf("mode = %v while the first check runs, want the list", m.mode)
 	}
-	next, _ = m.Update(reportMsg{checks: []check.Check{{ID: 1, OK: true}}})
+	next, _ = m.Update(reportMsg{checks: []check.Check{{ID: check.IDDnsmasq, OK: true}}})
 	if m = next.(Model); m.mode != modeScan {
 		t.Errorf("mode = %v once the check is done, want the review", m.mode)
 	}
@@ -265,7 +265,7 @@ func rootOf(t *testing.T, b *fakeBackend, name string) string {
 	if len(b.saved) == 0 {
 		t.Fatalf("nothing saved")
 	}
-	d, ok := findIn(b.saved[len(b.saved)-1], name)
+	d, ok := store.Find(b.saved[len(b.saved)-1], name)
 	if !ok {
 		t.Fatalf("%s not saved", name)
 	}
@@ -343,8 +343,8 @@ func TestScan_OnlyEnv(t *testing.T) {
 		t.Errorf("note = %q, want %q", m.note, want)
 	}
 	m = send(m, "i")
-	if m.mode != modeScan || !m.canAccept() {
-		t.Fatalf("mode %v, canAccept %v; want a review y accepts", m.mode, m.canAccept())
+	if m.mode != modeScan || !m.proposal.CanAccept() {
+		t.Fatalf("mode %v, CanAccept %v; want a review y accepts", m.mode, m.proposal.CanAccept())
 	}
 	m = send(m, "y")
 	if want := []string{flowyRoot + " apps/api/.env:1"}; !slices.Equal(b.envFixed, want) {

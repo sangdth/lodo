@@ -76,6 +76,18 @@ const (
 	fixHost      = "lodo scan in the app's project, then start the app with the host it shows"
 )
 
+// The checks' IDs, in doctorChecks order.
+const (
+	IDDnsmasq = iota + 1
+	IDConfig
+	IDLoopback
+	IDResolvers
+	IDResolverLocal
+	IDGenerated
+	IDNames
+	IDCaddy
+)
+
 // doctorChecks are the eight checks, in ID order. Each gets the whole domain
 // list and the probe results, which only "names resolve" reads.
 var doctorChecks = []struct {
@@ -94,7 +106,7 @@ var doctorChecks = []struct {
 
 // prerequisites is how many checks, from the first, need lodo setup or a
 // manual fix rather than lodo apply.
-const prerequisites = 5
+const prerequisites = IDResolverLocal
 
 // Run runs the eight checks one after another and returns them in ID order.
 // domains is the whole list from domains.json, enabled or not.
@@ -121,13 +133,9 @@ func (e Env) run(ctx context.Context, domains []store.Domain, results []Result, 
 	for i, c := range doctorChecks[:n] {
 		checks[i] = c.run(e, ctx, domains, results)
 		checks[i].ID, checks[i].Name = i+1, c.name
-		if i == 0 {
-			e.dnsmasqOff = checks[0].Off
+		if checks[i].ID == IDDnsmasq {
+			e.dnsmasqOff = checks[i].Off
 		}
-	}
-	// With dnsmasq turned off no name resolves, and lodo apply leaves it off.
-	if n >= 7 && checks[0].Off && !checks[6].OK {
-		checks[6].Fix = fixDnsmasqOn
 	}
 	return checks
 }
@@ -302,7 +310,7 @@ func (e Env) scriptProblem() string {
 // from Bonjour. Like setup, it counts the file as present only when lstat
 // finds it.
 func (e Env) checkResolverLocal(_ context.Context, _ []store.Domain, _ []Result) Check {
-	local := filepath.Join(e.Paths.ResolverDir, "local")
+	local := e.Paths.ResolverLocal
 	if _, err := os.Lstat(local); err != nil {
 		return pass("absent")
 	}
@@ -311,15 +319,10 @@ func (e Env) checkResolverLocal(_ context.Context, _ []store.Domain, _ []Result)
 
 // checkGenerated: lodo's three generated files hold what domains generates.
 func (e Env) checkGenerated(_ context.Context, domains []store.Domain, _ []Result) Check {
-	p := e.Paths
 	var stale []string
-	for _, f := range []struct{ path, want string }{
-		{p.DnsmasqConf, dnsmasq.Config(domains, p.Log)},
-		{p.Resolvers, dnsmasq.ResolverList(domains)},
-		{p.Caddyfile, caddy.Config(domains)},
-	} {
-		if got, err := readFile(f.path); err != nil || got != f.want {
-			stale = append(stale, filepath.Base(f.path))
+	for _, f := range system.Generated(e.Paths, domains) {
+		if got, err := readFile(f.Path); err != nil || got != f.Content {
+			stale = append(stale, filepath.Base(f.Path))
 		}
 	}
 	if len(stale) > 0 {
@@ -331,9 +334,10 @@ func (e Env) checkGenerated(_ context.Context, domains []store.Domain, _ []Resul
 // checkNames: every enabled domain passed its probes, or failed only because
 // its app isn't running, which no fix of lodo's starts; the detail names
 // those. Failures with the same detail are listed once, after their names.
-// The fix is lodo apply when a failure needs it, the host fix when every
-// failure is an app on the wrong address, and none otherwise, since each
-// failure then names its own.
+// The fix turns dnsmasq on when check 1 found it turned off, since then no
+// name resolves and lodo apply leaves it off. Otherwise it is lodo apply when
+// a failure needs it, the host fix when every failure is an app on the wrong
+// address, and none, since each failure then names its own.
 func (e Env) checkNames(_ context.Context, _ []store.Domain, results []Result) Check {
 	if len(results) == 0 {
 		return pass("no enabled domains")
@@ -365,6 +369,8 @@ func (e Env) checkNames(_ context.Context, _ []store.Domain, results []Result) C
 		}
 		fix := ""
 		switch {
+		case e.dnsmasqOff:
+			fix = fixDnsmasqOn
 		case apply:
 			fix = fixApply
 		case host:
@@ -380,8 +386,8 @@ func (e Env) checkNames(_ context.Context, _ []store.Domain, results []Result) C
 // Caddy runs anyway and is skipped when it doesn't.
 func (e Env) checkCaddy(ctx context.Context, domains []store.Domain, _ []Result) Check {
 	sites := 0
-	for _, d := range enabled(domains) {
-		if d.Port > 0 {
+	for _, d := range domains {
+		if d.HasSite() {
 			sites++
 		}
 	}

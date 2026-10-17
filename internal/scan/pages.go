@@ -11,8 +11,8 @@ import (
 // Page is a web page a project's compose file publishes on this Mac that lodo
 // names, such as Mailpit's inbox.
 type Page struct {
-	Label string `json:"label"` // its name's first label: mail for mail.shop.test
-	Port  int    `json:"port"`  // the port on this Mac
+	Label string // its name's first label: mail for mail.shop.test
+	Port  int    // the port on this Mac
 }
 
 // webImages are the images whose web page lodo names: Mailpit's inbox, on
@@ -25,14 +25,11 @@ var webImages = []struct {
 	{image: "axllent/mailpit", label: "mail", port: 8025},
 }
 
-// readCompose returns the pages of the project's best compose file, the first
-// of files, and the ports on this Mac it binds to DOCKER_HOST_IP. A file it
-// can't read or parse has none.
-func readCompose(files []string) (pages []Page, bound map[int]bool) {
-	if len(files) == 0 {
-		return nil, nil
-	}
-	data, err := fsutil.ReadRegular(files[0], fsutil.MaxProjectFile)
+// readCompose returns the pages of the project's best compose file and the
+// ports on this Mac it binds to DOCKER_HOST_IP. A file it can't read or parse
+// has none.
+func readCompose(file string) (pages []Page, bound map[int]bool) {
+	data, err := fsutil.ReadRegular(file)
 	if err != nil {
 		return nil, nil
 	}

@@ -7,7 +7,6 @@ import (
 	"errors"
 	"io/fs"
 	"path/filepath"
-	"slices"
 	"strconv"
 	"strings"
 
@@ -37,7 +36,7 @@ func (m Model) readPreview(owner store.Domain) tea.Cmd {
 			return previewMsg{err: err}
 		}
 		out, changes, err := compose.Rewrite(src, values)
-		fixes := b.HostFixes(compose.ProjectDir(owner.Compose), owner.Address)
+		fixes := b.HostFixes(owner.Compose, owner.Address)
 		return previewMsg{owner: owner, out: out, changes: changes, fixes: fixes, err: err}
 	}
 }
@@ -45,7 +44,7 @@ func (m Model) readPreview(owner store.Domain) tea.Cmd {
 // composeOwner returns the name whose compose file d uses: its own, or its
 // nearest parent's.
 func (m Model) composeOwner(d store.Domain) (store.Domain, bool) {
-	for d.Compose == "" || d.Compose == store.NoCompose {
+	for !store.HasCompose(d.Compose) {
 		parent, ok := store.Parent(m.domains, d.Name)
 		if !ok {
 			return store.Domain{}, false
@@ -107,7 +106,7 @@ func (m Model) fixLines(fixes []scan.Fix) []string {
 // checkCompose refuses a compose path that breaks store's rule or names no
 // readable file.
 func (m Model) checkCompose(path string) error {
-	if err := store.ValidateCompose(path); err != nil || path == "" || path == store.NoCompose {
+	if err := store.ValidateCompose(path); err != nil || !store.HasCompose(path) {
 		return err
 	}
 	if _, err := m.backend.ReadCompose(path); err != nil {
@@ -120,18 +119,6 @@ func (m Model) checkCompose(path string) error {
 	return nil
 }
 
-// find returns the listed domain called name.
-func (m Model) find(name string) (store.Domain, bool) { return findIn(m.domains, name) }
-
-// findIn returns the domain called name in domains.
-func findIn(domains []store.Domain, name string) (store.Domain, bool) {
-	i := slices.IndexFunc(domains, func(d store.Domain) bool { return d.Name == name })
-	if i < 0 {
-		return store.Domain{}, false
-	}
-	return domains[i], true
-}
-
 // link links d to the compose file of the project lodo started in, or, outside
 // one, to its own: d's compose path is saved and d's address is written into
 // the .env that file runs with.
@@ -140,7 +127,7 @@ func (m Model) link(d store.Domain) (Model, tea.Cmd) {
 	if len(m.project.Compose) > 0 {
 		path = m.project.Compose[0]
 	}
-	if path == "" || path == store.NoCompose {
+	if !store.HasCompose(path) {
 		m.err = errors.New("no compose file to link: start lodo in the project, or e to set one")
 		return m, nil
 	}
@@ -157,11 +144,6 @@ func (m Model) linkTo(d store.Domain, path string) (Model, tea.Cmd) {
 		return m, nil
 	}
 	return m.start(d.Name, m.thenLink(m.save(next), d))
-}
-
-// linked reports whether d has a compose file to write a .env for.
-func linked(d store.Domain) bool {
-	return d.Compose != "" && d.Compose != store.NoCompose
 }
 
 // openPreview shows the selected name's compose file, its own or its
@@ -188,8 +170,8 @@ func (m Model) previewKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "q":
 		return m, tea.Quit
 	case "l":
-		owner, ok := m.find(m.previewOwner)
-		if m.busy || !ok || !linked(owner) {
+		owner, ok := store.Find(m.domains, m.previewOwner)
+		if m.busy || !ok || !store.HasCompose(owner.Compose) {
 			return m, nil
 		}
 		return m.linkTo(owner, owner.Compose)
@@ -217,7 +199,7 @@ func (m Model) composeCell(d store.Domain, width int) string {
 
 // shortPath writes path from the home folder as ~/….
 func (m Model) shortPath(path string) string {
-	return shortPath(path, m.origin.Home)
+	return ShortPath(path, m.origin.Home)
 }
 
 // previewView draws the rewritten compose file under its title and the .env
@@ -231,8 +213,8 @@ func (m Model) previewView() string {
 	return title + "\n " + ansi.Truncate(m.styles.dim.Render(env), m.innerWidth()-1, "…") + "\n" + m.preview.View()
 }
 
-// shortPath writes path from the home folder as ~/…; other values stay.
-func shortPath(path, home string) string {
+// ShortPath writes path from the home folder as ~/…; other values stay.
+func ShortPath(path, home string) string {
 	if home != "" && strings.HasPrefix(path, home+string(filepath.Separator)) {
 		return "~" + path[len(home):]
 	}

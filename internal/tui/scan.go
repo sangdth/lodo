@@ -48,7 +48,7 @@ func (m *Model) setScan(msg scanMsg) {
 		m.maybeOffer()
 	case !msg.ok:
 		m.mode = modeList
-		m.err = errors.New("not in a project: lodo scans the git root, or a folder with a lock file, it starts in")
+		m.err = scan.ErrNoProject
 	case m.proposal.Empty() && !m.proposal.Listed:
 		m.mode = modeList
 		m.note = "scan found no dev server or compose file in " + m.shortPath(m.proposal.Root)
@@ -151,7 +151,7 @@ func (m *Model) openReview() {
 func (m Model) scanView() string {
 	title := " " + m.styles.title.Render(m.previewTitle)
 	if m.renaming {
-		line := " name  " + m.suffixed(m.rename, tldSuffix) + "  "
+		line := " name  " + m.suffixed(m.rename, store.Suffix) + "  "
 		hint := "subdomains follow it"
 		if m.renameAt > 0 {
 			hint = m.renameTargets()[m.renameAt] + ": <label>." + m.proposal.Name + ", or " + m.proposal.Name + " alone"
@@ -164,18 +164,13 @@ func (m Model) scanView() string {
 		return title + "\n" + ansi.Truncate(line, m.innerWidth(), "…") + "\n" + m.preview.View()
 	}
 	what := "y adds and links nothing: the lines below are yours to change"
-	if m.canAccept() {
+	if m.proposal.CanAccept() {
 		what = "y: " + m.summary()
 		if len(m.proposal.Fixes) > 0 {
 			what = "y adds, links and sets the rest; the ~ lines are yours to change"
 		}
 	}
 	return title + "\n " + ansi.Truncate(m.styles.dim.Render(what), m.innerWidth()-1, "…") + "\n" + m.preview.View()
-}
-
-// canAccept reports whether y has something to add, link, save or set.
-func (m Model) canAccept() bool {
-	return len(m.proposal.Add) > 0 || m.proposal.Compose != "" || m.proposal.Claim || len(m.proposal.Env) > 0
 }
 
 // renameTargets are what the name field can name: "" for the project, then
@@ -203,9 +198,9 @@ func (m Model) scanKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.acceptScan()
 	case "e":
 		m.renaming, m.renameErr, m.renameAt = true, "", 0
-		m.rename = newInputs(tldSuffix)[fieldName]
+		m.rename = newInputs(store.Suffix)[fieldName]
 		m.rename.Placeholder = "flowy"
-		m.rename.SetValue(strings.TrimSuffix(m.proposal.Name, tldSuffix))
+		m.rename.SetValue(strings.TrimSuffix(m.proposal.Name, store.Suffix))
 		m.rename.CursorEnd()
 		return m, m.rename.Focus()
 	case "n", "esc":
@@ -239,16 +234,16 @@ func (m Model) renameKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			i := slices.IndexFunc(m.proposal.Add, func(d store.Domain) bool { return m.proposal.Dirs[d.Name] == dir })
 			name = m.proposal.Add[i].Name
 		}
-		m.rename.SetValue(strings.TrimSuffix(name, tldSuffix))
+		m.rename.SetValue(strings.TrimSuffix(name, store.Suffix))
 		m.rename.CursorEnd()
 		m.renameErr = ""
 		return m, nil
 	case "enter":
-		name := strings.TrimSuffix(strings.TrimSpace(m.rename.Value()), tldSuffix) + tldSuffix
+		name := strings.TrimSuffix(strings.TrimSpace(m.rename.Value()), store.Suffix) + store.Suffix
 		if dir := m.renameTargets()[m.renameAt]; dir != "" {
 			return m.labelApp(dir, name)
 		}
-		if err := scan.ValidName(name); err != nil {
+		if err := store.ValidateProject(name); err != nil {
 			m.renameErr = err.Error()
 			return m, nil
 		}
@@ -289,7 +284,7 @@ func (m Model) labelApp(dir, name string) (tea.Model, tea.Cmd) {
 // needs Caddy ready, as in the form.
 func (m Model) acceptScan() (tea.Model, tea.Cmd) {
 	p := m.proposal
-	if !m.canAccept() {
+	if !m.proposal.CanAccept() {
 		m.mode, m.scanName, m.scanLabels = modeList, "", nil
 		return m, nil
 	}
@@ -314,7 +309,7 @@ func (m Model) acceptScan() (tea.Model, tea.Cmd) {
 	var owner store.Domain
 	if p.Compose != "" || p.Claim {
 		var err error
-		owner, _ = findIn(next, p.Name)
+		owner, _ = store.Find(next, p.Name)
 		if p.Compose != "" {
 			owner.Compose = p.Compose
 		}

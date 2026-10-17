@@ -13,10 +13,6 @@ import (
 	"github.com/sangdth/lodo/internal/store"
 )
 
-// envFiles are the files an app's URLs come from. .env.example is left out:
-// git tracks it.
-var envFiles = []string{".env"}
-
 // EnvLine is a line of an app's .env that mentions this Mac's own host.
 type EnvLine struct {
 	File string // from the project's root, with slashes: apps/web/.env
@@ -28,42 +24,40 @@ type EnvLine struct {
 // keyRE matches the start of a KEY=value line. The group is the key.
 var keyRE = regexp.MustCompile(`^[ \t]*(?:export[ \t]+)?([A-Za-z_][A-Za-z0-9_.]*)[ \t]*=`)
 
-// findEnv returns the lines of each app's envFiles that set a key to
-// something on localhost or 127.0.0.1. The root's .env is read only when the
-// root is an app: in a monorepo it feeds compose. A file tracked says git
-// tracks goes into shared instead, without its lines, since this Mac's names
-// don't belong in a shared file; tracked is asked only about a file with such
-// a line, and nil means nothing is tracked.
+// findEnv returns the lines of each app's .env that set a key to something on
+// localhost or 127.0.0.1; .env.example is left out, since git tracks it. The
+// root's .env is read only when the root is an app: in a monorepo it feeds
+// compose. A file tracked says git tracks goes into shared instead, without
+// its lines, since this Mac's names don't belong in a shared file; tracked is
+// asked only about a file with such a line, and nil means nothing is tracked.
 func findEnv(root string, apps []App, tracked func(string) bool) (lines []EnvLine, shared []string) {
 	for _, a := range apps {
-		for _, name := range envFiles {
-			file := path.Join(a.Dir, name)
-			full := filepath.Join(root, filepath.FromSlash(file))
-			data, err := fsutil.ReadRegular(full, fsutil.MaxProjectFile)
-			if err != nil {
-				continue
-			}
-			var found []EnvLine
-			for i, text := range strings.Split(string(data), "\n") {
-				text = strings.TrimSuffix(text, "\r")
-				m := keyRE.FindStringSubmatch(text)
-				low := strings.ToLower(text)
-				if m != nil && (strings.Contains(low, "localhost") || strings.Contains(low, "127.0.0.1")) {
-					found = append(found, EnvLine{File: file, Line: i + 1, Key: m[1], Text: text})
-				}
-			}
-			if len(found) == 0 {
-				continue
-			}
-			if real, err := filepath.EvalSymlinks(full); err == nil {
-				full = real // git knows the file a symlink points at
-			}
-			if tracked != nil && tracked(full) {
-				shared = append(shared, file)
-				continue
-			}
-			lines = append(lines, found...)
+		file := path.Join(a.Dir, ".env")
+		full := filepath.Join(root, filepath.FromSlash(file))
+		data, err := fsutil.ReadRegular(full)
+		if err != nil {
+			continue
 		}
+		var found []EnvLine
+		for i, text := range strings.Split(string(data), "\n") {
+			text = strings.TrimSuffix(text, "\r")
+			m := keyRE.FindStringSubmatch(text)
+			low := strings.ToLower(text)
+			if m != nil && (strings.Contains(low, "localhost") || strings.Contains(low, "127.0.0.1")) {
+				found = append(found, EnvLine{File: file, Line: i + 1, Key: m[1], Text: text})
+			}
+		}
+		if len(found) == 0 {
+			continue
+		}
+		if real, err := filepath.EvalSymlinks(full); err == nil {
+			full = real // git knows the file a symlink points at
+		}
+		if tracked != nil && tracked(full) {
+			shared = append(shared, file)
+			continue
+		}
+		lines = append(lines, found...)
 	}
 	return lines, shared
 }
@@ -106,7 +100,7 @@ func envFixes(p Project, v compose.Values, bound map[int]bool) ([]Fix, []string)
 func ValuesFor(domains []store.Domain, owner store.Domain) compose.Values {
 	names, secure := map[int]string{}, map[int]bool{}
 	for _, d := range domains {
-		if d.Enabled && d.Port > 0 && d.Address == owner.Address && store.Project(d.Name) == store.Project(owner.Name) {
+		if d.HasSite() && d.Address == owner.Address && store.Project(d.Name) == store.Project(owner.Name) {
 			names[d.Port] = d.Name
 			secure[d.Port] = d.HTTPS
 		}

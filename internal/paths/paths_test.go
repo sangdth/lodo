@@ -25,6 +25,7 @@ func TestDefault(t *testing.T) {
 		"Script":         "/Library/Application Support/lodo/apply-resolvers.sh",
 		"Sudoers":        "/etc/sudoers.d/lodo",
 		"ResolverDir":    "/etc/resolver",
+		"ResolverLocal":  "/etc/resolver/local",
 		"LoopbackPlist":  "/Library/LaunchDaemons/io.lodo.loopback.plist",
 		"Sudo":           "/usr/bin/sudo",
 		"Security":       "/usr/bin/security",

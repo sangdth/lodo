@@ -434,7 +434,7 @@ func TestEnv_Run_ResolverForLocal(t *testing.T) {
 			name: "present",
 			change: func(t *testing.T, m *mac) {
 				t.Helper()
-				writeFile(t, filepath.Join(m.p.ResolverDir, "local"), "nameserver 127.0.0.1\nport 53535\n")
+				writeFile(t, m.p.ResolverLocal, "nameserver 127.0.0.1\nport 53535\n")
 			},
 			want: want,
 		},
@@ -442,7 +442,7 @@ func TestEnv_Run_ResolverForLocal(t *testing.T) {
 			name: "a dangling symlink",
 			change: func(t *testing.T, m *mac) {
 				t.Helper()
-				symlink(t, filepath.Join(m.root, "nowhere"), filepath.Join(m.p.ResolverDir, "local"))
+				symlink(t, filepath.Join(m.root, "nowhere"), m.p.ResolverLocal)
 			},
 			want: want,
 		},

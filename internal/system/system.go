@@ -124,33 +124,38 @@ func appendBlock(content, block string) string {
 	return content + "\n" + block
 }
 
-// Changes says which generated files WriteFiles changed.
-type Changes struct {
-	Dnsmasq   bool
-	Resolvers bool
-	Caddy     bool
+// GeneratedFile is a file lodo generates and what domains make of it.
+type GeneratedFile struct {
+	Path    string
+	Content string
 }
 
-// WriteFiles writes lodo's three generated files for domains and reports
-// which ones changed.
-func WriteFiles(p paths.Paths, domains []store.Domain) (Changes, error) {
+// Generated returns lodo's three generated files for domains: dnsmasq's
+// config, the resolver list and the Caddyfile. WriteFiles writes them, and
+// lodo doctor compares them.
+func Generated(p paths.Paths, domains []store.Domain) []GeneratedFile {
+	return []GeneratedFile{
+		{p.DnsmasqConf, dnsmasq.Config(domains, p.Log)},
+		{p.Resolvers, dnsmasq.ResolverList(domains)},
+		{p.Caddyfile, caddy.Config(domains)},
+	}
+}
+
+// WriteFiles writes lodo's generated files for domains and returns the paths
+// of the ones it changed.
+func WriteFiles(p paths.Paths, domains []store.Domain) ([]string, error) {
 	if err := os.MkdirAll(p.ConfigDir, 0o755); err != nil { //nolint:gosec // G301: ~/.config/lodo holds no secrets
-		return Changes{}, fmt.Errorf("create %s: %w", p.ConfigDir, err)
+		return nil, fmt.Errorf("create %s: %w", p.ConfigDir, err)
 	}
-	var c Changes
-	var err error
-	if c.Dnsmasq, err = writeConfig(p.DnsmasqConf, dnsmasq.Config(domains, p.Log)); err != nil {
-		return c, err
+	var changed []string
+	for _, f := range Generated(p, domains) {
+		ok, err := fsutil.WriteFile(f.Path, []byte(f.Content), 0o644)
+		if err != nil {
+			return changed, err
+		}
+		if ok {
+			changed = append(changed, f.Path)
+		}
 	}
-	if c.Resolvers, err = writeConfig(p.Resolvers, dnsmasq.ResolverList(domains)); err != nil {
-		return c, err
-	}
-	if c.Caddy, err = writeConfig(p.Caddyfile, caddy.Config(domains)); err != nil {
-		return c, err
-	}
-	return c, nil
-}
-
-func writeConfig(path, content string) (bool, error) {
-	return fsutil.WriteFile(path, []byte(content), 0o644)
+	return changed, nil
 }

@@ -51,21 +51,15 @@ func TestInfo(t *testing.T) {
 	}{
 		{
 			name: "dnsmasq not loaded, captured", service: "dnsmasq", file: "dnsmasq-none.json",
-			want: brew.Status{
-				Name: "dnsmasq", User: "sang", Status: "none",
-				File: "/Users/sang/Library/LaunchAgents/homebrew.mxcl.dnsmasq.plist", Registered: true,
-			},
+			want: brew.Status{User: "sang", Registered: true},
 		},
 		{
 			name: "caddy with null user and pid, captured", service: "caddy", file: "caddy-none.json",
-			want: brew.Status{Name: "caddy", Status: "none", File: "/opt/homebrew/opt/caddy/sh.brew.caddy.plist"},
+			want: brew.Status{},
 		},
 		{
 			name: "dnsmasq running, hand-made", service: "dnsmasq", file: "dnsmasq-started.json",
-			want: brew.Status{
-				Name: "dnsmasq", Running: true, Loaded: true, User: "sang", PID: 4242, Status: "started",
-				File: "/Users/sang/Library/LaunchAgents/homebrew.mxcl.dnsmasq.plist", Registered: true,
-			},
+			want: brew.Status{Running: true, User: "sang", PID: 4242, Registered: true},
 		},
 		{name: "empty list", service: "dnsmasq", out: "[]", wantErr: "parse dnsmasq status: "},
 		{name: "bad JSON", service: "caddy", out: `[{"name": "caddy",`, wantErr: "parse caddy status: "},

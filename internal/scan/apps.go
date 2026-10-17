@@ -19,9 +19,9 @@ const maxApps = 50
 
 // App is a folder of a project whose dev script starts a dev server.
 type App struct {
-	Dir  string `json:"dir"`            // from the project's root, with slashes; . for the root
-	Tool string `json:"tool,omitempty"` // next, vite, astro, nuxt or wrangler; empty when lodo doesn't know the command
-	Port int    `json:"port,omitempty"` // 0 when lodo can't tell
+	Dir  string // from the project's root, with slashes; . for the root
+	Tool string // next, vite, astro, nuxt or wrangler; empty when lodo doesn't know the command
+	Port int    // 0 when lodo can't tell
 }
 
 // findApps returns the apps in the project at root. Without workspaces, the
@@ -57,7 +57,7 @@ func noDevOrigins(root string, apps []App) []string {
 			continue
 		}
 		if !slices.ContainsFunc(configNames("next.config"), func(name string) bool {
-			data, err := fsutil.ReadRegular(filepath.Join(root, filepath.FromSlash(a.Dir), name), fsutil.MaxProjectFile)
+			data, err := fsutil.ReadRegular(filepath.Join(root, filepath.FromSlash(a.Dir), name))
 			return err == nil && bytes.Contains(data, []byte("allowedDevOrigins"))
 		}) {
 			dirs = append(dirs, a.Dir)
@@ -80,7 +80,7 @@ func newApp(dir string, srv server) App {
 // one more app to look at.
 func workspaces(root string) []string {
 	var patterns []string
-	if data, err := fsutil.ReadRegular(filepath.Join(root, "pnpm-workspace.yaml"), fsutil.MaxProjectFile); err == nil {
+	if data, err := fsutil.ReadRegular(filepath.Join(root, "pnpm-workspace.yaml")); err == nil {
 		var ws struct {
 			Packages []string `yaml:"packages"`
 		}
