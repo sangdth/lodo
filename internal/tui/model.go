@@ -10,7 +10,6 @@ import (
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/table"
-	"charm.land/bubbles/v2/textinput"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 
@@ -40,7 +39,7 @@ const (
 	modeForm                // the add or edit form
 	modeConfirm             // a delete waiting for y
 	modeLog                 // dnsmasq's query log
-	modeScan                // the scan's review of the project lodo started in
+	modeSetup               // the setup form for the project lodo started in
 	modePreview             // a compose file with lodo's changes
 )
 
@@ -51,22 +50,19 @@ type Start struct {
 	Home string
 }
 
-// Model is the TUI's state. Build it with New.
-type Model struct {
+// deps is what the dashboard and the setup form run backend calls with: the
+// context that bounds them, the backend, and where lodo started.
+type deps struct {
 	ctx     context.Context
 	backend Backend
-	origin  Start // where lodo started
+	origin  Start
+}
 
-	project    scan.Project      // the project lodo started in; Root is empty outside one
-	proposal   scan.Proposal     // what the last scan found missing from the list
-	scanned    bool              // the first scan is done
-	offered    bool              // the startup offer ran, or had nothing to offer
-	scanName   string            // the project's name the user chose in the review; empty lets the scan pick
-	scanLabels map[string]string // the labels the user gave apps in the review, by folder; replaced, never changed
-	renaming   bool              // e in the review: the keys type the project's name or an app's
-	renameAt   int               // what the name field names: 0 the project, else an app in renameTargets
-	rename     textinput.Model
-	renameErr  string // why the typed name can't be the project's or the app's
+// Model is the TUI's state. Build it with New.
+type Model struct {
+	deps
+
+	setup Setup // the setup form i opened
 
 	mode       mode
 	form       form
@@ -87,7 +83,7 @@ type Model struct {
 	logEvery   time.Duration // how often the open log is read
 
 	preview      viewport.Model
-	previewTitle string // the file, its name and how many changes, such as compose.dev.yaml for flowy.test · 3 changes; or the scan's folder
+	previewTitle string // the file, its name and how many changes, such as compose.dev.yaml for flowy.test · 3 changes
 	previewEnv   string // the .env line the file's ports need, such as DOCKER_HOST_IP=127.0.1.3; empty when none binds it
 	previewOwner string // the name whose compose file the preview shows
 
@@ -108,9 +104,7 @@ type Model struct {
 // ctx bounds every command the TUI runs; start says where lodo started.
 func New(ctx context.Context, b Backend, domains []store.Domain, start Start) Model {
 	m := Model{
-		ctx:      ctx,
-		backend:  b,
-		origin:   start,
+		deps:     deps{ctx: ctx, backend: b, origin: start},
 		domains:  store.Sort(domains),
 		spinner:  spinner.New(spinner.WithSpinner(spinner.MiniDot)),
 		log:      viewport.New(),
@@ -147,14 +141,9 @@ func tableKeys() table.KeyMap {
 	}
 }
 
-// Init checks the system and every name while the spinner runs, and scans
-// the project lodo started in.
+// Init checks the system and every name while the spinner runs.
 func (m Model) Init() tea.Cmd {
-	cmds := []tea.Cmd{m.report(m.domains), m.spinner.Tick}
-	if m.origin.Dir != "" {
-		cmds = append(cmds, m.runScan(false))
-	}
-	return tea.Batch(cmds...)
+	return tea.Batch(m.report(m.domains), m.spinner.Tick)
 }
 
 // reportMsg is a finished doctor run, after a service change when err is
@@ -205,24 +194,26 @@ func (m Model) setService(service string, on bool) tea.Cmd {
 	}
 }
 
-// change saves domains, applies them and checks the result, in that order. An
-// apply failure still keeps the saved list: r applies it again.
-func (m Model) change(domains []store.Domain) tea.Cmd {
-	ctx, b := m.ctx, m.backend
+// change saves domains, applies them and, with report, checks the result, in
+// that order. An apply failure still keeps the saved list: r applies it again.
+func (d deps) change(domains []store.Domain, report bool) tea.Cmd {
+	ctx, b := d.ctx, d.backend
 	return func() tea.Msg {
 		if err := b.Save(domains); err != nil {
 			return changedMsg{err: err}
 		}
-		err := b.Apply(ctx, domains)
-		checks, results := b.Report(ctx, domains)
-		return changedMsg{domains: domains, stored: true, err: err, checks: checks, results: results}
+		msg := changedMsg{domains: domains, stored: true, err: b.Apply(ctx, domains)}
+		if report {
+			msg.checks, msg.results = b.Report(ctx, domains)
+		}
+		return msg
 	}
 }
 
 // save writes domains without applying them: a compose path changes no
 // generated file, so nothing needs a restart or a check.
-func (m Model) save(domains []store.Domain) tea.Cmd {
-	b := m.backend
+func (d deps) save(domains []store.Domain) tea.Cmd {
+	b := d.backend
 	return func() tea.Msg {
 		if err := b.Save(domains); err != nil {
 			return changedMsg{err: err}
@@ -245,35 +236,29 @@ func (m Model) reload() tea.Cmd {
 	}
 }
 
-// thenLink runs cmd, then, once it saved the list, writes d's address into the
-// .env that d's compose file runs with.
-func (m Model) thenLink(cmd tea.Cmd, d store.Domain) tea.Cmd {
-	ctx, b, home := m.ctx, m.backend, m.origin.Home
+// thenLink runs cmd, then, once it saved the list, writes owner's address
+// into the .env that owner's compose file runs with.
+func (d deps) thenLink(cmd tea.Cmd, owner store.Domain) tea.Cmd {
+	ctx, b, home := d.ctx, d.backend, d.origin.Home
 	return func() tea.Msg {
 		msg, ok := cmd().(changedMsg)
 		if !ok || !msg.stored {
 			return msg
 		}
-		env, err := b.LinkEnv(ctx, d.Compose, d.Address)
+		env, err := b.LinkEnv(ctx, owner.Compose, owner.Address)
 		if err != nil {
 			msg.err = errors.Join(msg.err, err)
 			return msg
 		}
-		// The host hint goes before the .env's path, which a narrow status
-		// line cuts.
-		hint := ""
-		if len(b.HostFixes(d.Compose, d.Address)) > 0 {
-			hint = " · dev servers need a host: p shows it"
-		}
-		msg.note = "linked " + d.Name + hint + " · " + compose.EnvVar + "=" + d.Address + " in " + ShortPath(env, home)
+		msg.note = "linked " + owner.Name + " · " + compose.EnvVar + "=" + owner.Address + " in " + ShortPath(env, home)
 		return msg
 	}
 }
 
 // thenFixEnv runs cmd, then, once it saved the list, sets the scan's .env
 // lines in the project at root.
-func (m Model) thenFixEnv(cmd tea.Cmd, root string, fixes []scan.Fix) tea.Cmd {
-	ctx, b := m.ctx, m.backend
+func (d deps) thenFixEnv(cmd tea.Cmd, root string, fixes []scan.Fix) tea.Cmd {
+	ctx, b := d.ctx, d.backend
 	return func() tea.Msg {
 		msg, ok := cmd().(changedMsg)
 		if !ok || !msg.stored {

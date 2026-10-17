@@ -527,7 +527,7 @@ func TestEnv_Probe_AppDown(t *testing.T) {
 		{
 			name:    "the app listens on Localhost instead",
 			listens: "::1",
-			want:    check.Result{Detail: "an app listens on [::1]:{app}, not on the name's address: lodo scan shows the host fix"},
+			want:    check.Result{Detail: "an app listens on [::1]:{app}, not on the name's address: start it with lodo dev in its project"},
 		},
 		{
 			name:    "the app answers caddy badly",
@@ -549,7 +549,7 @@ func TestEnv_Probe_AppDown(t *testing.T) {
 			name:    "https finds the same app on Localhost, said once",
 			listens: "::1",
 			https:   respond(http.StatusBadGateway, "Server", "Caddy"),
-			want:    check.Result{Detail: "an app listens on [::1]:{app}, not on the name's address: lodo scan shows the host fix"},
+			want:    check.Result{Detail: "an app listens on [::1]:{app}, not on the name's address: start it with lodo dev in its project"},
 		},
 		{
 			name:      "an untrusted certificate next to app down",
@@ -621,7 +621,7 @@ func TestEnv_Probe_SharedPort(t *testing.T) {
 	for _, d := range domains {
 		want = append(want, check.Result{
 			Name: d.Name, Address: d.Address, Port: port, Direct: true, System: true,
-			Detail: "an app listens on [::1]:" + strconv.Itoa(port) + ", not on the name's address: lodo scan shows the host fix",
+			Detail: "an app listens on [::1]:" + strconv.Itoa(port) + ", not on the name's address: start it with lodo dev in its project",
 		})
 	}
 	if !slices.Equal(got, want) {

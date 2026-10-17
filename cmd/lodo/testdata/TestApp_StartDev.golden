@@ -1,0 +1,3 @@
+warn  apps/api has no name: lodo dev --edit adds api.shop.test
+web.shop.test  https://web.shop.test  -> 127.0.1.1:3001
+starting: pnpm run dev

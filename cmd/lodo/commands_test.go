@@ -33,15 +33,15 @@ func TestApp_Doctor(t *testing.T) {
 	}
 }
 
-func TestApp_TUIRefusesBeforeSetup(t *testing.T) {
+func TestApp_PsRefusesBeforeSetup(t *testing.T) {
 	t.Parallel()
 
 	var stdout, stderr strings.Builder
 	a := newApp(paths.ForTest(t.TempDir()), run.NewFake(), &stdout, &stderr)
-	if code := a.tui(context.Background()); code != 1 {
+	if code := a.command(context.Background(), "ps", options{}); code != 1 {
 		t.Errorf("exit code = %d on a Mac with nothing set up, want 1", code)
 	}
-	if !strings.Contains(stderr.String(), "✗ 1 dnsmasq") || !strings.Contains(stderr.String(), "lodo opens once these pass") {
+	if !strings.Contains(stderr.String(), "✗ 1 dnsmasq") || !strings.Contains(stderr.String(), "lodo ps opens once these pass") {
 		t.Errorf("stderr does not list the failing checks:\n%s", stderr.String())
 	}
 	if strings.Contains(stderr.String(), " 7 ") {
@@ -75,7 +75,7 @@ func TestFormatResults(t *testing.T) {
 			},
 			{
 				Name: "docs.crm.test", Address: "127.0.1.1", Port: 3001, Direct: true, System: true,
-				Detail: "an app listens on 127.0.0.1:3001, not on the name's address: lodo scan shows the host fix",
+				Detail: "an app listens on 127.0.0.1:3001, not on the name's address: start it with lodo dev in its project",
 			},
 			{Name: "flowy.test", Address: "127.0.1.3", Direct: true, Detail: "macOS: no address"},
 			{Name: "secure.crm.test", Address: "127.0.1.1", Port: 3004, Direct: true, System: true, HTTP: true, Secure: true, HTTPS: true},
@@ -153,7 +153,7 @@ func TestApp_Scan(t *testing.T) {
 
 	var stdout, stderr strings.Builder
 	a := newApp(p, r, &stdout, &stderr)
-	if code := a.scan(t.Context(), filepath.Join(root, "apps", "web"), scanFlags{}); code != 0 {
+	if code := a.scan(t.Context(), filepath.Join(root, "apps", "web"), options{}); code != 0 {
 		t.Fatalf("exit code = %d, stderr %q", code, stderr.String())
 	}
 	got := strings.ReplaceAll(stdout.String(), root, "<root>")
@@ -168,7 +168,7 @@ func TestApp_Scan(t *testing.T) {
 	golden.RequireEqual(t, got)
 
 	stdout.Reset()
-	if code := a.scan(t.Context(), root, scanFlags{json: true}); code != 0 {
+	if code := a.scan(t.Context(), root, options{json: true}); code != 0 {
 		t.Fatalf("--json: exit code = %d, stderr %q", code, stderr.String())
 	}
 	if strings.Contains(stdout.String(), "hunter2") {
@@ -183,26 +183,26 @@ func TestApp_Scan(t *testing.T) {
 	}
 
 	stdout.Reset()
-	if code := a.scan(t.Context(), root, scanFlags{json: true, name: "store"}); code != 0 {
+	if code := a.scan(t.Context(), root, options{json: true, name: "store"}); code != 0 {
 		t.Fatalf("--name: exit code = %d, stderr %q", code, stderr.String())
 	}
 	if err := json.Unmarshal([]byte(stdout.String()), &proposal); err != nil || proposal.Name != "store.test" ||
 		proposal.Add[0].Root != root || !strings.HasSuffix(proposal.Add[1].Name, ".store.test") {
 		t.Errorf("--name store gave %+v, %v; want store.test with its subdomains", proposal, err)
 	}
-	if code := a.scan(t.Context(), root, scanFlags{name: "web.store"}); code != 2 {
+	if code := a.scan(t.Context(), root, options{name: "web.store"}); code != 2 {
 		t.Errorf("--name web.store: exit code = %d, want 2", code)
 	}
 
 	stderr.Reset()
-	if code := a.scan(t.Context(), tmp, scanFlags{}); code != 1 || !strings.Contains(stderr.String(), "not in a project") {
+	if code := a.scan(t.Context(), tmp, options{}); code != 1 || !strings.Contains(stderr.String(), "not in a project") {
 		t.Errorf("outside a project: exit code %d, stderr %q", code, stderr.String())
 	}
 
 	t.Run("tracked", func(t *testing.T) {
 		var stdout, stderr strings.Builder
 		a := newApp(p, run.NewFake(), &stdout, &stderr) // Fake's ls-files succeeds: git tracks apps/web/.env
-		if code := a.scan(t.Context(), root, scanFlags{}); code != 0 {
+		if code := a.scan(t.Context(), root, options{}); code != 0 {
 			t.Fatalf("exit code = %d, stderr %q", code, stderr.String())
 		}
 		got := stdout.String()

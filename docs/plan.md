@@ -72,8 +72,9 @@ Settled 2026-10-08. The steps below follow them.
   on 2026-10-08 and to `lodo` on 2026-10-09, when names moved from `.oo` to `.test`.
 - **The TUI has one `Backend` interface** (load, save, apply, report) instead of separate applier and checker
   interfaces; the real one wraps `store`, `system` and `check`.
-- **`lodo` refuses to open while checks 1–5 fail,** using `check.Env.Prerequisites`, which probes nothing. The
-  TUI then runs `check.Env.Report` in the background: one probe feeds the status bar and every row.
+- **`lodo ps` and `lodo dev` refuse to start while checks 1–5 fail,** using `check.Env.Prerequisites`, which
+  probes nothing. The dashboard then runs `check.Env.Report` in the background: one probe feeds the status bar and
+  every row.
 - **The table has its own key map:** the default binds `space` and `d` to paging.
 - **TUI snapshots golden `View().Content`,** not teatest's byte stream, which holds spinner frames and timing;
   one teatest test drives the real program loop.
@@ -89,22 +90,21 @@ Settled 2026-10-08. The steps below follow them.
   have git and no lock file, 15 a lock file and no git. A lock file alone isn't enough: `$TMPDIR` holds stray
   `*.lock` files. The home folder never counts, and `skills-lock.json` pins agent skills, not dependencies.
 - **The scan proposes, the user applies:** no LLM; every rule reads a file lodo can parse, and what it can't read
-  (a port from env, an unknown dev command) becomes a note. Dev server lines are shown, never written: git
-  tracks them. `--json` lets an agent such as Claude Code read the same proposal.
-- **Turbo projects read the host from `DOCKER_HOST_IP`** (2026-10-16): in a project with a `turbo.json` whose root
-  `.env` sets `DOCKER_HOST_IP` to the project's address, or will once `y` links the compose file that runs with it,
-  the host fixes use `${DOCKER_HOST_IP:-127.0.0.1}` (`compose.HostIP`), so the dev scripts git tracks name no Mac's
-  address. Otherwise they keep the literal address, which works without the `.env`. turbo starts the apps without
-  the root's `.env`, so the root's first line that runs turbo's `dev` as its command gets a fix that sets
-  `DOCKER_HOST_IP` from the first such line of the `.env` in its folder, when an app's dev script reads it; a value
-  outside `127.0.0.0/8` counts as none, and without one the apps fall back to `127.0.0.1`. turbo 2.x passes `DOCKER_*` to its tasks by default (the string is in turbo 2.11.6's binary), so
-  `turbo.json` gets no fix. An app on another address keeps its literal host.
-- **`y` in the review sets an app's `.env` URL lines** (2026-10-16): only `.env`, never `.env.example` or
+  (a port from env, an unknown dev command) becomes a note. The setup form applies it; `--json` lets an agent such
+  as Claude Code read the same proposal.
+- **Apps get their address from `lodo dev`, not from their dev scripts** (Phase 11): a Node hook loaded through
+  `NODE_OPTIONS` binds each of the project's ports to its address, so no tracked file changes and dev scripts
+  need no host flag.
+- **The setup form's `.env` toggle sets an app's `.env` URL lines**: only `.env`, never `.env.example` or
   `.env.local`, never a file git tracks, with `l`'s guards, and each line only while it still reads as scanned
   (`scan.ApplyEnv`). A URL's user info prints as `***@` everywhere, `--json` too, so only the TUI writes the real
   values.
-- **Next apps without `allowedDevOrigins` get a note** (2026-10-16): Next 16.2 and later refuse hot reload from
-  other hosts (`block-cross-site-dev.js` in next 16.3.8). lodo names the line to add and leaves `next.config` alone.
+- **Caddy passes `Host` through and rewrites only Next's dev `Origin`** (Phase 11, result of 11.0): `Host` stays
+  the `.test` name, so Mailpit's live websocket, which compares `Origin` with `Host`, accepts the page. `Origin`
+  becomes `http://localhost:<port>`, which Next 16's dev check allows, only on Next's dev paths and only when it is
+  the site's own origin, so a Server Action still matches `X-Forwarded-Host` and another page's `Origin` still
+  fails Next's check. Vite accepts the names because `bind.cjs` adds `.<project>` to
+  `__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS`. No app needs `allowedDevOrigins` or `allowedHosts`.
 - **Probes name `/etc/hosts` conflicts:** macOS and dnsmasq answer from `/etc/hosts` first, so an entry with another
   address is reported as the cause of a failed lookup.
 
@@ -128,18 +128,22 @@ Bubble Tea v2 facts the TUI code relies on (checked against the module docs): `M
 
 ## Commands
 
-| Command         | What it does                                                                                  |
-| --------------- | --------------------------------------------------------------------------------------------- |
-| `lodo`           | opens the TUI; refuses when doctor checks 1–5 fail, and prints them                           |
+| Command          | What it does                                                                                  |
+| ---------------- | --------------------------------------------------------------------------------------------- |
+| `lodo`           | prints the help                                                                               |
+| `lodo dev`       | in a project: opens the setup form on the first run (or with `--edit`), then runs             |
+|                  | `<pm> run dev` with the listen hook; refuses when doctor checks 1–5 fail, and prints them     |
+| `lodo ps`        | opens the dashboard; refuses when doctor checks 1–5 fail, and prints them                     |
 | `lodo setup`     | one-time system setup; asks for the admin password in the terminal; safe to run again         |
 | `lodo apply`     | regenerates the files from `domains.json`, restarts dnsmasq (and Caddy when needed), writes   |
-|                 | resolver files, checks                                                                        |
+|                  | resolver files, checks                                                                        |
 | `lodo doctor`    | runs the eight checks, prints what's wrong and the fix; exit 1 if any fail                    |
+| `lodo scan`      | prints what the project in this folder lacks, read-only; `--json`, `--name`                   |
 | `lodo uninstall` | removes everything `setup` installed; keeps `domains.json`                                    |
 | `lodo version`   | prints the version set at build time (`-ldflags "-X main.Version=..."`)                       |
 
-`apply` is the code path the TUI runs after every change and on `r`. It exists as a command so the Phase 2 hand
-test and scripts can use it.
+`apply` is the code path the dashboard and the setup form run after every change, and the dashboard on `r`. It
+exists as a command so the Phase 2 hand test and scripts can use it.
 
 ## How it works
 
@@ -153,6 +157,8 @@ test and scripts can use it.
 | `~/.config/lodo/Caddyfile`                             | user  | `apply`, on every change                 |
 | `~/.config/lodo/dnsmasq.log`                           | user  | dnsmasq                                  |
 | `~/.config/lodo/caddy-root.crt`                        | user  | `lodo setup`, when a row has HTTPS       |
+| `~/.config/lodo/bind.cjs`                              | user  | `lodo dev`, on every run                 |
+| `~/.config/lodo/dev/<project>.cjs`                     | user  | `lodo dev`, on every run                 |
 | `/opt/homebrew/etc/dnsmasq.conf`                      | user  | `lodo setup` (user-owned, no sudo)        |
 | `/opt/homebrew/etc/dnsmasq.conf.before-lodo`           | user  | `lodo setup`, first run only              |
 | `/opt/homebrew/etc/Caddyfile`                         | user  | `lodo setup` (user-owned dir, no sudo)    |
@@ -239,9 +245,18 @@ devices get no answer:
 http://dashboard.blog.test {
 	@outside not remote_ip 127.0.0.0/8 ::1
 	abort @outside
+	@own_dev path */_next/* */__nextjs*
+	request_header @own_dev Origin "^http://dashboard\.blog\.test$" http://localhost:3000
 	reverse_proxy 127.0.1.1:3000
 }
 ```
+
+Every site passes `Host` through as the `.test` name, so origin checks that compare `Origin` with `Host`, such as
+Mailpit's live websocket, pass. `Origin` becomes `http://localhost:<port>`, which Next 16's dev check allows, only
+on Next's dev paths, under any `basePath` or `assetPrefix` (`*/_next/*`, `*/__nextjs*`), and only when it is the
+site's own origin (`https?` for an HTTPS name). A Server Action, which compares `Origin` with `X-Forwarded-Host`,
+sees the `.test` name in both; another page's `Origin` is left alone and still fails Next's check. Vite accepts
+the names through `lodo dev`'s hook, not through Caddy. Phase 11 has the measurements.
 
 ```text
 # /opt/homebrew/etc/Caddyfile, the file Homebrew's service loads
@@ -266,8 +281,8 @@ it is a regular file the user owns, and trusts the copy with `security add-trust
 
 The `http://` prefix keeps Caddy on port 80 with no automatic HTTPS (`caddy adapt` shows one server on `:80`
 and no TLS app). The upstream is the row's address and port, so apps listen on their project's address:
-`next dev -H 127.0.1.1`, Vite `--host 127.0.1.1`, Docker ports on `DOCKER_HOST_IP`. An app on `*:3000` answers
-on every loopback address and shadows other projects' port 3000. A file with no sites is a valid config, so
+`lodo dev` binds Node apps there, and Docker ports bind `DOCKER_HOST_IP`. An app on `*:3000` answers on every
+loopback address and shadows other projects' port 3000. A file with no sites is a valid config, so
 Caddy idles when no row has a port, and rows without a port never need it.
 
 ### What happens when a domain changes (`apply`)
@@ -290,6 +305,9 @@ A failure at any step shows in the status line. The saved file stays as written;
 
 ## The TUI
 
+`lodo ps` opens the dashboard: the list below, the status bar and the keys. `lodo dev` runs the setup form on its
+own, inline in the terminal; the dashboard's `i` opens the same form in its box.
+
 ```text
  lodo   caddy ●   dnsmasq ●   loopback ●   resolvers ●
  ─────────────────────────────────────────────────────────────────────────────
@@ -301,7 +319,7 @@ A failure at any step shows in the status line. The saved file stays as written;
     Add new domain
  ─────────────────────────────────────────────────────────────────────────────
  a sub  e edit  d del  space on/off  l link  p preview
- g log  r apply  tab top  q quit
+ s https  i set up  g log  r apply  tab top  q quit
 ```
 
 ```text
@@ -337,35 +355,36 @@ A failure at any step shows in the status line. The saved file stays as written;
   `DOCKER_HOST_IP=<address>` goes into the `.env` that file runs with: the one a `package.json` script passes
   with `--env-file`, else the project root's (`compose.EnvFile`, `compose.SetEnv`). A `.env` outside the
   project once symlinks are followed is refused, and so is one git tracks; the compose path is still saved. The
-  scan's `y`, `l` in the preview, and a form save that changes a linked name's compose file or address link too;
-  the scan's `y` also sets the app `.env` lines it shows, with the same guards. Linking saves without an apply.
+  setup form's link toggle, `l` in the preview, and a form save that changes a linked name's compose file or
+  address link too; the setup form's `.env` toggle sets the app `.env` lines it shows, with the same guards.
+  Linking saves without an apply.
 - **HTTPS** (`s`): turns HTTPS on or off for the selected name and applies, like `space`. A name without a port
   is refused: `https needs a port`. The check cell adds `https ✓` or `https ✗` from a probe of
   `https://<name>` with normal certificate checks, so an untrusted root fails it with
   "run lodo setup". With HTTPS on, the compose rewrite turns `http://localhost:<port>` into `https://<name>`.
 - **Log:** a `viewport` tailing `dnsmasq.log`, polled every 500 ms; `g` or `esc` returns.
-- **Scan:** started in a project, lodo scans it (`scan.Find`, `scan.Propose`) once the first check is done. When
-  none of the project's names is listed, the review opens: the names to add with address and port, the compose file
-  to link, the app `.env` lines to set (masked), the dev server lines to change by hand and the notes. `y` or
-  `enter` adds, links and sets them in one change, `n` or `esc` goes back and saves nothing, so the review returns
-  at the next start. A listed project gets a status note instead, such as `scan: 1 line to change · i reviews`;
-  nothing found shows nothing. `i` scans again and opens the review. `e` in the review edits the project's name,
-  with the `.test` suffix dimmed; `enter` scans again under it, so the subdomains, address and fixes follow, and
-  `esc` keeps the old one. `↑/↓` in that field names an app instead: `<label>.<project>`, or `<project>` alone
-  (`scan.CheckLabel`). The project is named by the listed name whose `root` is its folder, else by the listed name
-  that links a compose file in it, else by its folder. `y` saves the folder as the main name's `root`, also on a
-  listed name the user picked. Mailpit in the project's best compose file gets `mail.<project>` with the port its
-  inbox is published on (`scan.webImages` lists the images lodo names), unless a listed name has that port on the
-  address or the project runs another compose file, or none. A link to a compose file that is gone counts as none,
-  so the review offers the project's file; `e` with the old name gives that name a renamed folder.
+- **Setup form:** the only review UI. It scans the project (`scan.Find`, `scan.Propose`) and shows the project's
+  label with `.test` dimmed and its address, then a row per app and per compose web page: a label with `.<project>`
+  dimmed and a port. An empty label names the app `<project>` alone; only one row may. Below them sit the `[x] link
+  <compose file>` and `[x] set N .env lines` toggles, with the lines masked, and the scan's notes.
+  `tab`/`shift+tab` move, `space` toggles, `enter` adds, links and sets them in one change, `esc` saves nothing.
+  The rows hold the project's listed names, then the names the scan proposes to add; the subdomains follow the
+  project's label. Leaving a changed field scans again, so the `.env` lines and notes follow the names and ports as
+  typed. The project is named by the listed name whose `root` is its folder, else by the listed name that links a
+  compose file in it, else by its folder. `enter` saves the folder as the project name's `root`. A listed name
+  typed in whose `root` is unset or gone (`Backend.Gone`) is taken over: it keeps its settings and gets the folder.
+  One whose folder still exists is refused under the name field: "flow.test belongs to ~/Projects/flow: give this
+  project another name". The notes point at `lodo dev --edit`; two apps on one port get one, since `lodo dev` binds
+  one app per port, and the second app the next free address. Mailpit in the project's best compose file gets
+  `mail.<project>` with the port its inbox is published on (`scan.webImages` lists the images lodo names), unless a
+  listed name has that port on the address or the project runs another compose file, or none. A link to a compose
+  file that is gone counts as none, so the form offers the project's file. From `lodo dev`, `enter` saves and then
+  starts the apps; from the dashboard's `i`, it saves and returns to the list.
 - **Compose:** a compose path is saved without an apply: it changes no generated file. `p` previews the file
   rewritten by `compose.Rewrite` in a `viewport`, the changed lines marked, with the `.env` line; `l` links. The
-  preview scrolls sideways with the arrows only. Above the file it lists the dev server lines without a host in the
-  project's `package.json` scripts and the shell scripts they run (`scan.HostFixes`), with the host added, for the
-  user to copy: those files are tracked, so lodo doesn't write them. `l`'s note says when there are any. lodo
-  writes only `.env` lines in a project: `DOCKER_HOST_IP` in the linked `.env`, and the scan's URL lines in an
-  app's `.env`. It reads a project's files only when they are regular files of at most 1 MiB
-  (`fsutil.ReadRegular`), and `compose.Find` skips a compose name that isn't one.
+  preview scrolls sideways with the arrows only. lodo writes only `.env` lines in a project: `DOCKER_HOST_IP` in
+  the linked `.env`, and the scan's URL lines in an app's `.env`. It reads a project's files only when they are
+  regular files of at most 1 MiB (`fsutil.ReadRegular`), and `compose.Find` skips a compose name that isn't one.
 - **Status bar:** checks 8, 1, 3 and 4, in that order. A green `●` is on and works, a dim `○` is off: turned off,
   or Caddy not running while no row has a port. A red `○` fails. Any red one says "run `lodo doctor`".
 - **Services:** `tab` moves the keys to the status bar; `←` `→` (or `h` `l`) pick Caddy or dnsmasq, `space` turns
@@ -405,7 +424,7 @@ A failure at any step shows in the status line. The saved file stays as written;
   for it.
 - Editing or deleting a row never changes other rows: moving `blog.test` leaves `test.blog.test` where it is.
 - Deleting a domain frees its address.
-- `lodo` refuses to start the TUI when checks 1–5 fail, and prints them.
+- `lodo ps` and `lodo dev` refuse to start when checks 1–5 fail, and print them.
 
 ## `lodo doctor` checks
 
@@ -431,18 +450,19 @@ nothing accepts a connection on the name's address and port, and no app turns up
 port. The detail lists those names after "not running:", and `lodo apply` marks them `–` and still exits 0, since
 neither starts an app. An app that listens on `127.0.0.1` or `::1` instead of its name's address fails as
 "an app listens on [::1]:3000, not on the name's address". lodo can't tell whose app that is, so every stopped
-name on that port fails with the same detail, and check 7 lists names that share a detail once. An app that accepts on its address but gives Caddy no HTTP answer, such as
-one serving HTTPS itself, fails too. The fix is `lodo apply` when a failure needs it, `lodo scan` when every
+name on that port fails with the same detail, and check 7 lists names that share a detail once. An app that
+accepts on its address but gives Caddy no HTTP answer, such as one serving HTTPS itself, fails too. The fix is
+`lodo apply` when a failure needs it, "stop the app, then start it with lodo dev in its project" when every
 failure is an app on the wrong address, and none otherwise: an untrusted root, a hosts line and a bad answer
 each name their own. An HTTPS probe that finds the same app down is said once.
 
 With dnsmasq turned off, check 7 prints "turn dnsmasq on" instead of `lodo apply`, which leaves it off, and
 check 4 expects no lodo resolver file. One left over shows as off, with `lodo apply` to remove it, so it never
-keeps the TUI shut.
+keeps the dashboard shut.
 
 "Content current" compares the installed script with the one this build of lodo renders, so an upgraded lodo
-asks for `lodo setup` again. `lodo` starts the TUI when checks 1–5 pass; a failing check 8 only turns the status
-bar red.
+asks for `lodo setup` again. `lodo ps` and `lodo dev` start when checks 1–5 pass; a failing check 8 only turns the
+dashboard's status bar red.
 
 ## This Mac today, and what `setup` changes
 
@@ -462,9 +482,9 @@ bar red.
 ## Layout
 
 ```text
-cmd/lodo/main.go         subcommand dispatch, exit codes, Version
+cmd/lodo/main.go        subcommand dispatch, exit codes, Version; dev.go starts lodo dev
 internal/paths/         Paths struct: every file and tool path; Default() and ForTest(root)
-internal/run/           Runner interface over os/exec; Exec (real) and Fake (records calls, canned output)
+internal/run/           Runner interface over os/exec; Exec (real; Replace execs in place) and Fake (records calls)
 internal/fsutil/        atomic writes (temp file, then rename) that skip unchanged content
 internal/store/         domains.json load/save, name, address and port rules, own-block allocation
 internal/brew/          state and restart of Homebrew's dnsmasq and caddy jobs, through launchctl
@@ -473,8 +493,9 @@ internal/caddy/         Caddyfile generation and caddy validate
 internal/system/        setup, apply, uninstall; templates for the script, plist, sudoers, conf blocks
 internal/check/         the eight doctor checks and the per-domain dns, macOS and http probes
 internal/compose/       find a project and its compose file; read its services; rewrite its ports and localhost URLs
-internal/scan/          read a project's apps, ports, address and Mailpit; propose names, compose link and host fixes
-internal/tui/           Bubble Tea model, views, key map
+internal/scan/          read a project's apps, ports, address and Mailpit; propose names, compose link, .env lines
+internal/dev/           lodo dev: package manager, port map, the embedded bind.cjs hook and NODE_OPTIONS
+internal/tui/           Bubble Tea dashboard and setup form, views, key map
 ```
 
 Every package takes a `paths.Paths` and a `run.Runner`, so tests point all paths at a temp directory and all
@@ -747,10 +768,10 @@ Tests: `PORT=` from `.env` per tool; app `.env` lines in a tree shaped like fast
 the generated turbo line runs under `/bin/sh` against real `.env` files; `ApplyEnv` on LF, CRLF and stale lines;
 `FixEnv` on real files with `run.Fake` for git; neither `lodo scan` nor its `--json` prints a URL's password.
 
-### Phase 11: `lodo dev` (proposed, waiting for approval)
+### Phase 11: `lodo dev`
 
 Goal: `cd` into a project, run `lodo dev`, and its Node apps listen on the project's address with no edit to a
-tracked file. The first run in a project opens the scan's review; every later run starts the apps.
+tracked file. The first run in a project opens the setup form; every later run starts the apps.
 
 How a Node app gets its address: `lodo dev` sets `NODE_OPTIONS=--require <file>`. Node loads that file before
 the app, and every child (pnpm → turbo → next) inherits the variable; turbo's strict env mode passes
@@ -759,12 +780,20 @@ other variables, so the file carries its own settings. lodo writes `~/.config/lo
 calls the embedded `bind.cjs` with the project's ports and their addresses, such as `{3000: '127.0.1.3'}`.
 `bind.cjs` wraps `net.Server.prototype.listen`: a listen on a listed port with no host, `localhost`,
 `127.0.0.1`, `::1`, `0.0.0.0` or `::` binds the port's address instead. Other ports, such as Next's internal
-servers, stay as they are.
+servers, stay as they are. `<project>.cjs` also passes `.<project>`, which `bind.cjs` adds to
+`__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS`, a comma list Vite (8.3.4) adds to `server.allowedHosts`. Children
+inherit the variable and load the hook again, so the entry is added only when it isn't there yet.
+
+npm and pnpm set a script's `NODE_OPTIONS` to their `node-options` setting (`.npmrc`, pnpm-workspace.yaml's
+`nodeOptions`) when it has one, which drops the hook. For them `lodo dev` reads the setting with
+`<pm> config get node-options` (`--prefix` for npm, `--dir` for pnpm), puts it first in `NODE_OPTIONS`, and sets
+the same options in `npm_config_node_options` or `pnpm_config_node_options`, which beats the setting. Yarn and
+bun need nothing.
 
 | Step  | Work                                                                                           |
 | ----- | ---------------------------------------------------------------------------------------------- |
 | 11.0  | Prototype, no lodo code: `bind.cjs` by hand on Next 16 + turbo, a Vite app and a Nest app      |
-| 11.1  | Caddy: each site sends `Host` and `Origin` as `localhost:<port>` (`header_up`); goldens        |
+| 11.1  | Caddy: own `Origin` to `localhost:<port>` on Next's dev paths; `Host` passes through           |
 | 11.2  | `bind.cjs` embedded; `lodo dev` writes it and `dev/<project>.cjs` under `~/.config/lodo`       |
 | 11.3  | Package manager: `packageManager` in package.json, else the lock file; refuse without `dev`    |
 | 11.4  | `run.Runner.Replace`: lodo execs `<pm> run dev` with the env, so Ctrl-C reaches the pm         |
@@ -782,29 +811,68 @@ The setup form, prefilled from the scan on a first run and from `domains.json` w
 ```text
 lodo dev · ~/Projects/flowy
 
-Project   [flowy     ].test   address [127.0.1.2]
+Project   flowy .test   address 127.0.1.2
 
 Apps
-  apps/web  [web       ].flowy.test   port [3000]
-  apps/api  [api       ].flowy.test   port [4000]
+  apps/web  web.flowy.test   port 3000
+  apps/api  api.flowy.test   port 4000
+
 Services  compose.dev.yaml
-  mailpit   [mail      ].flowy.test   port [8025]
+  mail      mail.flowy.test  port 8025
 
 [x] link compose.dev.yaml  DOCKER_HOST_IP=127.0.1.2
 [x] set 2 .env lines
-
-note  api: no dev command found
+    apps/api/.env:1  DATABASE_URL=postgres://***@flowy.test:5432/flowy
+    apps/api/.env:2  WEB_URL=http://web.flowy.test
 
 tab/shift+tab move  space toggle  enter save + start  esc cancel
 ```
 
 An empty app label names the app `<project>` alone; only one app may have it. The `.env` lines print masked
-(`***@`), as in the review they replace. Opened from the dashboard's `i`, `enter` saves and goes back to the
-list instead of starting the apps. `lodo scan` stays read-only and prints the same proposal.
+(`***@`). Opened from the dashboard's `i`, `enter` saves and goes back to the list instead of starting the apps.
+`lodo scan` stays read-only and prints the same proposal.
 
 11.0 passes when each app binds the project's address, hot reload works through Caddy without
-`allowedDevOrigins` or Vite's `allowedHosts`, and a sign-in redirect still goes to the `.test` name. 11.1 and
-11.10 wait for it; if the `Host` rewrite breaks an app, it becomes a per-name switch.
+`allowedDevOrigins` or Vite's `allowedHosts`, and a sign-in redirect still goes to the `.test` name.
+
+Result of 11.0 (Next 16 + turbo, Vite, Nest, all real): `bind.cjs` binds each app's port to the project's address,
+and turbo passes `NODE_OPTIONS` through. The Caddy variants, measured with curl and the `ws` package; Action is a
+Server Action's POST, Vite its page:
+
+| Variant | Caddy lines                                             | Next HMR | Next dev files | Action | Vite |
+| ------- | ------------------------------------------------------- | -------- | -------------- | ------ | ---- |
+| none    | (none)                                                  | blocked  | 403            | 200    | 403  |
+| A       | `Host` and `Origin` (`^.*$`) to `localhost:<port>`      | 101      | 200            | 500    | 200  |
+| B       | `Origin` (`^.*$`) to `localhost:<port>`                 | 101      | 200            | 500    | 403  |
+| C       | `Host` and `Origin` to `{upstream_hostport}`            | blocked  | 403            | 500    | 200  |
+| D       | `Host` to `localhost:<port>`; own `Origin` on dev paths | 101      | 200            | 200    | 200  |
+| E       | own `Origin` on dev paths; Vite names from the hook     | 101      | 200            | 200    | 200  |
+
+- A is the only plan variant where Next HMR, Next's dev files and Vite all work, but it breaks two things. Next
+  compares `Origin` with `X-Forwarded-Host`, which Caddy always sets to the `.test` name, so Server Actions fail
+  with 500 (`next/dist/server/app-render/action-handler.js:423-456`). And `^.*$` rewrites an attacker's `Origin`
+  too, so any web page can open the HMR websocket; A and B both accept `evil.example`.
+- B fails Vite's host check. C fails Next: `127.0.1.49` is not an allowed origin without `-H`.
+- D, A narrowed, passes all of it: HMR 101 with live `serverComponentChanges`, dev files 200, Server Action 200,
+  `evil.example` still blocked (502), Vite page 200 and HMR 101 with `full-reload`.
+- D breaks Mailpit: its live websocket compares `Origin` with `Host`, so with `Host: localhost:8025` and
+  `Origin: http://mail.<project>` it answers 403. Every `Host` rewrite has that cost for an app that checks the
+  pair.
+- The final design is D without its `Host` line: Caddy passes `Host` through and turns only the site's own
+  `Origin` on Next's dev paths into `http://localhost:<port>`, with the site's name in the regex (dots escaped,
+  `https?` for HTTPS names) and `*/_next/*`, `*/__nextjs*` so a Next `basePath` or `assetPrefix` still matches.
+  Vite gets the names from the hook instead: `bind.cjs` adds `.<project>` to
+  `__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS`, which Vite 8.3.4 reads into `server.allowedHosts`. Row E is that design
+  measured end to end through Caddy, with the repo's `bind.cjs`: HMR 101 with live `serverComponentChanges`, dev
+  files 200, Server Action 200, Vite page 200 and HMR 101 with `full-reload`; `evil.example` stays blocked as an
+  HMR `Origin` (502) and as a Vite `Host` (403), and the app sees `Host` as the `.test` name.
+- The redirect stays on the `.test` name in every variant, the control too, and Caddy plays no part in it: Next 16
+  builds `request.url` from its own hostname and port (`http://localhost:3000/go`, `resolve-routes.js:118`), so a
+  same-origin `NextResponse.redirect` becomes a relative `Location: /`. The flip side: app code that builds
+  absolute URLs from `request.url`, such as an OAuth callback, gets `localhost:3000` whatever Caddy sends.
+  Libraries that read `X-Forwarded-Host` (Auth.js with `trustHost`) get the `.test` name in every variant.
+- Limits: no real browser ran; `Origin` and `Sec-Fetch-*` were set by hand. The `https?` form was checked only
+  on an echo upstream, not against Next.
 
 Settled for this phase: `lodo dev` always runs `<pm> run dev` and lets the project's script decide what starts;
 apps keep their own ports; Node only. `lodo ps` is the dashboard, bare `lodo` prints help, the setup form is the
@@ -841,14 +909,14 @@ opens it too.
 - **Port 80 taken.** Docker publishing `:80` or another proxy keeps Caddy from starting. Doctor check 8 names
   the listener; nothing else lodo can do.
 - **Dev servers bound to localhost only.** Vite and some tools listen on `localhost`, which Node 17 and later put
-  on `::1` on macOS, so Caddy's upstream `127.0.1.1:5173` gets a 502 until `--host 127.0.1.1`. The probe then
-  tries `127.0.0.1` and `::1` at the app's port, finds the app on `[::1]:5173`, and check 7 says "an app
-  listens on [::1]:5173, not on the name's address" with `lodo scan` for the host fix.
+  on `::1` on macOS, so Caddy's upstream `127.0.1.1:5173` gets a 502 unless `lodo dev` started it. The probe
+  then tries `127.0.0.1` and `::1` at the app's port, finds the app on `[::1]:5173`, and check 7 says "an app
+  listens on [::1]:5173, not on the name's address". A non-Node dev server still needs its own host flag.
 
 ## Troubleshooting (goes in the README)
 
 - `can't assign requested address` from Docker: the loopback job didn't run. Run `lodo doctor`.
-- `sudo: a password is required` in the TUI: the sudoers rule is missing or the script changed. `lodo doctor`
+- `sudo: a password is required` in the dashboard: the sudoers rule is missing or the script changed. `lodo doctor`
   check 4, then `lodo setup`.
 - `dig media.test` finds nothing: expected. `dig` and `nslookup` skip `/etc/resolver`; Node, `psql` and
   browsers use it. Test with `dscacheutil -q host -a name media.test`.
@@ -857,7 +925,7 @@ opens it too.
 - `foo.blog.test` resolves although it isn't listed: expected. dnsmasq's `address=` and the resolver file both
   match subdomains. Add a row only to give it another address or a port.
 - `502 Bad Gateway` on `http://dashboard.blog.test`: Caddy is up but nothing listens on `127.0.1.1:3000`. Start
-  the app on its address: `next dev -H 127.0.1.1`, Vite `--host 127.0.1.1`; Docker ports bind `DOCKER_HOST_IP`.
+  the app with `lodo dev`; Docker ports bind `DOCKER_HOST_IP`.
 - `http://dashboard.blog.test` refuses the connection: Caddy isn't running or port 80 is taken. `lodo doctor`
   check 8.
 - Names resolve for one app but not another: a VPN or WARP is capturing DNS.

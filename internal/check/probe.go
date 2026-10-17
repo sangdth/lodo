@@ -32,7 +32,7 @@ const (
 const (
 	removeLine = ": remove that line"
 	runSetup   = ": run lodo setup"
-	scanHost   = ": lodo scan shows the host fix"
+	runDev     = ": start it with lodo dev in its project"
 )
 
 // Result is what the probes found for one enabled domain.
@@ -371,7 +371,7 @@ func listens(ctx context.Context, host string, port int) bool {
 // of its name's address. It leaves the address out, so every stopped name on
 // the port gets the same text.
 func wrongHost(host string, port int) string {
-	return "an app listens on " + net.JoinHostPort(host, strconv.Itoa(port)) + ", not on the name's address" + scanHost
+	return "an app listens on " + net.JoinHostPort(host, strconv.Itoa(port)) + ", not on the name's address" + runDev
 }
 
 // needsApply reports whether lodo apply can fix one of a failed result's
@@ -382,7 +382,7 @@ func needsApply(r Result) bool {
 	for p := range strings.SplitSeq(r.Detail, "; ") {
 		p = strings.TrimPrefix(p, "https: ")
 		if p != appDown(d) && p != badAnswer(d) &&
-			!strings.HasSuffix(p, removeLine) && !strings.HasSuffix(p, runSetup) && !strings.HasSuffix(p, scanHost) {
+			!strings.HasSuffix(p, removeLine) && !strings.HasSuffix(p, runSetup) && !strings.HasSuffix(p, runDev) {
 			return true
 		}
 	}

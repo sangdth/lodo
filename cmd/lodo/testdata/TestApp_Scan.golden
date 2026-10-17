@@ -9,11 +9,6 @@ set   apps/web/.env:1
 set   apps/web/.env:2
       - DATABASE_URL=postgres://***@localhost:5432/shop
       + DATABASE_URL=postgres://***@shop.test:5432/shop
-fix   apps/web/package.json:2
-      - "scripts": {"dev": "next dev -p 3001"}
-      + "scripts": {"dev": "next dev -H 127.0.1.1 -p 3001"}
-note  api.shop.test: lodo can't tell its dev server's port; set it with e in the list
-note  api.shop.test: nest has no host option; make the app listen on the name's address
-note  web: Next 16.2+ refuses hot reload from other hosts; add allowedDevOrigins: ['shop.test', '*.shop.test'] to next.config
+note  api.shop.test: lodo can't tell its port; set it in lodo dev --edit
 
-run lodo here and press y to add, link and set these; e names the project or an app
+run lodo dev --edit here to add, link and set these

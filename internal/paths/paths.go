@@ -29,6 +29,8 @@ type Paths struct {
 	Log         string // dnsmasq's query log
 	Staging     string // setup renders root-owned files here before installing them
 	TrustedCA   string // the copy of Caddy's root that setup trusted in the System keychain
+	BindHook    string // lodo dev's listen hook, which every project's hook file requires
+	DevDir      string // lodo dev's hook files, one <project>.cjs per project
 
 	// Homebrew's files, owned by the user.
 	SystemConf            string // the config Homebrew's dnsmasq service loads
@@ -108,6 +110,8 @@ func build(root, home, user string, uid int) Paths {
 		Log:         filepath.Join(config, "dnsmasq.log"),
 		Staging:     filepath.Join(config, "staging"),
 		TrustedCA:   filepath.Join(config, "caddy-root.crt"),
+		BindHook:    filepath.Join(config, "bind.cjs"),
+		DevDir:      filepath.Join(config, "dev"),
 
 		SystemConf:            filepath.Join(etc, "dnsmasq.conf"),
 		SystemConfBackup:      filepath.Join(etc, "dnsmasq.conf.before-lodo"),

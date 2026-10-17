@@ -33,7 +33,7 @@ func TestFind_Apps(t *testing.T) {
 		{
 			name:  "plain next app",
 			files: map[string]string{"package.json": `{"scripts": {"dev": "next dev --turbo"}}`},
-			want:  []App{{Dir: ".", Tool: "next", Port: 3000}},
+			want:  []App{{Dir: ".", Port: 3000}},
 		},
 		{
 			name: "dev.sh that reads the host from .env",
@@ -41,7 +41,7 @@ func TestFind_Apps(t *testing.T) {
 				"package.json":   `{"scripts": {"dev": "./scripts/dev.sh"}}`,
 				"scripts/dev.sh": "docker compose -f docker/compose.dev.yaml up -d\nexec next dev ${HOST_IP:+--hostname \"$HOST_IP\"}\n",
 			},
-			want: []App{{Dir: ".", Tool: "next", Port: 3000}},
+			want: []App{{Dir: ".", Port: 3000}},
 		},
 		{
 			name:  "a dev script lodo doesn't know",
@@ -61,10 +61,10 @@ func TestFind_Apps(t *testing.T) {
 				"packages/webapp/package.json": `{"scripts": {"dev": "vite"}}`,
 			},
 			want: []App{
-				{Dir: "apps/admin", Tool: "vite", Port: 3001},
-				{Dir: "apps/api", Tool: "nest"},
-				{Dir: "apps/storefront", Tool: "next", Port: 3002},
-				{Dir: "packages/webapp", Tool: "vite", Port: 5173},
+				{Dir: "apps/admin", Port: 3001},
+				{Dir: "apps/api"},
+				{Dir: "apps/storefront", Port: 3002},
+				{Dir: "packages/webapp", Port: 5173},
 			},
 		},
 		{
@@ -74,7 +74,7 @@ func TestFind_Apps(t *testing.T) {
 				"apps/client/package.json":   `{"scripts": {"dev": "vite"}}`,
 				"apps/client/vite.config.ts": "export default { server: { port: 5175 } }",
 			},
-			want: []App{{Dir: "apps/client", Tool: "vite", Port: 5175}},
+			want: []App{{Dir: "apps/client", Port: 5175}},
 		},
 		{
 			name: "single app with a workspace file for pnpm settings",
@@ -82,7 +82,7 @@ func TestFind_Apps(t *testing.T) {
 				"package.json":        `{"scripts": {"dev": "next dev"}}`,
 				"pnpm-workspace.yaml": "onlyBuiltDependencies:\n  - esbuild\n",
 			},
-			want: []App{{Dir: ".", Tool: "next", Port: 3000}},
+			want: []App{{Dir: ".", Port: 3000}},
 		},
 		{name: "no package.json", files: map[string]string{"go.mod": "module x\n"}},
 	}
@@ -196,7 +196,7 @@ func TestPropose(t *testing.T) {
 	write(t, elsewhere, "services: {}\n")
 	inbox := []Page{{Label: "mail", Port: 8025}}
 	monorepo := []App{
-		{Dir: "apps/storefront", Tool: "next", Port: 3000}, {Dir: "apps/admin", Tool: "next", Port: 3000},
+		{Dir: "apps/storefront", Port: 3000}, {Dir: "apps/admin", Port: 3000},
 		{Dir: "apps/api"}, {Dir: "apps/email", Port: 3003},
 	}
 	tests := []struct {
@@ -210,7 +210,7 @@ func TestPropose(t *testing.T) {
 	}{
 		{
 			name:    "new app with a compose file",
-			project: Project{Root: "/p/shop", Name: "shop.test", Compose: []string{compose}, Apps: []App{{Dir: ".", Tool: "next", Port: 3000}}},
+			project: Project{Root: "/p/shop", Name: "shop.test", Compose: []string{compose}, Apps: []App{{Dir: ".", Port: 3000}}},
 			domains: []store.Domain{{Name: "blog.test", Address: "127.0.1.1", Enabled: true}},
 			want: Proposal{
 				Address: "127.0.1.2",
@@ -220,7 +220,7 @@ func TestPropose(t *testing.T) {
 		},
 		{
 			name:    "the .env's address",
-			project: Project{Root: "/p/shop", Name: "shop.test", Apps: []App{{Dir: ".", Tool: "next", Port: 3000}}, EnvAddress: "127.0.1.7"},
+			project: Project{Root: "/p/shop", Name: "shop.test", Apps: []App{{Dir: ".", Port: 3000}}, EnvAddress: "127.0.1.7"},
 			want: Proposal{
 				Address: "127.0.1.7",
 				Add:     []store.Domain{{Name: "shop.test", Address: "127.0.1.7", Port: 3000, Enabled: true, Root: "/p/shop"}},
@@ -228,7 +228,7 @@ func TestPropose(t *testing.T) {
 		},
 		{
 			name:    "the .env's address belongs to another project",
-			project: Project{Root: "/p/shop", Name: "shop.test", Apps: []App{{Dir: ".", Tool: "next", Port: 3000}}, EnvAddress: "127.0.1.1"},
+			project: Project{Root: "/p/shop", Name: "shop.test", Apps: []App{{Dir: ".", Port: 3000}}, EnvAddress: "127.0.1.1"},
 			domains: []store.Domain{{Name: "blog.test", Address: "127.0.1.1", Enabled: true}},
 			want: Proposal{
 				Address: "127.0.1.2",
@@ -236,26 +236,25 @@ func TestPropose(t *testing.T) {
 			},
 		},
 		{
-			name:    "monorepo: same port moves up, unknown port gets a note",
+			name:    "monorepo: an app on a taken port gets the next address, unknown port gets a note",
 			project: Project{Root: "/p/shop", Name: "shop.test", Apps: monorepo},
 			want: Proposal{
 				Address: "127.0.1.1",
 				Add: []store.Domain{
 					{Name: "shop.test", Address: "127.0.1.1", Enabled: true, Root: "/p/shop"},
 					{Name: "storefront.shop.test", Address: "127.0.1.1", Port: 3000, Enabled: true},
-					{Name: "admin.shop.test", Address: "127.0.1.1", Port: 3001, Enabled: true},
+					{Name: "admin.shop.test", Address: "127.0.1.2", Port: 3000, Enabled: true},
 					{Name: "api.shop.test", Address: "127.0.1.1", Enabled: true},
 					{Name: "email.shop.test", Address: "127.0.1.1", Port: 3003, Enabled: true},
 				},
 				Notes: []string{
-					"api.shop.test: lodo can't tell its dev server's port; set it with e in the list",
-					"api.shop.test: lodo doesn't know its dev command; start it on the name's address",
-					"email.shop.test: lodo doesn't know its dev command; start it on the name's address",
+					"api.shop.test: lodo can't tell its port; set it in lodo dev --edit",
+					"storefront.shop.test and admin.shop.test both take port 3000; lodo dev binds one app per port: give one of them another port",
 				},
 			},
 		},
 		{
-			name:    "listed project: only what is missing, on its address",
+			name:    "listed project: only what is missing",
 			project: Project{Root: "/p/shop", Name: "shop.test", Compose: []string{compose}, Apps: monorepo},
 			domains: []store.Domain{
 				{Name: "shop.test", Address: "127.0.1.4", Enabled: true, Compose: store.NoCompose},
@@ -263,18 +262,18 @@ func TestPropose(t *testing.T) {
 				{Name: "api.shop.test", Address: "127.0.1.4", Port: 4000, Enabled: true},
 			},
 			want: Proposal{
+				Notes:   []string{"storefront.shop.test and admin.shop.test both take port 3000; lodo dev binds one app per port: give one of them another port"},
 				Address: "127.0.1.4",
 				Listed:  true,
 				Add: []store.Domain{
-					{Name: "admin.shop.test", Address: "127.0.1.4", Port: 3001, Enabled: true},
+					{Name: "admin.shop.test", Address: "127.0.1.1", Port: 3000, Enabled: true},
 					{Name: "email.shop.test", Address: "127.0.1.4", Port: 3003, Enabled: true},
 				},
-				Notes: []string{"email.shop.test: lodo doesn't know its dev command; start it on the name's address"},
 			},
 		},
 		{
 			name:    "fully listed and linked",
-			project: Project{Root: "/p/shop", Name: "shop.test", Compose: []string{compose}, Apps: []App{{Dir: ".", Tool: "next", Port: 3000}}},
+			project: Project{Root: "/p/shop", Name: "shop.test", Compose: []string{compose}, Apps: []App{{Dir: ".", Port: 3000}}},
 			domains: []store.Domain{{Name: "shop.test", Address: "127.0.1.4", Port: 3000, Enabled: true, Compose: compose}},
 			want:    Proposal{Address: "127.0.1.4", Listed: true},
 		},
@@ -289,7 +288,7 @@ func TestPropose(t *testing.T) {
 		},
 		{
 			name:    "Mailpit's inbox gets mail.<project>",
-			project: Project{Root: "/p/shop", Name: "shop.test", Compose: []string{compose}, Apps: []App{{Dir: ".", Tool: "next", Port: 3000}}, Pages: inbox},
+			project: Project{Root: "/p/shop", Name: "shop.test", Compose: []string{compose}, Apps: []App{{Dir: ".", Port: 3000}}, Pages: inbox},
 			want: Proposal{
 				Address: "127.0.1.1",
 				Add: []store.Domain{
@@ -354,7 +353,7 @@ func TestPropose(t *testing.T) {
 			name: "a renamed folder: the user's name claims it and links its file",
 			project: Project{
 				Root: "/p/ai-calling", Name: "ai-calling.test", Compose: []string{"/p/ai-calling/docker/compose.dev.yaml"},
-				Apps: []App{{Dir: ".", Tool: "next", Port: 3000}},
+				Apps: []App{{Dir: ".", Port: 3000}},
 			},
 			domains: []store.Domain{
 				{Name: "calling.test", Address: "127.0.1.5", Port: 3000, Enabled: true, Root: "/p/client-calling", Compose: "/p/client-calling/compose.yaml"},
@@ -366,13 +365,13 @@ func TestPropose(t *testing.T) {
 		},
 		{
 			name:    "a listed name that links a file in the project names it",
-			project: Project{Root: "/p/platform-v2", Name: "platform-v2.test", Compose: []string{"/p/platform-v2/docker/compose.dev.yml"}, Apps: []App{{Dir: ".", Tool: "next", Port: 3000}}},
+			project: Project{Root: "/p/platform-v2", Name: "platform-v2.test", Compose: []string{"/p/platform-v2/docker/compose.dev.yml"}, Apps: []App{{Dir: ".", Port: 3000}}},
 			domains: []store.Domain{{Name: "hugger.test", Address: "127.0.1.1", Port: 3000, Enabled: true, Compose: "/p/platform-v2/docker/compose.dev.yml"}},
 			want:    Proposal{Name: "hugger.test", Address: "127.0.1.1", Listed: true},
 		},
 		{
 			name:    "the user's name: subdomains follow it",
-			project: Project{Root: "/p/shop-v2", Name: "shop-v2.test", Apps: []App{{Dir: ".", Tool: "next", Port: 3000}, {Dir: "apps/admin", Tool: "vite", Port: 5173}}},
+			project: Project{Root: "/p/shop-v2", Name: "shop-v2.test", Apps: []App{{Dir: ".", Port: 3000}, {Dir: "apps/admin", Port: 5173}}},
 			chosen:  "shop.test",
 			want: Proposal{
 				Name:    "shop.test",
@@ -385,70 +384,51 @@ func TestPropose(t *testing.T) {
 		},
 		{
 			name:    "the name chosen once sticks: its root names the project",
-			project: Project{Root: "/p/shop-v2", Name: "shop-v2.test", Apps: []App{{Dir: ".", Tool: "next", Port: 3000}}},
+			project: Project{Root: "/p/shop-v2", Name: "shop-v2.test", Apps: []App{{Dir: ".", Port: 3000}}},
 			domains: []store.Domain{{Name: "shop.test", Address: "127.0.1.1", Port: 3000, Enabled: true, Root: "/p/shop-v2"}},
 			want:    Proposal{Name: "shop.test", Address: "127.0.1.1", Listed: true},
 		},
 		{
 			name:    "the user names a listed name: it claims the folder",
-			project: Project{Root: "/p/shop-v2", Name: "shop-v2.test", Apps: []App{{Dir: ".", Tool: "next", Port: 3000}}},
+			project: Project{Root: "/p/shop-v2", Name: "shop-v2.test", Apps: []App{{Dir: ".", Port: 3000}}},
 			domains: []store.Domain{{Name: "shop.test", Address: "127.0.1.1", Port: 3000, Enabled: true}},
 			chosen:  "shop.test",
 			want:    Proposal{Name: "shop.test", Address: "127.0.1.1", Listed: true, Claim: true},
 		},
 		{
 			name:    "a name with two labels",
-			project: Project{Root: "/p/shop", Name: "shop.test", Apps: []App{{Dir: ".", Tool: "next", Port: 3000}}},
+			project: Project{Root: "/p/shop", Name: "shop.test", Apps: []App{{Dir: ".", Port: 3000}}},
 			chosen:  "web.shop.test",
 			want:    Proposal{Name: "", Notes: []string{"web.shop.test: a project's name has one label before .test"}},
 		},
 		{
-			name:    "a framework without a host option gets its port and a note",
-			project: Project{Root: "/p/shop", Name: "shop.test", Apps: []App{{Dir: "apps/server", Tool: "nest", Port: 3000}}},
+			name:    "nest gets its port",
+			project: Project{Root: "/p/shop", Name: "shop.test", Apps: []App{{Dir: "apps/server", Port: 3000}}},
 			want: Proposal{
 				Address: "127.0.1.1",
 				Add: []store.Domain{
 					{Name: "shop.test", Address: "127.0.1.1", Enabled: true, Root: "/p/shop"},
 					{Name: "server.shop.test", Address: "127.0.1.1", Port: 3000, Enabled: true},
 				},
-				Notes: []string{"server.shop.test: nest has no host option; make the app listen on the name's address"},
 			},
 		},
 		{
-			name: "nest keeps its port, the frontends move up",
-			project: Project{Root: "/p/shop", Name: "shop.test", Apps: []App{
-				{Dir: ".", Tool: "next", Port: 3000}, {Dir: "apps/admin", Tool: "vite", Port: 3000}, {Dir: "apps/server", Tool: "nest", Port: 3000},
-			}},
+			name:    "two apps on one port get two addresses",
+			project: Project{Root: "/p/shop", Name: "shop.test", Apps: []App{{Dir: "apps/api", Port: 3000}, {Dir: "apps/mail", Port: 3000}}},
 			want: Proposal{
-				Address: "127.0.1.1",
-				Add: []store.Domain{
-					{Name: "shop.test", Address: "127.0.1.1", Port: 3001, Enabled: true, Root: "/p/shop"},
-					{Name: "admin.shop.test", Address: "127.0.1.1", Port: 3002, Enabled: true},
-					{Name: "server.shop.test", Address: "127.0.1.1", Port: 3000, Enabled: true},
-				},
-				Notes: []string{"server.shop.test: nest has no host option; make the app listen on the name's address"},
-			},
-		},
-		{
-			name:    "two apps lodo can't move get two addresses",
-			project: Project{Root: "/p/shop", Name: "shop.test", Apps: []App{{Dir: "apps/api", Tool: "nest", Port: 3000}, {Dir: "apps/mail", Port: 3000}}},
-			want: Proposal{
+				Notes:   []string{"api.shop.test and mail.shop.test both take port 3000; lodo dev binds one app per port: give one of them another port"},
 				Address: "127.0.1.1",
 				Add: []store.Domain{
 					{Name: "shop.test", Address: "127.0.1.1", Enabled: true, Root: "/p/shop"},
 					{Name: "api.shop.test", Address: "127.0.1.1", Port: 3000, Enabled: true},
 					{Name: "mail.shop.test", Address: "127.0.1.2", Port: 3000, Enabled: true},
 				},
-				Notes: []string{
-					"api.shop.test: nest has no host option; make the app listen on the name's address",
-					"mail.shop.test: lodo doesn't know its dev command; start it on the name's address",
-				},
 			},
 		},
 		{name: "nothing to serve", project: Project{Root: "/p/dotfiles", Name: "dotfiles.test"}},
 		{
-			name:    "nest without a port gets two notes",
-			project: Project{Root: "/p/shop", Name: "shop.test", Apps: []App{{Dir: "apps/server", Tool: "nest"}}},
+			name:    "nest without a port gets a note",
+			project: Project{Root: "/p/shop", Name: "shop.test", Apps: []App{{Dir: "apps/server"}}},
 			want: Proposal{
 				Address: "127.0.1.1",
 				Add: []store.Domain{
@@ -456,14 +436,13 @@ func TestPropose(t *testing.T) {
 					{Name: "server.shop.test", Address: "127.0.1.1", Enabled: true},
 				},
 				Notes: []string{
-					"server.shop.test: lodo can't tell its dev server's port; set it with e in the list",
-					"server.shop.test: nest has no host option; make the app listen on the name's address",
+					"server.shop.test: lodo can't tell its port; set it in lodo dev --edit",
 				},
 			},
 		},
 		{
 			name:    "an app listed without a port",
-			project: Project{Root: "/p/shop", Name: "shop.test", Apps: []App{{Dir: "apps/web", Tool: "next", Port: 3001}, {Dir: "apps/server", Tool: "nest"}}},
+			project: Project{Root: "/p/shop", Name: "shop.test", Apps: []App{{Dir: "apps/web", Port: 3001}, {Dir: "apps/server"}}},
 			domains: []store.Domain{
 				{Name: "shop.test", Address: "127.0.1.4", Enabled: true},
 				{Name: "web.shop.test", Address: "127.0.1.4", Enabled: true},
@@ -472,34 +451,35 @@ func TestPropose(t *testing.T) {
 			want: Proposal{
 				Address: "127.0.1.4", Listed: true,
 				Notes: []string{
-					"web.shop.test: listed without a port; its dev server takes 3001: set it with e in the list",
-					"server.shop.test: listed without a port, and lodo can't tell its dev server's; set it with e in the list",
+					"web.shop.test: listed without a port; its dev server takes 3001: set its port in lodo dev --edit",
+					"server.shop.test: listed without a port, and lodo can't tell its dev server's; set its port in lodo dev --edit",
 				},
 			},
 		},
 		{
 			name:    "an app keeps the listed name on its port",
-			project: Project{Root: "/p/shop", Name: "shop.test", Apps: []App{{Dir: "apps/web", Tool: "next", Port: 3001}}},
+			project: Project{Root: "/p/shop", Name: "shop.test", Apps: []App{{Dir: "apps/web", Port: 3001}}},
 			domains: []store.Domain{{Name: "shop.test", Address: "127.0.1.4", Port: 3001, Enabled: true}},
 			want:    Proposal{Address: "127.0.1.4", Listed: true},
 		},
 		{
 			name: "a name another folder is named after is no alias",
 			project: Project{Root: "/p/shop", Name: "shop.test", Apps: []App{
-				{Dir: "apps/api", Tool: "nest", Port: 3000}, {Dir: "apps/web", Tool: "next", Port: 3000},
+				{Dir: "apps/api", Port: 3000}, {Dir: "apps/web", Port: 3000},
 			}},
 			domains: []store.Domain{
 				{Name: "shop.test", Address: "127.0.1.4", Enabled: true},
 				{Name: "api.shop.test", Address: "127.0.1.4", Port: 3000, Enabled: true},
 			},
 			want: Proposal{
+				Notes:   []string{"api.shop.test and web.shop.test both take port 3000; lodo dev binds one app per port: give one of them another port"},
 				Address: "127.0.1.4", Listed: true,
-				Add: []store.Domain{{Name: "web.shop.test", Address: "127.0.1.4", Port: 3001, Enabled: true}},
+				Add: []store.Domain{{Name: "web.shop.test", Address: "127.0.1.1", Port: 3000, Enabled: true}},
 			},
 		},
 		{
 			name:    "a label names an app",
-			project: Project{Root: "/p/shop", Name: "shop.test", Apps: []App{{Dir: "apps/backend", Tool: "vite", Port: 3300}}},
+			project: Project{Root: "/p/shop", Name: "shop.test", Apps: []App{{Dir: "apps/backend", Port: 3300}}},
 			labels:  map[string]string{"apps/backend": "api"},
 			dirs:    map[string]string{"api.shop.test": "apps/backend"},
 			want: Proposal{
@@ -512,7 +492,7 @@ func TestPropose(t *testing.T) {
 		},
 		{
 			name:    "an app takes the project's name",
-			project: Project{Root: "/p/shop", Name: "shop.test", Apps: []App{{Dir: "apps/web", Tool: "next", Port: 3000}, {Dir: "apps/api", Tool: "vite", Port: 3300}}},
+			project: Project{Root: "/p/shop", Name: "shop.test", Apps: []App{{Dir: "apps/web", Port: 3000}, {Dir: "apps/api", Port: 3300}}},
 			labels:  map[string]string{"apps/web": ""},
 			dirs:    map[string]string{"shop.test": "apps/web", "api.shop.test": "apps/api"},
 			want: Proposal{
@@ -525,7 +505,7 @@ func TestPropose(t *testing.T) {
 		},
 		{
 			name:    "the root's app keeps the project's name",
-			project: Project{Root: "/p/shop", Name: "shop.test", Apps: []App{{Dir: ".", Tool: "next", Port: 3000}, {Dir: "apps/web", Tool: "next", Port: 3001}}},
+			project: Project{Root: "/p/shop", Name: "shop.test", Apps: []App{{Dir: ".", Port: 3000}, {Dir: "apps/web", Port: 3001}}},
 			labels:  map[string]string{"apps/web": ""},
 			want: Proposal{
 				Address: "127.0.1.1",
@@ -538,18 +518,18 @@ func TestPropose(t *testing.T) {
 		},
 		{
 			name:    "a listed project name stays",
-			project: Project{Root: "/p/shop", Name: "shop.test", Apps: []App{{Dir: "apps/web", Tool: "next", Port: 3001}}},
+			project: Project{Root: "/p/shop", Name: "shop.test", Apps: []App{{Dir: "apps/web", Port: 3001}}},
 			domains: []store.Domain{{Name: "shop.test", Address: "127.0.1.4", Enabled: true}},
 			labels:  map[string]string{"apps/web": ""},
 			want: Proposal{
 				Address: "127.0.1.4", Listed: true,
 				Add:   []store.Domain{{Name: "web.shop.test", Address: "127.0.1.4", Port: 3001, Enabled: true}},
-				Notes: []string{"apps/web: shop.test is listed: give it the app's port with e in the list"},
+				Notes: []string{"apps/web: shop.test is listed: give it the app's port in lodo dev --edit"},
 			},
 		},
 		{
 			name:    "a label on an app without a port",
-			project: Project{Root: "/p/shop", Name: "shop.test", Apps: []App{{Dir: "apps/api", Tool: "nest"}}},
+			project: Project{Root: "/p/shop", Name: "shop.test", Apps: []App{{Dir: "apps/api"}}},
 			labels:  map[string]string{"apps/api": "backend"},
 			want: Proposal{
 				Address: "127.0.1.1",
@@ -559,26 +539,26 @@ func TestPropose(t *testing.T) {
 				},
 				Notes: []string{
 					"apps/api: lodo can't tell its port, so the name wouldn't stick: set PORT in its .env or a port in its dev script",
-					"api.shop.test: lodo can't tell its dev server's port; set it with e in the list",
-					"api.shop.test: nest has no host option; make the app listen on the name's address",
+					"api.shop.test: lodo can't tell its port; set it in lodo dev --edit",
 				},
 			},
 		},
 		{
 			name: "two apps on one listed port take one name",
 			project: Project{Root: "/p/shop", Name: "shop.test", Apps: []App{
-				{Dir: "apps/docs", Tool: "next", Port: 3000}, {Dir: "apps/web", Tool: "next", Port: 3000},
+				{Dir: "apps/docs", Port: 3000}, {Dir: "apps/web", Port: 3000},
 			}},
 			domains: []store.Domain{{Name: "shop.test", Address: "127.0.1.4", Port: 3000, Enabled: true}},
 			want: Proposal{
+				Notes:   []string{"shop.test and web.shop.test both take port 3000; lodo dev binds one app per port: give one of them another port"},
 				Address: "127.0.1.4", Listed: true,
-				Add: []store.Domain{{Name: "web.shop.test", Address: "127.0.1.4", Port: 3001, Enabled: true}},
+				Add: []store.Domain{{Name: "web.shop.test", Address: "127.0.1.1", Port: 3000, Enabled: true}},
 			},
 		},
 		{
 			name: "a label can't take another app's name",
 			project: Project{Root: "/p/shop", Name: "shop.test", Apps: []App{
-				{Dir: "apps/api", Tool: "next", Port: 4000}, {Dir: "apps/web", Tool: "next", Port: 3000},
+				{Dir: "apps/api", Port: 4000}, {Dir: "apps/web", Port: 3000},
 			}},
 			labels: map[string]string{"apps/web": "api"},
 			want: Proposal{
@@ -594,7 +574,7 @@ func TestPropose(t *testing.T) {
 		{
 			name: "two apps can't take one label",
 			project: Project{Root: "/p/shop", Name: "shop.test", Apps: []App{
-				{Dir: "apps/api", Tool: "next", Port: 4000}, {Dir: "apps/web", Tool: "next", Port: 3000},
+				{Dir: "apps/api", Port: 4000}, {Dir: "apps/web", Port: 3000},
 			}},
 			labels: map[string]string{"apps/api": "x", "apps/web": "x"},
 			dirs:   map[string]string{"x.shop.test": "apps/api"},
@@ -608,16 +588,14 @@ func TestPropose(t *testing.T) {
 			},
 		},
 		{
-			name: "next apps without allowedDevOrigins",
-			project: Project{
-				Root: "/p/shop", Name: "shop.test", Apps: []App{{Dir: ".", Tool: "next", Port: 3000}, {Dir: "apps/web", Tool: "next", Port: 3001}},
-				NoDevOrigins: []string{".", "apps/web"},
+			name:    "a listed name keeps its app's folder",
+			project: Project{Root: "/p/shop", Name: "shop.test", Apps: []App{{Dir: "apps/docs"}}},
+			domains: []store.Domain{
+				{Name: "shop.test", Address: "127.0.1.1", Enabled: true, Root: "/p/shop"},
+				{Name: "docs.shop.test", Address: "127.0.1.1", Port: 4100, Enabled: true},
 			},
-			domains: []store.Domain{{Name: "shop.test", Address: "127.0.1.4", Port: 3000, Enabled: true}, {Name: "web.shop.test", Address: "127.0.1.4", Port: 3001, Enabled: true}},
-			want: Proposal{
-				Address: "127.0.1.4", Listed: true,
-				Notes: []string{"shop.test, web: Next 16.2+ refuses hot reload from other hosts; add allowedDevOrigins: ['shop.test', '*.shop.test'] to next.config"},
-			},
+			dirs: map[string]string{"docs.shop.test": "apps/docs"},
+			want: Proposal{Address: "127.0.1.1", Listed: true},
 		},
 	}
 	for _, tt := range tests {
@@ -640,43 +618,15 @@ func TestPropose(t *testing.T) {
 
 func equal(a, b Proposal) bool {
 	return a.Root == b.Root && a.Name == b.Name && a.Address == b.Address && a.Listed == b.Listed && a.Claim == b.Claim &&
-		slices.Equal(a.Add, b.Add) && a.Compose == b.Compose && slices.Equal(a.Fixes, b.Fixes) && slices.Equal(a.Env, b.Env) &&
+		slices.Equal(a.Add, b.Add) && a.Compose == b.Compose && slices.Equal(a.Env, b.Env) &&
 		slices.Equal(a.Notes, b.Notes)
-}
-
-func TestPropose_Fixes(t *testing.T) {
-	t.Parallel()
-
-	root := project(t, "shop", map[string]string{
-		"package.json":             `{"scripts": {"dev": "turbo dev"}}`,
-		"pnpm-workspace.yaml":      "packages: [apps/*]\n",
-		"apps/web/package.json":    "{\n  \"scripts\": {\"dev\": \"next dev\"}\n}\n",
-		"apps/admin/package.json":  "{\n  \"scripts\": {\"dev\": \"next dev -H $HOST\"}\n}\n",
-		"apps/server/package.json": "{\n  \"scripts\": {\"dev\": \"nest start --watch\"}\n}\n",
-	})
-	p, _ := Find(root, nil)
-	got := Propose(p, nil, "", nil)
-	// server's port is unknown, so admin keeps 3000 and web moves up; admin's
-	// host is a variable lodo leaves.
-	want := []Fix{
-		{File: "apps/web/package.json", Line: 2, Old: `  "scripts": {"dev": "next dev"}`, New: `  "scripts": {"dev": "next dev -H 127.0.1.1 --port 3001"}`},
-	}
-	if !slices.Equal(got.Fixes, want) {
-		t.Errorf("Fixes =\n%+v\nwant\n%+v", got.Fixes, want)
-	}
-
-	// Once listed, the scan still shows the port the list gives the app.
-	got = Propose(p, got.Add, "", nil)
-	if len(got.Add) != 0 || !slices.Equal(got.Fixes, want) {
-		t.Errorf("listed: Add = %+v, Fixes =\n%+v\nwant\n%+v", got.Add, got.Fixes, want)
-	}
 }
 
 func TestCheckLabel(t *testing.T) {
 	t.Parallel()
 
-	apps := []App{{Dir: "apps/web", Tool: "next", Port: 3000}, {Dir: "apps/api", Tool: "nest"}}
-	withRoot := append([]App{{Dir: ".", Tool: "next", Port: 3001}}, apps...)
+	apps := []App{{Dir: "apps/web", Port: 3000}, {Dir: "apps/api"}}
+	withRoot := append([]App{{Dir: ".", Port: 3001}}, apps...)
 	listed := []store.Domain{{Name: "shop.test", Address: "127.0.1.1", Enabled: true}}
 	tests := []struct {
 		name    string
@@ -690,7 +640,7 @@ func TestCheckLabel(t *testing.T) {
 		{name: "the bare name", apps: apps, dir: "apps/web"},
 		{name: "an invalid name", apps: apps, dir: "apps/web", label: "my_web", err: "name"},
 		{name: "the root's app has the bare name", apps: withRoot, dir: "apps/web", err: "the root's app has shop.test"},
-		{name: "the bare name is listed", apps: apps, domains: listed, dir: "apps/web", err: "shop.test is listed: give it the app's port with e in the list"},
+		{name: "the bare name is listed", apps: apps, domains: listed, dir: "apps/web", err: "shop.test is listed: give it the app's port in lodo dev --edit"},
 		{name: "a port lodo can't tell", apps: apps, dir: "apps/api", label: "backend", err: "lodo can't tell its port, so the name wouldn't stick"},
 		{name: "another app's name", apps: apps, dir: "apps/web", label: "api", err: "apps/api has api.shop.test"},
 		{
@@ -713,26 +663,8 @@ func TestCheckLabel(t *testing.T) {
 	}
 }
 
-func TestFind_NoDevOrigins(t *testing.T) {
-	t.Parallel()
-
-	p, _ := Find(project(t, "shop", map[string]string{
-		"package.json":               `{"scripts": {"dev": "turbo dev"}}`,
-		"pnpm-workspace.yaml":        "packages: [apps/*]\n",
-		"apps/web/package.json":      `{"scripts": {"dev": "next dev"}}`,
-		"apps/web/next.config.ts":    "export default { allowedDevOrigins: ['shop.test', '*.shop.test'] }\n",
-		"apps/admin/package.json":    `{"scripts": {"dev": "next dev -p 3001"}}`,
-		"apps/admin/next.config.mjs": "export default {}\n",
-		"apps/blog/package.json":     `{"scripts": {"dev": "next dev -p 3002"}}`,
-		"apps/vite/package.json":     `{"scripts": {"dev": "vite"}}`,
-	}), nil)
-	if want := []string{"apps/admin", "apps/blog"}; !slices.Equal(p.NoDevOrigins, want) {
-		t.Errorf("NoDevOrigins = %q, want %q", p.NoDevOrigins, want)
-	}
-}
-
-// TestPropose_BareName checks that the root's scripts keep the project's
-// address when an app takes the project's name.
+// TestPropose_BareName checks that an app that takes the project's name
+// gives it its port.
 func TestPropose_BareName(t *testing.T) {
 	t.Parallel()
 
@@ -745,12 +677,5 @@ func TestPropose_BareName(t *testing.T) {
 	got := Propose(p, nil, "", map[string]string{"apps/web": ""})
 	if want := []store.Domain{{Name: "shop.test", Address: "127.0.1.1", Port: 3000, Enabled: true, Root: root}}; !slices.Equal(got.Add, want) {
 		t.Errorf("Add = %+v, want %+v", got.Add, want)
-	}
-	want := []Fix{
-		{File: "package.json", Line: 1, Old: `{"scripts": {"dev": "turbo dev", "docs": "next dev -p 3100"}}`, New: `{"scripts": {"dev": "turbo dev", "docs": "next dev -H 127.0.1.1 -p 3100"}}`},
-		{File: "apps/web/package.json", Line: 1, Old: `{"scripts": {"dev": "next dev"}}`, New: `{"scripts": {"dev": "next dev -H 127.0.1.1"}}`},
-	}
-	if !slices.Equal(got.Fixes, want) {
-		t.Errorf("Fixes =\n%+v\nwant\n%+v", got.Fixes, want)
 	}
 }

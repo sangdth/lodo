@@ -33,6 +33,8 @@ func TestDefault(t *testing.T) {
 		"CaddyRoot":      "/opt/homebrew/var/lib/caddy/pki/authorities/local/root.crt",
 		"CaddyLog":       "/opt/homebrew/var/log/caddy.log",
 		"TrustedCA":      filepath.Join(p.Home, ".config/lodo/caddy-root.crt"),
+		"BindHook":       filepath.Join(p.Home, ".config/lodo/bind.cjs"),
+		"DevDir":         filepath.Join(p.Home, ".config/lodo/dev"),
 	}
 	v := reflect.ValueOf(p)
 	for field, path := range want {

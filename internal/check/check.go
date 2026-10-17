@@ -72,8 +72,8 @@ type Check struct {
 const (
 	fixSetup     = "lodo setup"
 	fixApply     = "lodo apply"
-	fixDnsmasqOn = "turn dnsmasq on: brew services start dnsmasq, or tab and space in lodo"
-	fixHost      = "lodo scan in the app's project, then start the app with the host it shows"
+	fixDnsmasqOn = "turn dnsmasq on: brew services start dnsmasq, or tab and space in lodo ps"
+	fixDev       = "stop the app, then start it with lodo dev in its project"
 )
 
 // The checks' IDs, in doctorChecks order.
@@ -334,7 +334,7 @@ func (e Env) checkGenerated(_ context.Context, domains []store.Domain, _ []Resul
 // those. Failures with the same detail are listed once, after their names.
 // The fix turns dnsmasq on when check 1 found it turned off, since then no
 // name resolves and lodo apply leaves it off. Otherwise it is lodo apply when
-// a failure needs it, the host fix when every failure is an app on the wrong
+// a failure needs it, lodo dev when every failure is an app on the wrong
 // address, and none, since each failure then names its own.
 func (e Env) checkNames(_ context.Context, _ []store.Domain, results []Result) Check {
 	if len(results) == 0 {
@@ -353,7 +353,7 @@ func (e Env) checkNames(_ context.Context, _ []store.Domain, results []Result) C
 			}
 			names[r.Detail] = append(names[r.Detail], r.Name)
 			apply = apply || needsApply(r)
-			host = host && strings.HasSuffix(r.Detail, scanHost)
+			host = host && strings.HasSuffix(r.Detail, runDev)
 		}
 	}
 	notRunning := ""
@@ -372,7 +372,7 @@ func (e Env) checkNames(_ context.Context, _ []store.Domain, results []Result) C
 		case apply:
 			fix = fixApply
 		case host:
-			fix = fixHost
+			fix = fixDev
 		}
 		return fail(firstFew(failed, "; ")+notRunning, fix)
 	}

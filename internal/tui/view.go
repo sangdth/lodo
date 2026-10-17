@@ -91,19 +91,12 @@ const servicesHelp = " ←/→ or h/l pick  space on/off  tab back to the names\
 
 // The keys each mode takes, shown on the last lines.
 var help = map[mode]string{
-	modeList:    " a sub  e edit  d del  space on/off  l link  p preview\n s https  i scan  g log  r apply  tab top  q quit",
+	modeList:    " a sub  e edit  d del  space on/off  l link  p preview\n s https  i set up  g log  r apply  tab top  q quit",
 	modeForm:    " enter save  tab next field  esc cancel\n",
 	modeConfirm: " y delete  any other key keeps it\n",
 	modeLog:     " g or esc back to the list  ↑/↓ scroll\n q quit",
 	modePreview: " p or esc back to the list  ↑/↓ ←/→ scroll  l write the .env line\n q quit",
-	modeScan:    " y or enter add and link  e name  n or esc back to the list  ↑/↓ ←/→ scroll\n q quit",
 }
-
-// renameHelp is the review's keys while its name is edited.
-const renameHelp = " enter use this name  ↑/↓ an app's name  esc keep the old one\n"
-
-// scanFixesHelp is the review's keys when it holds only lines to change.
-const scanFixesHelp = " e name  n or esc back to the list  ↑/↓ ←/→ scroll\n q quit"
 
 // View draws the status bar, a rule, the table or the form, the status line
 // and the keys in a bordered box at the middle of the terminal.
@@ -116,8 +109,10 @@ func (m Model) View() tea.View {
 		body = m.logView()
 	case modePreview:
 		body = m.previewView()
-	case modeScan:
-		body = m.scanView()
+	case modeSetup:
+		s := m.setup
+		s.width = m.innerWidth()
+		body = strings.Join(s.lines(), "\n")
 	}
 	keys := strings.Split(m.keys(), "\n")
 	for i, line := range keys {
@@ -147,10 +142,8 @@ func (m Model) keys() string {
 		return servicesHelp
 	case m.mode == modeList && m.onAddRow():
 		return addRowHelp
-	case m.mode == modeScan && m.renaming:
-		return renameHelp
-	case m.mode == modeScan && !m.proposal.CanAccept():
-		return scanFixesHelp
+	case m.mode == modeSetup:
+		return m.setup.help() + "\n"
 	}
 	return help[m.mode]
 }
@@ -462,17 +455,20 @@ func (m Model) logView() string {
 
 // nameInput draws the name field as wide as its text, or its placeholder, and
 // the form's dimmed suffix after it, which can't be edited.
-func (m Model) nameInput() string { return m.suffixed(m.form.inputs[fieldName], m.form.suffix) }
+func (m Model) nameInput() string { return m.styles.suffixed(m.form.inputs[fieldName], m.form.suffix) }
 
-// suffixed draws a name field at its text's width with its suffix, dimmed,
-// right after it.
-func (m Model) suffixed(in textinput.Model, suffix string) string {
+// suffixed draws a field at its text's width with its suffix, dimmed, right
+// after it.
+func (st styles) suffixed(in textinput.Model, suffix string) string {
+	if !in.Focused() && (in.Value() != "" || in.Placeholder == "") {
+		return in.Styles().Blurred.Text.Inline(true).Render(in.Value()) + st.dim.Render(suffix) // no cursor cell before the suffix
+	}
 	width := ansi.StringWidth(in.Value())
 	if width == 0 {
 		width = ansi.StringWidth(in.Placeholder)
 	}
 	in.SetWidth(width)
-	return in.View() + m.styles.dim.Render(suffix)
+	return in.View() + st.dim.Render(suffix)
 }
 
 // expected reports whether r fails only because of a service turned off:

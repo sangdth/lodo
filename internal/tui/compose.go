@@ -23,7 +23,6 @@ type previewMsg struct {
 	owner   store.Domain
 	out     []byte
 	changes []compose.Change
-	fixes   []scan.Fix // dev server lines that need a host
 	err     error
 }
 
@@ -36,8 +35,7 @@ func (m Model) readPreview(owner store.Domain) tea.Cmd {
 			return previewMsg{err: err}
 		}
 		out, changes, err := compose.Rewrite(src, values)
-		fixes := b.HostFixes(owner.Compose, owner.Address)
-		return previewMsg{owner: owner, out: out, changes: changes, fixes: fixes, err: err}
+		return previewMsg{owner: owner, out: out, changes: changes, err: err}
 	}
 }
 
@@ -55,8 +53,7 @@ func (m Model) composeOwner(d store.Domain) (store.Domain, bool) {
 }
 
 // showPreview fills the preview: changed lines marked in green, and the
-// .env line when the file's ports bind EnvVar. The next dev lines that need
-// -H come first, marked the same way.
+// .env line when the file's ports bind EnvVar.
 func (m *Model) showPreview(msg previewMsg) {
 	changed := make(map[int]bool, len(msg.changes))
 	for _, c := range msg.changes {
@@ -83,24 +80,9 @@ func (m *Model) showPreview(msg previewMsg) {
 	if strings.Contains(string(msg.out), "${"+compose.EnvVar) {
 		m.previewEnv = compose.EnvVar + "=" + msg.owner.Address
 	}
-	m.preview.SetContentLines(append(m.fixLines(msg.fixes), lines...))
+	m.preview.SetContentLines(lines)
 	m.preview.GotoTop()
 	m.preview.SetXOffset(0)
-}
-
-// fixLines shows each dev server fix under its file and line, then a line
-// before what follows. lodo leaves those files to the user.
-func (m Model) fixLines(fixes []scan.Fix) []string {
-	if len(fixes) == 0 {
-		return nil
-	}
-	lines := []string{m.styles.dim.Render("  these listen on every address; add the host yourself:")}
-	for _, f := range fixes {
-		lines = append(lines,
-			m.styles.dim.Render("  "+f.File+":"+strconv.Itoa(f.Line)),
-			m.styles.ok.Render("~ "+f.New))
-	}
-	return append(lines, "")
 }
 
 // checkCompose refuses a compose path that breaks store's rule or names no
@@ -119,16 +101,36 @@ func (m Model) checkCompose(path string) error {
 	return nil
 }
 
-// link links d to the compose file of the project lodo started in, or, outside
-// one, to its own: d's compose path is saved and d's address is written into
-// the .env that file runs with.
+// linkScanMsg is a scan for l on the name called name: files are the compose
+// files of the project lodo started in, best first.
+type linkScanMsg struct {
+	name  string
+	files []string
+}
+
+// link links d to the compose file of the project lodo started in, which it
+// scans for first, or, outside one, to its own.
 func (m Model) link(d store.Domain) (Model, tea.Cmd) {
+	if m.origin.Dir == "" {
+		return m.linkProject(d, nil)
+	}
+	ctx, b, dir, domains := m.ctx, m.backend, m.origin.Dir, m.domains
+	return m, func() tea.Msg {
+		project, _, _ := b.Scan(ctx, dir, "", nil, domains)
+		return linkScanMsg{name: d.Name, files: project.Compose}
+	}
+}
+
+// linkProject links d to the best of the project's compose files, or to its
+// own when there are none: d's compose path is saved and d's address is
+// written into the .env that file runs with.
+func (m Model) linkProject(d store.Domain, files []string) (Model, tea.Cmd) {
 	path := d.Compose
-	if len(m.project.Compose) > 0 {
-		path = m.project.Compose[0]
+	if len(files) > 0 {
+		path = files[0]
 	}
 	if !store.HasCompose(path) {
-		m.err = errors.New("no compose file to link: start lodo in the project, or e to set one")
+		m.err = errors.New("no compose file to link: start lodo ps in the project, or e to set one")
 		return m, nil
 	}
 	return m.linkTo(d, path)
@@ -198,8 +200,8 @@ func (m Model) composeCell(d store.Domain, width int) string {
 }
 
 // shortPath writes path from the home folder as ~/….
-func (m Model) shortPath(path string) string {
-	return ShortPath(path, m.origin.Home)
+func (d deps) shortPath(path string) string {
+	return ShortPath(path, d.origin.Home)
 }
 
 // previewView draws the rewritten compose file under its title and the .env

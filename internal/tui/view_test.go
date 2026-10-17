@@ -138,7 +138,10 @@ func TestModel_KeysFitAnEightyColumnTerminal(t *testing.T) {
 	m := ready(&fakeBackend{}, sample)
 	next, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24}) // narrower than minBoxWidth: the box takes it all
 	m = next.(Model)
-	all := map[string]string{"services": servicesHelp, "add row": addRowHelp, "scan with only fixes": scanFixesHelp}
+	all := map[string]string{
+		"services": servicesHelp, "add row": addRowHelp,
+		"setup form": Setup{embedded: true, found: true}.help() + "\n",
+	}
 	for md, keys := range help {
 		all["mode "+strconv.Itoa(int(md))] = keys
 	}

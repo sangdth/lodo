@@ -3,6 +3,10 @@ package run_test
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -91,6 +95,48 @@ func TestExec_RunInput(t *testing.T) {
 	}
 }
 
+// TestExec_Replace runs the test binary again with LODO_TEST_REPLACE set, so
+// the process Replace swaps out and the directory it changes to are the
+// child's.
+func TestExec_Replace(t *testing.T) {
+	switch os.Getenv("LODO_TEST_REPLACE") {
+	case "sh":
+		err := run.Exec{}.Replace(os.Getenv("LODO_TEST_DIR"), "/bin/sh", []string{"-c", "pwd; echo $X"}, []string{"X=hi"})
+		fmt.Print(err)
+		os.Exit(1)
+	case "missing":
+		fmt.Print(run.Exec{}.Replace(os.Getenv("LODO_TEST_DIR"), "/nonexistent/tool", []string{"a"}, nil))
+		os.Exit(0)
+	}
+	t.Parallel()
+
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	child := func(mode string) string {
+		t.Helper()
+		cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestExec_Replace$")
+		cmd.Env = append(os.Environ(), "LODO_TEST_REPLACE="+mode, "LODO_TEST_DIR="+dir)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("%s: %v\n%s", mode, err, out)
+		}
+		return string(out)
+	}
+	if got, want := child("sh"), dir+"\nhi\n"; got != want {
+		t.Errorf("replaced by sh: out = %q, want %q (its dir and env)", got, want)
+	}
+	if got, want := child("missing"), "/nonexistent/tool a: no such file or directory"; got != want {
+		t.Errorf("missing tool: out = %q, want %q", got, want)
+	}
+
+	err = run.Exec{}.Replace(filepath.Join(dir, "missing"), "/bin/sh", nil, nil)
+	if re, ok := errors.AsType[*run.Error](err); !ok || !errors.Is(err, os.ErrNotExist) || re.Cmd != "/bin/sh" {
+		t.Errorf("missing dir: err = %v, want a *run.Error for /bin/sh wrapping fs.ErrNotExist", err)
+	}
+}
+
 func TestLine(t *testing.T) {
 	t.Parallel()
 
@@ -125,6 +171,16 @@ func TestFake(t *testing.T) {
 		t.Error("RunInput: err nil, want the Fail answer")
 	}
 	_, _ = f.RunInput(ctx, "", "sudo", "-n", "script")
+	if err := f.Replace("/p/flowy", "/bin/pnpm", []string{"run", "dev"}, []string{"NODE_OPTIONS=x"}); err != nil {
+		t.Errorf("Replace: %v", err)
+	}
+	if dir, env := f.Replaced(); dir != "/p/flowy" || !slices.Equal(env, []string{"NODE_OPTIONS=x"}) {
+		t.Errorf("Replaced = %q, %q, want the dir and env passed", dir, env)
+	}
+	f.Fail("/bin/pnpm run dev", "boom")
+	if err := f.Replace("/p", "/bin/pnpm", []string{"run", "dev"}, nil); err == nil {
+		t.Error("Replace: err nil, want the Fail answer")
+	}
 	if got := f.Inputs("sudo -n script"); !slices.Equal(got, []string{"a.test\n", ""}) {
 		t.Errorf("Inputs = %q, want both inputs in order", got)
 	}
@@ -133,7 +189,7 @@ func TestFake(t *testing.T) {
 	}
 	want := []string{
 		"brew services info dnsmasq --json", "sudo -n script", "unknown", "sudo -v",
-		"sudo -n script", "sudo -n script",
+		"sudo -n script", "sudo -n script", "/bin/pnpm run dev", "/bin/pnpm run dev",
 	}
 	got := f.Calls()
 	if len(got) != len(want) {

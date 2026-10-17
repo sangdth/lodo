@@ -499,7 +499,7 @@ func TestEnv_Run_NamesResolve(t *testing.T) {
 				m.fake.Set(dscacheutil(m.p, "crm.test"), macOSOutput("crm.test", "127.0.1.9"))
 			},
 			want: namesCheck.fail("crm.test: macOS: 127.0.1.9, want 127.0.1.1",
-				"turn dnsmasq on: brew services start dnsmasq, or tab and space in lodo"),
+				"turn dnsmasq on: brew services start dnsmasq, or tab and space in lodo ps"),
 		},
 		{
 			name: "caddy cannot reach an app",
@@ -532,8 +532,8 @@ func TestEnv_Run_NamesResolve(t *testing.T) {
 				m.domains = slices.Clone(m.domains)
 				m.domains[1].Port = m.app
 			},
-			want: namesCheck.fail("dashboard.crm.test: an app listens on [::1]:{app}, not on the name's address: lodo scan shows the host fix",
-				"lodo scan in the app's project, then start the app with the host it shows"),
+			want: namesCheck.fail("dashboard.crm.test: an app listens on [::1]:{app}, not on the name's address: start it with lodo dev in its project",
+				"stop the app, then start it with lodo dev in its project"),
 		},
 		{
 			name: "one app on Localhost, two names on its port",
@@ -551,8 +551,8 @@ func TestEnv_Run_NamesResolve(t *testing.T) {
 				m.domains[1].Port, m.domains[2].Port = m.app, m.app
 			},
 			want: namesCheck.fail("a.crm.test, b.crm.test: "+
-				"an app listens on [::1]:{app}, not on the name's address: lodo scan shows the host fix",
-				"lodo scan in the app's project, then start the app with the host it shows"),
+				"an app listens on [::1]:{app}, not on the name's address: start it with lodo dev in its project",
+				"stop the app, then start it with lodo dev in its project"),
 		},
 		{
 			name: "an app answers caddy badly",

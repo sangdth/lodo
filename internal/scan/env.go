@@ -134,7 +134,7 @@ func ApplyEnv(content []byte, fixes []Fix) ([]byte, error) {
 		case f.after == "":
 			return nil, fmt.Errorf("%s:%d is no .env line lodo sets", f.File, f.Line)
 		case f.Line < 1 || f.Line > len(lines):
-			return nil, fmt.Errorf("%s:%d is past the file's end: i scans again", f.File, f.Line)
+			return nil, fmt.Errorf("%s:%d is past the file's end: scan again: lodo dev --edit, or i in lodo ps", f.File, f.Line)
 		}
 		line := lines[f.Line-1]
 		text := strings.TrimSuffix(strings.TrimSuffix(line, "\n"), "\r")
@@ -143,7 +143,7 @@ func ApplyEnv(content []byte, fixes []Fix) ([]byte, error) {
 		case f.before:
 			lines[f.Line-1] = f.after + line[len(text):]
 		default:
-			return nil, fmt.Errorf("%s:%d changed since the scan: i scans again", f.File, f.Line)
+			return nil, fmt.Errorf("%s:%d changed since the scan: scan again: lodo dev --edit, or i in lodo ps", f.File, f.Line)
 		}
 	}
 	return []byte(strings.Join(lines, "")), nil

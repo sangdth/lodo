@@ -3,6 +3,8 @@
 http://dashboard.crm.test {
 	@outside not remote_ip 127.0.0.0/8 ::1
 	abort @outside
+	@own_dev path */_next/* */__nextjs*
+	request_header @own_dev Origin "^http://dashboard\.crm\.test$" http://localhost:3000
 	reverse_proxy 127.0.1.1:3000
 }
 
@@ -10,11 +12,15 @@ http://secure.crm.test, https://secure.crm.test {
 	@outside not remote_ip 127.0.0.0/8 ::1
 	abort @outside
 	tls internal
+	@own_dev path */_next/* */__nextjs*
+	request_header @own_dev Origin "^https?://secure\.crm\.test$" http://localhost:3004
 	reverse_proxy 127.0.1.1:3004
 }
 
 http://service.crm.test {
 	@outside not remote_ip 127.0.0.0/8 ::1
 	abort @outside
+	@own_dev path */_next/* */__nextjs*
+	request_header @own_dev Origin "^http://service\.crm\.test$" http://localhost:3002
 	reverse_proxy 127.0.1.1:3002
 }
