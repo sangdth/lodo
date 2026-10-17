@@ -747,6 +747,75 @@ Tests: `PORT=` from `.env` per tool; app `.env` lines in a tree shaped like fast
 the generated turbo line runs under `/bin/sh` against real `.env` files; `ApplyEnv` on LF, CRLF and stale lines;
 `FixEnv` on real files with `run.Fake` for git; neither `lodo scan` nor its `--json` prints a URL's password.
 
+### Phase 11: `lodo dev` (proposed, waiting for approval)
+
+Goal: `cd` into a project, run `lodo dev`, and its Node apps listen on the project's address with no edit to a
+tracked file. The first run in a project opens the scan's review; every later run starts the apps.
+
+How a Node app gets its address: `lodo dev` sets `NODE_OPTIONS=--require <file>`. Node loads that file before
+the app, and every child (pnpm → turbo → next) inherits the variable; turbo's strict env mode passes
+`NODE_OPTIONS` through (`BUILTIN_PASS_THROUGH_ENV` in turborepo's `crates/turborepo-env/src/lib.rs`) but drops
+other variables, so the file carries its own settings. lodo writes `~/.config/lodo/dev/<project>.cjs`, which
+calls the embedded `bind.cjs` with the project's ports and their addresses, such as `{3000: '127.0.1.3'}`.
+`bind.cjs` wraps `net.Server.prototype.listen`: a listen on a listed port with no host, `localhost`,
+`127.0.0.1`, `::1`, `0.0.0.0` or `::` binds the port's address instead. Other ports, such as Next's internal
+servers, stay as they are.
+
+| Step  | Work                                                                                           |
+| ----- | ---------------------------------------------------------------------------------------------- |
+| 11.0  | Prototype, no lodo code: `bind.cjs` by hand on Next 16 + turbo, a Vite app and a Nest app      |
+| 11.1  | Caddy: each site sends `Host` and `Origin` as `localhost:<port>` (`header_up`); goldens        |
+| 11.2  | `bind.cjs` embedded; `lodo dev` writes it and `dev/<project>.cjs` under `~/.config/lodo`       |
+| 11.3  | Package manager: `packageManager` in package.json, else the lock file; refuse without `dev`    |
+| 11.4  | `run.Runner.Replace`: lodo execs `<pm> run dev` with the env, so Ctrl-C reaches the pm         |
+| 11.5  | Setup form: its own small model in `internal/tui`; `tab`/`shift+tab` move, `space` toggles     |
+| 11.6  | `lodo dev`: no `Domain.Root` matches, or `--edit`, opens the form; then it starts the apps     |
+| 11.7  | `lodo ps` opens the dashboard; bare `lodo` prints help; the dashboard no longer scans at start |
+| 11.8  | Dashboard: `i` opens the setup form; delete the old review screen and its `e` rename mode      |
+| 11.9  | `lodo dev` prints each name and its URL, then starts; it refuses while checks 1–5 fail         |
+| 11.10 | Scan: drop the host fixes (`-H`, turbo's `HOST_IP` line) and the `allowedDevOrigins` note      |
+| 11.11 | `lodo dev` warns about a scanned app with no name                                              |
+| 11.12 | README, AGENTS.md, usage text, this phase                                                      |
+
+The setup form, prefilled from the scan on a first run and from `domains.json` with `--edit`:
+
+```text
+lodo dev · ~/Projects/flowy
+
+Project   [flowy     ].test   address [127.0.1.2]
+
+Apps
+  apps/web  [web       ].flowy.test   port [3000]
+  apps/api  [api       ].flowy.test   port [4000]
+Services  compose.dev.yaml
+  mailpit   [mail      ].flowy.test   port [8025]
+
+[x] link compose.dev.yaml  DOCKER_HOST_IP=127.0.1.2
+[x] set 2 .env lines
+
+note  api: no dev command found
+
+tab/shift+tab move  space toggle  enter save + start  esc cancel
+```
+
+An empty app label names the app `<project>` alone; only one app may have it. The `.env` lines print masked
+(`***@`), as in the review they replace. Opened from the dashboard's `i`, `enter` saves and goes back to the
+list instead of starting the apps. `lodo scan` stays read-only and prints the same proposal.
+
+11.0 passes when each app binds the project's address, hot reload works through Caddy without
+`allowedDevOrigins` or Vite's `allowedHosts`, and a sign-in redirect still goes to the `.test` name. 11.1 and
+11.10 wait for it; if the `Host` rewrite breaks an app, it becomes a per-name switch.
+
+Settled for this phase: `lodo dev` always runs `<pm> run dev` and lets the project's script decide what starts;
+apps keep their own ports; Node only. `lodo ps` is the dashboard, bare `lodo` prints help, the setup form is the
+only review UI, and `lodo dev --edit` reopens it. Out of it: `docker compose up` from `lodo dev`, a
+`net.connect` rewrite for app-to-app calls (the scan's `.env` URL lines cover them), and any runtime but Node.
+
+Tests: `bind.cjs` under `node --test` with servers on listed and unlisted ports, skipped without `node`; package
+manager detection on fake trees; `lodo dev` with `run.Fake` records the `Replace` call and its env; the first
+run and `--edit` open the setup form (goldens for both, and for `tab` order and a toggle); `i` in the dashboard
+opens it too.
+
 ## Tests
 
 - `go test -race ./...`, table-driven, `t.TempDir()` for every path, `run.Fake` for every command.
