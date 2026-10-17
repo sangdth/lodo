@@ -22,11 +22,11 @@ import (
 // The name column fits its longest row; the compose column takes the rest.
 // The check column widens to secureWidth only while a name has HTTPS on.
 const (
+	enabledWidth    = 7 // its title; the cell is ✓ or empty
 	addressWidth    = 15
 	portWidth       = 5
-	ownWidth        = 3
-	checkWidth      = 13 // dns ✓  http ✓
-	secureWidth     = 22 // dns ✓  http ✓  https ✓
+	checkWidth      = 5  // dns ✓
+	secureWidth     = 14 // dns ✓  https ✓
 	minNameWidth    = 12
 	minComposeWidth = 8
 	columns         = 6
@@ -39,7 +39,7 @@ const (
 const (
 	boxWidthPercent  = 80
 	boxHeightPercent = 80
-	minBoxWidth      = 91
+	minBoxWidth      = 100
 )
 
 // formHeight is the lines the form needs: a title between two blank lines,
@@ -163,7 +163,7 @@ func (m Model) widths() (name, compose int) {
 	for _, d := range m.listed() {
 		name = max(name, ansi.StringWidth(indent(d)+"● "+d.Name))
 	}
-	room := m.innerWidth() - addressWidth - portWidth - ownWidth - m.checkWidth() - 2*columns
+	room := m.innerWidth() - enabledWidth - addressWidth - portWidth - m.checkWidth() - 2*columns
 	compose = room - name
 	if compose < minComposeWidth {
 		compose = minComposeWidth
@@ -178,10 +178,10 @@ func (m *Model) layout() {
 	name, compose := m.widths()
 	m.table.SetColumns([]table.Column{
 		{Title: "name", Width: name},
+		{Title: "enabled", Width: enabledWidth},
 		{Title: "address", Width: addressWidth},
 		{Title: "port", Width: portWidth},
 		{Title: "compose", Width: compose},
-		{Title: "own", Width: ownWidth},
 		{Title: "check", Width: m.checkWidth()},
 	})
 	m.table.SetWidth(m.innerWidth())
@@ -224,34 +224,58 @@ func (m Model) logHeight() int {
 }
 
 // rows renders one table row per domain, its mark indented with its name,
-// and the add row last: dim, unless the cursor is on it.
+// and the add row last: dim, unless it is highlighted.
 func (m Model) rows() []table.Row {
 	listed := m.listed()
 	_, composeWidth := m.widths()
+	highlighted := -1 // no row while the keys act on the services
+	if !m.onServices {
+		highlighted = m.table.Cursor()
+	}
 	rows := make([]table.Row, len(listed), len(listed)+1)
 	for i, d := range listed {
-		mark := "○"
-		switch {
-		case m.spins(d):
-			mark = m.spinner.View()
-		case d.Enabled:
-			mark = "●"
+		enabled := ""
+		if d.Enabled {
+			enabled = "✓"
 		}
 		port := ""
 		if d.Port > 0 {
 			port = strconv.Itoa(d.Port)
 		}
-		own := ""
-		if store.IsOwn(d.Address) {
-			own = "own"
-		}
-		rows[i] = table.Row{indent(d) + mark + " " + d.Name, d.Address, port, m.composeCell(d, composeWidth), own, m.checkCell(d)}
+		name := indent(d) + m.nameMark(d, i == highlighted) + " " + d.Name
+		rows[i] = table.Row{name, enabled, d.Address, port, m.composeCell(d, composeWidth), m.checkCell(d)}
 	}
 	add := addRowText
-	if !m.onAddRow() {
+	if highlighted < len(listed) {
 		add = m.styles.dim.Render(add)
 	}
 	return append(rows, table.Row{add, "", "", "", "", ""})
+}
+
+// nameMark shows how d's checks went, with the status bar's marks (state): a
+// green ● when every check passed, a red ○ when one failed, and a dim ○ when
+// nothing was checked: d is off, has no result yet, or fails only because of
+// a service turned off (expected). The spinner shows while a change or check
+// for d runs. The highlighted row's mark has no color, which would end the
+// row's highlight right after the mark.
+func (m Model) nameMark(d store.Domain, highlighted bool) string {
+	if m.spins(d) {
+		return m.spinner.View()
+	}
+	r, ok := m.results[d.Name]
+	mark, style := "○", m.styles.bad
+	switch {
+	case !d.Enabled || !ok:
+		style = m.styles.dim
+	case r.OK():
+		mark, style = "●", m.styles.ok
+	case m.expected(r):
+		style = m.styles.dim
+	}
+	if highlighted {
+		return mark
+	}
+	return style.Render(mark)
 }
 
 // indent moves a subdomain's row in by two columns per label under its
@@ -283,9 +307,6 @@ func (m Model) checkCell(d store.Domain) string {
 		return "…"
 	}
 	cell := "dns " + mark(r.Direct && r.System)
-	if d.Port > 0 {
-		cell += "  http " + mark(r.HTTP)
-	}
 	if r.Secure {
 		cell += "  https " + mark(r.HTTPS)
 	}

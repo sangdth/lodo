@@ -116,6 +116,7 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.table.Focus()
 		}
 		m.table.SetStyles(styles)
+		m.table.SetRows(m.rows()) // the row under the cursor draws its color only while it isn't highlighted
 		return m, nil
 	}
 	if m.onServices {
@@ -133,10 +134,10 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	var cmd tea.Cmd
-	wasOnAddRow := m.onAddRow()
+	cursor := m.table.Cursor()
 	m.table, cmd = m.table.Update(msg)
-	if m.onAddRow() != wasOnAddRow {
-		m.table.SetRows(m.rows()) // the add row is dim only while the cursor is elsewhere
+	if m.table.Cursor() != cursor {
+		m.table.SetRows(m.rows()) // the row under the cursor draws its mark and the add row without color
 	}
 	return m, cmd
 }

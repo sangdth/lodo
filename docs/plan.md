@@ -291,11 +291,11 @@ A failure at any step shows in the status line. The saved file stays as written;
 ```text
  lodo   caddy ●   dnsmasq ●   loopback ●   resolvers ●
  ─────────────────────────────────────────────────────────────────────────────
-  ● blog.test               127.0.1.1          own    dns ✓
-    ● dashboard.blog.test   127.0.1.1  :3000   own    dns ✓  http ✓
-    ● service.blog.test     127.0.1.1  :3002   own    dns ✓  http ✗ 502, app down
-  ● media.test              127.0.1.3          own    dns ✓
-  ○ old.test                127.0.0.1                 –
+  ● blog.test               ✓   127.0.1.1          dns ✓
+    ● dashboard.blog.test   ✓   127.0.1.1  :3000   dns ✓
+    ○ service.blog.test     ✓   127.0.1.1  :3002   dns ✓
+  ● media.test              ✓   127.0.1.3          dns ✓
+  ○ old.test                    127.0.0.1          –
     Add new domain
  ─────────────────────────────────────────────────────────────────────────────
  a sub  e edit  d del  space on/off  l link  p preview
@@ -310,8 +310,12 @@ A failure at any step shows in the status line. The saved file stays as written;
  enter save   esc cancel
 ```
 
-- **List:** a `bubbles/table` with name, address, port, own, on/off and the checks (dns, http). Up to 50
-  rows, no filtering. A subdomain's mark is indented with its name. The last row, `Add new domain`, is dim and
+- **List:** a `bubbles/table` with name, enabled, address, port, compose and the checks (dns, and
+  https when on). Up to 50 rows, no filtering. A subdomain's mark is indented with its name. `enabled` has a `✓` for a
+  name that is on. The mark sums up the checks with the status bar's marks: a green `●` when every check passed,
+  a red `○` when one failed, a dim `○` when nothing was checked (the name is off, or a service turned off explains
+  the failure). The selected row's mark has no color: the table draws that row in one style, and a colored mark
+  would end it. The last row, `Add new domain`, is dim and
   has no mark; `enter`, `space` or `a` on it opens the add form, and the keys line there lists only what works.
   `A` opens the add form from anywhere; `a` on a name opens it for a subdomain of that name.
 - **Form:** four `textinput`s: name, address, port and compose. The name field takes the labels only; a dimmed
@@ -370,8 +374,10 @@ A failure at any step shows in the status line. The saved file stays as written;
   the TUI still opens to turn it back on. The status line leaves out failures a service turned off explains:
   every name with dnsmasq off, the http probe with Caddy off. Only one place is highlighted at a time: the picked
   service, or the selected row.
-- **Layout:** everything sits in one bordered box at the middle of the terminal: 70% of the width, at least
-  84 columns (the whole width on a narrower terminal). Its height fits the names, up to 80% of the
+- **Layout:** everything sits in one bordered box at the middle of the terminal: 80% of the width, at least
+  100 columns (the whole width on a narrower terminal), where a 22-character name fits with HTTPS on. Names and
+  compose paths shrink to 12 and 8 columns and no further: below 75 columns with a name on HTTPS (66 without),
+  the table is wider than the box. Its height fits the names, up to 80% of the
   terminal; the log takes the full 80%.
 - **Cursor during a change:** a change runs in the background and the cursor moves freely. When it lands,
   the cursor goes to what the change is about (the new name, a deleted name's neighbor) only if it did not

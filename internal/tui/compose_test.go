@@ -229,16 +229,16 @@ func TestColumns(t *testing.T) {
 	for _, c := range m.table.Columns() {
 		titles = append(titles, c.Title)
 	}
-	if want := []string{"name", "address", "port", "compose", "own", "check"}; !slices.Equal(titles, want) {
+	if want := []string{"name", "enabled", "address", "port", "compose", "check"}; !slices.Equal(titles, want) {
 		t.Errorf("columns = %q, want %q", titles, want)
 	}
 	if got, want := m.table.Columns()[0].Width, ansi.StringWidth("  ● dashboard.crm.test"); got != want {
 		t.Errorf("name column = %d wide, want %d, the longest row", got, want)
 	}
-	if got := m.table.Rows()[2][3]; got != "~/Projects/flowy/compose.dev.yaml" {
+	if got := m.table.Rows()[2][4]; got != "~/Projects/flowy/compose.dev.yaml" {
 		t.Errorf("flowy.test's compose cell = %q, want the path from home", got)
 	}
-	if got := m.table.Rows()[3][3]; got != "–" {
+	if got := m.table.Rows()[3][4]; got != "–" {
 		t.Errorf("old.test's compose cell = %q, want – for no", got)
 	}
 }

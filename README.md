@@ -62,12 +62,13 @@ you turned off doesn't count.
 
 ```text
  lodo   caddy ●   dnsmasq ●   loopback ●   resolvers ●
- ────────────────────────────────────────────────────────────────────────────────────────────
- name                   address          port   compose                          own  check
- ● blog.test              127.0.1.1               ~/Code/blog/compose.dev.yaml     own  dns ✓
-   ● dashboard.blog.test  127.0.1.1        3000                                    own  dns ✓  http ✓
- ● media.test             127.0.1.3               –                                own  dns ✓
- ○ old.test               127.0.0.1                                                     –
+ ─────────────────────────────────────────────────────────────────────────────────────────────
+ name                     enabled  address          port   compose                       check
+ ● blog.test              ✓        127.0.1.1               ~/Code/blog/compose.dev.yaml  dns ✓
+   ○ api.blog.test        ✓        127.0.1.1        3001                                 dns ✓
+   ● dashboard.blog.test  ✓        127.0.1.1        3000                                 dns ✓
+ ● media.test             ✓        127.0.1.3               –                             dns ✓
+ ○ old.test                        127.0.0.1                                             –
    Add new domain
 ```
 
@@ -78,8 +79,12 @@ off, `tab` goes back to the names. A service turned off stays off through every 
 dnsmasq off no `.test` name resolves, and lodo removes its `/etc/resolver` files, so no other account's process
 can answer `.test` lookups on dnsmasq's port. Turning dnsmasq on writes them again.
 
-`●` marks a name that is on, `○` one that is off. Each change saves `domains.json`, applies it and checks every
-name. The status line at the bottom, above the key help, says what failed, or why the selected name fails.
+`enabled` has a `✓` for a name that is on: lodo writes it into dnsmasq's config, the resolver files and, with a
+port, Caddy's sites. The mark before a name sums up its check column with the top line's marks: a green `●` when
+every check passed, a red `○` when one failed, like `api.blog.test`'s app above, and a dim `○` when nothing was
+checked, because the name is off or a service you turned off explains it. The selected row draws its mark without
+color, which would cut the row's highlight. Each change saves `domains.json`, applies it and checks every name.
+The status line at the bottom, above the key help, says what failed, or why the selected name fails.
 
 | Key         | What it does                                       |
 | ----------- | -------------------------------------------------- |
@@ -251,7 +256,7 @@ and `.test` never is. Only `localhost` is exempt. For Google sign-in, either:
 `lodo apply` writes lodo's files from `domains.json`, restarts dnsmasq, runs the resolver script, restarts Caddy
 when its sites changed or it stopped, then checks every enabled name, prints one line each and exits 1 if one
 fails. The list does the same after every change. A name whose app isn't running is marked `–` in apply's
-output and doesn't count, since apply can't start it; the list still shows its `http ✗`. `lodo apply` refuses
+output and doesn't count, since apply can't start it; the list still shows its red `○`. `lodo apply` refuses
 to run before `lodo setup`. Use it after editing `domains.json` by hand:
 
 ```json
