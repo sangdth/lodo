@@ -163,10 +163,8 @@ func (e Env) checkDnsmasq(ctx context.Context, _ []store.Domain, _ []Result) Che
 			return fail("a root job, system/"+label+", runs dnsmasq and shadows lodo's", fixSetup)
 		}
 	}
-	st, err := brew.Info(ctx, e.Runner, p.Brew, "dnsmasq")
+	st := brew.Info(ctx, e.Runner, p, "dnsmasq")
 	switch {
-	case err != nil:
-		return fail(oneLine(err.Error()), fixSetup)
 	case st.Off():
 		return off("turned off: no .test name resolves until it is on")
 	case !st.Running:
@@ -394,11 +392,11 @@ func (e Env) checkCaddy(ctx context.Context, domains []store.Domain, _ []Result)
 	p := e.Paths
 	if sites == 0 {
 		if installed(p.Caddy) && system.CaddySetUp(p) {
-			st, err := brew.Info(ctx, e.Runner, p.Brew, "caddy")
+			st := brew.Info(ctx, e.Runner, p, "caddy")
 			switch {
-			case err == nil && st.Off():
+			case st.Off():
 				return off(caddyOff)
-			case err == nil && st.Running:
+			case st.Running:
 				return pass("running, no enabled domain has a port")
 			}
 		}
@@ -410,10 +408,8 @@ func (e Env) checkCaddy(ctx context.Context, domains []store.Domain, _ []Result)
 	if !system.CaddySetUp(p) {
 		return fail("Homebrew's Caddyfile does not import lodo's", fixSetup)
 	}
-	st, err := brew.Info(ctx, e.Runner, p.Brew, "caddy")
+	st := brew.Info(ctx, e.Runner, p, "caddy")
 	switch {
-	case err != nil:
-		return fail(oneLine(err.Error()), fixSetup)
 	case st.Off():
 		return off(caddyOff)
 	case !st.Running:

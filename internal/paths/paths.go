@@ -4,6 +4,7 @@ package paths
 
 import (
 	"fmt"
+	"os"
 	"os/user"
 	"path/filepath"
 )
@@ -16,6 +17,8 @@ type Paths struct {
 	User string
 	// Home is the user's home directory.
 	Home string
+	// UID is the user's uid; launchd names the user's jobs gui/<UID>/<label>.
+	UID int
 
 	// lodo's own files, owned by the user.
 	ConfigDir   string
@@ -34,6 +37,9 @@ type Paths struct {
 	SystemCaddyfileBackup string
 	CaddyRoot             string // the root certificate of the local CA Homebrew's caddy service makes
 	CaddyLog              string // where Homebrew's caddy service logs
+
+	// LaunchAgents holds the user's launchd jobs, Homebrew's services among them.
+	LaunchAgents string
 
 	// Root-owned files and directories.
 	LaunchDaemons string // system launchd jobs
@@ -75,15 +81,15 @@ func Default() (Paths, error) {
 	if err != nil {
 		return Paths{}, fmt.Errorf("look up current user: %w", err)
 	}
-	return build("/", u.HomeDir, u.Username), nil
+	return build("/", u.HomeDir, u.Username, os.Getuid()), nil
 }
 
-// ForTest returns paths that all live under root, for user "tester".
+// ForTest returns paths that all live under root, for user "tester", uid 501.
 func ForTest(root string) Paths {
-	return build(root, filepath.Join(root, "Users", "tester"), "tester")
+	return build(root, filepath.Join(root, "Users", "tester"), "tester", 501)
 }
 
-func build(root, home, user string) Paths {
+func build(root, home, user string, uid int) Paths {
 	sys := func(p string) string { return filepath.Join(root, p) }
 	config := filepath.Join(home, ".config", "lodo")
 	brew := sys("/opt/homebrew")
@@ -92,6 +98,7 @@ func build(root, home, user string) Paths {
 	return Paths{
 		User: user,
 		Home: home,
+		UID:  uid,
 
 		ConfigDir:   config,
 		DomainsJSON: filepath.Join(config, "domains.json"),
@@ -108,6 +115,8 @@ func build(root, home, user string) Paths {
 		SystemCaddyfileBackup: filepath.Join(etc, "Caddyfile.before-lodo"),
 		CaddyRoot:             filepath.Join(brew, "var/lib/caddy/pki/authorities/local/root.crt"),
 		CaddyLog:              filepath.Join(brew, "var/log/caddy.log"),
+
+		LaunchAgents: filepath.Join(home, "Library", "LaunchAgents"),
 
 		LaunchDaemons: daemons,
 		LoopbackPlist: filepath.Join(daemons, "io.lodo.loopback.plist"),

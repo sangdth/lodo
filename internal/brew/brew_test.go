@@ -1,12 +1,10 @@
 package brew_test
 
 import (
-	"context"
 	"errors"
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
 	"testing"
 
 	"github.com/sangdth/lodo/internal/brew"
@@ -16,7 +14,10 @@ import (
 
 // failure is what brew prints when launchctl refuses a job.
 const failure = "Error: Failure while executing; `/bin/launchctl bootstrap gui/501 " +
-	"/Users/tester/Library/LaunchAgents/homebrew.mxcl.dnsmasq.plist` exited with 5."
+	"/Users/tester/Library/LaunchAgents/sh.brew.dnsmasq.plist` exited with 5."
+
+// notLoaded is what launchctl print says for a job it has not loaded.
+const notLoaded = "Could not find service \"sh.brew.dnsmasq\" in domain for user gui: 501"
 
 func TestStatus_Off(t *testing.T) {
 	t.Parallel()
@@ -41,66 +42,60 @@ func TestInfo(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name    string
-		service string
-		file    string // testdata file brew prints
-		out     string // what brew prints when file is empty
-		stderr  string // brew fails with this when set
-		want    brew.Status
-		wantErr string // prefix of the error; empty means none
+		name  string
+		plist string // the plist that registers the job, under the test root; empty means none
+		print string // testdata file launchctl print shows; empty means the job is not loaded
+		label string // the label launchctl print is asked about
+		want  brew.Status
 	}{
 		{
-			name: "dnsmasq not loaded, captured", service: "dnsmasq", file: "dnsmasq-none.json",
-			want: brew.Status{User: "sang", Registered: true},
+			name: "running, captured", plist: "Users/tester/Library/LaunchAgents/sh.brew.dnsmasq.plist",
+			print: "print-running.txt", label: "sh.brew.dnsmasq",
+			want: brew.Status{Running: true, User: "tester", PID: 63372, Registered: true},
 		},
 		{
-			name: "caddy with null user and pid, captured", service: "caddy", file: "caddy-none.json",
-			want: brew.Status{},
+			name: "loaded but not running", plist: "Users/tester/Library/LaunchAgents/sh.brew.dnsmasq.plist",
+			print: "print-stopped.txt", label: "sh.brew.dnsmasq",
+			want: brew.Status{User: "tester", Registered: true},
 		},
 		{
-			name: "dnsmasq running, hand-made", service: "dnsmasq", file: "dnsmasq-started.json",
-			want: brew.Status{Running: true, User: "sang", PID: 4242, Registered: true},
+			name: "registered under the old label", plist: "Users/tester/Library/LaunchAgents/homebrew.mxcl.dnsmasq.plist",
+			print: "print-running.txt", label: "homebrew.mxcl.dnsmasq",
+			want: brew.Status{Running: true, User: "tester", PID: 63372, Registered: true},
 		},
-		{name: "empty list", service: "dnsmasq", out: "[]", wantErr: "parse dnsmasq status: "},
-		{name: "bad JSON", service: "caddy", out: `[{"name": "caddy",`, wantErr: "parse caddy status: "},
-		{name: "brew fails", service: "dnsmasq", stderr: failure, wantErr: "read dnsmasq status: "},
+		{
+			name: "registered, not loaded", plist: "Users/tester/Library/LaunchAgents/sh.brew.dnsmasq.plist",
+			label: "sh.brew.dnsmasq", want: brew.Status{User: "tester", Registered: true},
+		},
+		{
+			name: "a root plist", plist: "Library/LaunchDaemons/sh.brew.dnsmasq.plist",
+			label: "sh.brew.dnsmasq", want: brew.Status{User: "root", Registered: true},
+		},
+		{name: "turned off", label: "sh.brew.dnsmasq", want: brew.Status{}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			p := paths.ForTest(t.TempDir())
-			line := p.Brew + " services info " + tt.service + " --json"
+			root := t.TempDir()
+			p := paths.ForTest(root)
+			if tt.plist != "" {
+				writeFile(t, filepath.Join(root, tt.plist))
+			}
+			line := run.Line(p.Launchctl, "print", "gui/501/"+tt.label)
 			f := run.NewFake()
-			switch {
-			case tt.stderr != "":
-				f.Fail(line, tt.stderr)
-			case tt.file != "":
-				f.Set(line, readTestdata(t, tt.file))
-			default:
-				f.Set(line, tt.out)
+			if tt.print != "" {
+				f.Set(line, readTestdata(t, tt.print))
+			} else {
+				f.Fail(line, notLoaded)
 			}
 
-			got, err := brew.Info(t.Context(), f, p.Brew, tt.service)
+			got := brew.Info(t.Context(), f, p, "dnsmasq")
 			if calls := f.Calls(); !slices.Equal(calls, []string{line}) {
 				t.Errorf("calls = %q, want %q", calls, []string{line})
 			}
-			if tt.wantErr == "" {
-				if err != nil {
-					t.Fatalf("err = %v, want nil", err)
-				}
-				if got != tt.want {
-					t.Errorf("Info = %+v, want %+v", got, tt.want)
-				}
-				return
-			}
-			if err == nil || !strings.HasPrefix(err.Error(), tt.wantErr) {
-				t.Fatalf("err = %v, want it to start with %q", err, tt.wantErr)
-			}
-			if tt.stderr != "" {
-				if re, ok := errors.AsType[*run.Error](err); !ok || re.Stderr != tt.stderr {
-					t.Errorf("err = %v, want it to wrap a *run.Error carrying brew's stderr", err)
-				}
+			if got != tt.want {
+				t.Errorf("Info = %+v, want %+v", got, tt.want)
 			}
 		})
 	}
@@ -109,57 +104,95 @@ func TestInfo(t *testing.T) {
 func TestRestart(t *testing.T) {
 	t.Parallel()
 
-	testServiceCommand(t, brew.Restart, "restart")
-}
-
-func TestStop(t *testing.T) {
-	t.Parallel()
-
-	testServiceCommand(t, brew.Stop, "stop")
-}
-
-// testServiceCommand checks fn, which runs brew services <verb> <service>.
-func testServiceCommand(t *testing.T, fn func(context.Context, run.Runner, string, string) error, verb string) {
-	t.Helper()
-
 	tests := []struct {
-		name    string
-		service string
-		stderr  string // brew fails with this when set
+		name       string
+		registered bool
+		loaded     bool
+		stderr     string // the restart fails with this when set
+		want       string // the command that restarts it: kickstart or brew
 	}{
-		{name: "dnsmasq", service: "dnsmasq"},
-		{name: "caddy", service: "caddy"},
-		{name: "brew fails", service: "dnsmasq", stderr: failure},
+		{name: "loaded: kickstart", registered: true, loaded: true, want: "kickstart"},
+		{name: "kickstart fails", registered: true, loaded: true, stderr: "Boot-out failed", want: "kickstart"},
+		{name: "registered, not loaded: brew", registered: true, want: "brew"},
+		{name: "turned off: brew registers it", want: "brew"},
+		{name: "brew fails", stderr: failure, want: "brew"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
 			p := paths.ForTest(t.TempDir())
-			line := p.Brew + " services " + verb + " " + tt.service
+			if tt.registered {
+				writeFile(t, filepath.Join(p.LaunchAgents, "sh.brew.dnsmasq.plist"))
+			}
+			printLine := run.Line(p.Launchctl, "print", "gui/501/sh.brew.dnsmasq")
+			restart := run.Line(p.Brew, "services", "restart", "dnsmasq")
+			if tt.want == "kickstart" {
+				restart = run.Line(p.Launchctl, "kickstart", "-k", "gui/501/sh.brew.dnsmasq")
+			}
 			f := run.NewFake()
+			if !tt.loaded {
+				f.Fail(printLine, notLoaded)
+			}
 			if tt.stderr != "" {
-				f.Fail(line, tt.stderr)
+				f.Fail(restart, tt.stderr)
 			}
 
-			err := fn(t.Context(), f, p.Brew, tt.service)
-			if calls := f.Calls(); !slices.Equal(calls, []string{line}) {
-				t.Errorf("calls = %q, want %q", calls, []string{line})
+			err := brew.Restart(t.Context(), f, p, "dnsmasq")
+			if calls, want := f.Calls(), []string{printLine, restart}; !slices.Equal(calls, want) {
+				t.Errorf("calls = %q, want %q", calls, want)
 			}
-			if tt.stderr == "" {
-				if err != nil {
-					t.Errorf("err = %v, want nil", err)
-				}
-				return
-			}
-			want := verb + " " + tt.service + ": " + line + ": " + tt.stderr
-			if err == nil || err.Error() != want {
-				t.Errorf("err = %v, want %q", err, want)
-			}
-			if _, ok := errors.AsType[*run.Error](err); !ok {
-				t.Errorf("err = %v, want it to wrap the *run.Error", err)
-			}
+			checkErr(t, err, tt.stderr, "restart dnsmasq: "+restart+": "+tt.stderr)
 		})
+	}
+}
+
+func TestStop(t *testing.T) {
+	t.Parallel()
+
+	for _, stderr := range []string{"", failure} {
+		p := paths.ForTest(t.TempDir())
+		line := run.Line(p.Brew, "services", "stop", "caddy")
+		f := run.NewFake()
+		if stderr != "" {
+			f.Fail(line, stderr)
+		}
+
+		err := brew.Stop(t.Context(), f, p, "caddy")
+		if calls := f.Calls(); !slices.Equal(calls, []string{line}) {
+			t.Errorf("calls = %q, want %q", calls, []string{line})
+		}
+		checkErr(t, err, stderr, "stop caddy: "+line+": "+stderr)
+	}
+}
+
+// checkErr checks err is nil when stderr is empty, and otherwise is want and
+// wraps the *run.Error.
+func checkErr(t *testing.T, err error, stderr, want string) {
+	t.Helper()
+
+	if stderr == "" {
+		if err != nil {
+			t.Errorf("err = %v, want nil", err)
+		}
+		return
+	}
+	if err == nil || err.Error() != want {
+		t.Errorf("err = %v, want %q", err, want)
+	}
+	if _, ok := errors.AsType[*run.Error](err); !ok {
+		t.Errorf("err = %v, want it to wrap the *run.Error", err)
+	}
+}
+
+func writeFile(t *testing.T, path string) {
+	t.Helper()
+
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, nil, 0o644); err != nil {
+		t.Fatal(err)
 	}
 }
 

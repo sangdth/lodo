@@ -62,7 +62,7 @@ func Setup(ctx context.Context, p paths.Paths, r run.Runner, out io.Writer) erro
 		{"loopback addresses " + store.OwnAddress(store.OwnFirst) + "–" + store.OwnAddress(store.OwnLast) + " on lo0", "lodo setup", func() (string, error) { return "", installLoopback(ctx, p, r) }},
 		{"no " + p.ResolverLocal, "sudo rm " + p.ResolverLocal, func() (string, error) { return removeResolverLocal(ctx, p, r) }},
 		{"dnsmasq runs as you on port 53535", "brew services restart dnsmasq", func() (string, error) {
-			return "", brew.Restart(ctx, r, p.Brew, "dnsmasq")
+			return "", brew.Restart(ctx, r, p, "dnsmasq")
 		}},
 		{"Caddy serves lodo's sites on port 80", "brew services restart caddy", func() (string, error) { return "", setupCaddy(ctx, p, r) }},
 		{"Caddy's local CA trusted for HTTPS names", "lodo setup", func() (string, error) { return "", trustCaddy(ctx, p, r) }},

@@ -1,0 +1,73 @@
+gui/501/sh.brew.dnsmasq = {
+	active count = 1
+	path = /Users/tester/Library/LaunchAgents/sh.brew.dnsmasq.plist
+	type = LaunchAgent
+	state = not running
+
+	program = /opt/homebrew/opt/dnsmasq/sbin/dnsmasq
+	arguments = {
+		/opt/homebrew/opt/dnsmasq/sbin/dnsmasq
+		--keep-in-foreground
+		-C
+		/opt/homebrew/etc/dnsmasq.conf
+		-7
+		/opt/homebrew/etc/dnsmasq.d,*.conf
+	}
+
+	inherited environment = {
+		SSH_AUTH_SOCK => /var/run/com.apple.launchd.XXXXXXXXXX/Listeners
+	}
+
+	default environment = {
+		PATH => /usr/bin:/bin:/usr/sbin:/sbin
+	}
+
+	environment = {
+		OSLogRateLimit => 64
+		XPC_SERVICE_NAME => sh.brew.dnsmasq
+	}
+
+	domain = gui/501 [100030]
+	asid = 100030
+	minimum runtime = 10
+	exit timeout = 5
+	runs = 1
+	immediate reason = speculative
+	forks = 0
+	execs = 1
+	initialized = 1
+	trampolined = 1
+	started suspended = 0
+	proxy started suspended = 0
+	checked allocations = 0 (queried = 1)
+	checked allocations reason = no host
+	checked allocations flags = 0x0
+	last exit code = (never exited)
+
+	resource coalition = {
+		ID = 12727
+		type = resource
+		state = active
+		active count = 1
+		name = sh.brew.dnsmasq
+	}
+
+	jetsam coalition = {
+		ID = 12728
+		type = jetsam
+		state = active
+		active count = 1
+		name = sh.brew.dnsmasq
+	}
+
+	spawn type = daemon (3)
+	jetsam priority = 40
+	jetsam memory limit (active) = (unlimited)
+	jetsam memory limit (inactive) = (unlimited)
+	jetsamproperties category = daemon
+	jetsam thread limit = 32
+	cpumon = default
+	sanitizer flags = 0x0
+
+	properties = keepalive | runatload | inferred program
+}

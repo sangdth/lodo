@@ -33,8 +33,10 @@ stops the commit.
 - `internal/store`: `domains.json` and every domain rule: names, addresses, ports, projects, the own block, order.
   Other packages call its helpers (`Find`, `HasCompose`, `Domain.HasSite`, `ValidateProject`, `Suffix`) rather
   than spell a rule out again.
-- `internal/brew`, `internal/dnsmasq`, `internal/caddy`: `brew services`, the generated dnsmasq config and
-  resolver list, the generated Caddyfile.
+- `internal/brew`, `internal/dnsmasq`, `internal/caddy`: Homebrew's service jobs, the generated dnsmasq config
+  and resolver list, the generated Caddyfile. `brew` reads a job's state with `launchctl print` and restarts a
+  loaded job with `launchctl kickstart -k`, since each `brew` call costs 0.4s; only an unloaded job and `Stop`
+  go through `brew services`.
 - `internal/system`: setup, apply and uninstall; the root script, sudoers rule and loopback plist templates;
   lodo's blocks in Homebrew's dnsmasq.conf and Caddyfile. `Apply` refuses to run until setup has. `Tracked`: the
   one git call. `Generated`: the three generated files, which `WriteFiles` writes and doctor compares.

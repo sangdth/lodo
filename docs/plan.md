@@ -173,8 +173,9 @@ port=53535
 bind-interfaces
 ```
 
-A port above 1024 needs no root, so `brew services restart dnsmasq` runs as the user on every change. The job
-must live in the user's launchd domain (`~/Library/LaunchAgents/homebrew.mxcl.dnsmasq.plist`). A job started
+A port above 1024 needs no root, so dnsmasq restarts as the user whenever its config changes. The job
+must live in the user's launchd domain (`~/Library/LaunchAgents/sh.brew.dnsmasq.plist`, or
+`homebrew.mxcl.dnsmasq.plist` from older Homebrew). A job started
 with `sudo brew services start` lives in the system domain, runs as `nobody`, and is invisible to the user's
 `brew services`; `setup` stops it first.
 
@@ -273,11 +274,12 @@ Caddy idles when no row has a port, and rows without a port never need it.
 
 1. Save `domains.json` (written to a temp file, then renamed into place).
 2. Regenerate `dnsmasq.conf`, `resolvers` and `Caddyfile`.
-3. `/opt/homebrew/bin/brew services restart dnsmasq`.
+3. When `dnsmasq.conf` changed or dnsmasq isn't running, restart it: `launchctl kickstart -k
+   gui/<uid>/<label>` for a loaded job, `brew services restart dnsmasq` for any other.
 4. `sudo -n` the resolver script with the enabled names on its standard input, or none while dnsmasq is turned
    off. It writes `/etc/resolver/` and flushes the cache.
-5. When the `Caddyfile` changed and Caddy is set up: `caddy validate`, then `brew services restart caddy`.
-   A second later `brew services info caddy` must still show it running; when it doesn't, apply fails with the
+5. When the `Caddyfile` changed and Caddy is set up: `caddy validate`, then restart Caddy the same way.
+   A second later `launchctl print` must still show it running; when it doesn't, apply fails with the
    last error in `/opt/homebrew/var/log/caddy.log`. Setup and turning Caddy on check the same way.
 6. Per enabled domain: query dnsmasq on `127.0.0.1:53535`, then resolve through macOS
    (`dscacheutil -q host -a name <name>`); with a port, `GET http://<address>/` with `Host: <name>`. Any HTTP
@@ -409,7 +411,7 @@ A failure at any step shows in the status line. The saved file stays as written;
 
 | #   | Check                                                                              | Fix it prints        |
 | --- | ---------------------------------------------------------------------------------- | -------------------- |
-| 1   | dnsmasq installed; `brew services info dnsmasq --json` says running, as this user; | `lodo setup`          |
+| 1   | dnsmasq installed; its user job is registered and `launchctl print` shows a pid;   | `lodo setup`          |
 |     | no system job under `homebrew.mxcl.dnsmasq` or `sh.brew.dnsmasq`                   |                      |
 | 2   | system conf has lodo's block, exactly one `conf-file=` line, pointing at lodo's file | `lodo setup`          |
 | 3   | `system/io.lodo.loopback` is loaded and `127.0.1.1` is on `lo0` (count reported)    | `lodo setup`          |
@@ -419,8 +421,8 @@ A failure at any step shows in the status line. The saved file stays as written;
 | 6   | `dnsmasq.conf`, `resolvers` and `Caddyfile` equal what `domains.json` generates    | `lodo apply`          |
 | 7   | each enabled domain resolves, from dnsmasq directly and through macOS; with a      | `lodo apply`, `g`     |
 |     | port, Caddy answers for it                                                         |                      |
-| 8   | only when an enabled row has a port: Caddy installed; `brew services info caddy    | `brew install        |
-|     | --json` running; Homebrew's `Caddyfile` holds lodo's import line;                   | caddy`, `lodo setup`  |
+| 8   | only when an enabled row has a port: Caddy installed; its user job has a pid;      | `brew install        |
+|     | Homebrew's `Caddyfile` holds lodo's import line;                                   | caddy`, `lodo setup`  |
 |     | `caddy validate` passes on lodo's file; port 80 belongs to Caddy, else `lsof -nP    |                      |
 |     | -iTCP:80 -sTCP:LISTEN` names the listener                                          |                      |
 
@@ -465,7 +467,7 @@ internal/paths/         Paths struct: every file and tool path; Default() and Fo
 internal/run/           Runner interface over os/exec; Exec (real) and Fake (records calls, canned output)
 internal/fsutil/        atomic writes (temp file, then rename) that skip unchanged content
 internal/store/         domains.json load/save, name, address and port rules, own-block allocation
-internal/brew/          brew services restart and status (--json) for dnsmasq and caddy
+internal/brew/          state and restart of Homebrew's dnsmasq and caddy jobs, through launchctl
 internal/dnsmasq/       dnsmasq.conf and resolver-list generation, log tail
 internal/caddy/         Caddyfile generation and caddy validate
 internal/system/        setup, apply, uninstall; templates for the script, plist, sudoers, conf blocks
@@ -508,8 +510,8 @@ Each step ends with `go test -race ./...`, `go vet ./...` and `gofmt -l .` clean
 |      |                    | `ValidateName`, `ValidateAddress`, `ValidatePort`, `IsOwn`, `Project`, `Parent`        |
 |      |                    | (longest listed suffix), `NextFree` (`ErrBlockFull`); pure `Add`, `Update`, `Remove`,  |
 |      |                    | `Toggle` that return a new slice and enforce the uniqueness rules                      |
-| 1.4  | `internal/brew`    | `Restart` and `Stop(ctx, r, brew, service)`; `Info(ctx, r, brew, service)` returns     |
-|      |                    | `Status{Running, User, PID, Registered}` from `brew services info <service> --json`    |
+| 1.4  | `internal/brew`    | `Restart` and `Stop(ctx, r, p, service)`; `Info(ctx, r, p, service)` returns           |
+|      |                    | `Status{Running, User, PID, Registered}` from the plist and `launchctl print`          |
 | 1.5  | `internal/dnsmasq` | `Config(domains, logPath)`, `ResolverList(domains)`; `Tail(path, offset)` that         |
 |      |                    | restarts from 0 when the file shrank                                                   |
 | 1.6  | `internal/caddy`   | `Config(domains)`: one `http://<name> { reverse_proxy <address>:<port> }` site per     |
@@ -538,8 +540,8 @@ Tests for Phase 1:
 - `dnsmasq`: golden files `testdata/dnsmasq.conf.golden` and `testdata/resolvers.golden` (disabled domains
   left out, sorted, one subdomain sharing its parent's address and one with its own; dnsmasq answers from the
   longest matching `address=` line, so a subdomain's own line wins). `Tail` handles append and truncation.
-- `brew`: `Status` parses the dnsmasq and caddy JSON captured from this Mac; `Restart` runs
-  `brew services restart <service>` and returns stderr on failure.
+- `brew`: `Info` parses `launchctl print` output captured from this Mac; `Restart` kickstarts a loaded job,
+  runs `brew services restart <service>` for any other, and returns stderr on failure.
 - `caddy`: golden `testdata/Caddyfile.golden` with two sites, and the comment-only file when no row has a
   port; a disabled row with a port is left out; `Validate` passes the lodo file path and the adapter flag.
 - `system`: golden files for the rendered script, plist, sudoers and conf block with fixed fake paths.
