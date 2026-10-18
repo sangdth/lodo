@@ -17,6 +17,7 @@ Full details: [docs/reference.md](docs/reference.md).
 ## Install
 
 Needs macOS on Apple Silicon with Homebrew in `/opt/homebrew`, Go 1.27+, and an admin account.
+Never test on Linux but I think it's easy to get it works there.
 
 ```sh
 brew install dnsmasq caddy                          # caddy only for names with a port
@@ -48,22 +49,22 @@ project's `.env`.
 
 ### Dashboard keys
 
-| Key         | What it does                                       |
-| ----------- | -------------------------------------------------- |
-| `a`         | add a subdomain of the selected name               |
-| `A`         | add a name; also `enter` on `Add new domain`       |
-| `e`         | edit the selected name                             |
-| `d`         | delete it and its subdomains; `y` confirms         |
-| `space`     | turn it on or off                                  |
-| `s`         | turn HTTPS on or off; the name needs a port        |
-| `l`         | link it to the project's compose file and `.env`   |
-| `p`         | preview the compose file, as lodo would change it  |
-| `i`         | open the setup form for where `lodo ps` started    |
-| `g`         | show dnsmasq's query log; `g` or `esc` goes back   |
-| `r`         | read `domains.json` again and apply it             |
-| `tab`       | move the keys to Caddy and dnsmasq, and back       |
-| `q`         | quit; `ctrl+c` quits from anywhere                 |
-| `up` `down` | move; `j` and `k` work too                         |
+| Key         | What it does                                      |
+| ----------- | ------------------------------------------------- |
+| `a`         | add a subdomain of the selected name              |
+| `A`         | add a name; also `enter` on `Add new domain`      |
+| `e`         | edit the selected name                            |
+| `d`         | delete it and its subdomains; `y` confirms        |
+| `space`     | turn it on or off                                 |
+| `s`         | turn HTTPS on or off; the name needs a port       |
+| `l`         | link it to the project's compose file and `.env`  |
+| `p`         | preview the compose file, as lodo would change it |
+| `i`         | open the setup form for where `lodo ps` started   |
+| `g`         | show dnsmasq's query log; `g` or `esc` goes back  |
+| `r`         | read `domains.json` again and apply it            |
+| `tab`       | move the keys to Caddy and dnsmasq, and back      |
+| `q`         | quit; `ctrl+c` quits from anywhere                |
+| `up` `down` | move; `j` and `k` work too                        |
 
 ## Commands
 
@@ -100,12 +101,12 @@ rules for changing the code.
 go install ./cmd/lodo   # replaces ~/go/bin/lodo
 ```
 
-| What you changed                                      | After `go install`                                   |
-| ----------------------------------------------------- | ---------------------------------------------------- |
-| TUI, messages, checks, the CLI                        | nothing, just run `lodo ps` or `lodo dev`            |
-| The listen hook, `internal/dev/bind.cjs`              | nothing: the next `lodo dev` writes it               |
-| What goes into the generated dnsmasq or Caddy files   | `lodo apply`                                         |
-| The root script, the sudoers rule or the loopback job | `lodo setup`, which asks for your password           |
+| What you changed                                      | After `go install`                         |
+| ----------------------------------------------------- | ------------------------------------------ |
+| TUI, messages, checks, the CLI                        | nothing, just run `lodo ps` or `lodo dev`  |
+| The listen hook, `internal/dev/bind.cjs`              | nothing: the next `lodo dev` writes it     |
+| What goes into the generated dnsmasq or Caddy files   | `lodo apply`                               |
+| The root script, the sudoers rule or the loopback job | `lodo setup`, which asks for your password |
 
 `lodo doctor` tells you which applies: "script out of date" means `lodo setup`, and "generated files out of date"
 means `lodo apply`.
