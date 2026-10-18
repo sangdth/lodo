@@ -25,7 +25,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.setReport(msg.checks, msg.results)
 		m.layout()
 		m.placeCursor(here)
-		m.maybeOffer()
 		return m, nil
 	case changedMsg:
 		m.busy, m.err = false, msg.err
@@ -43,9 +42,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.layout()
 		m.placeCursor(here)
 		return m, nil
-	case scanMsg:
-		m.setScan(msg)
-		return m, nil
+	case setupScanMsg:
+		if m.mode != modeSetup {
+			return m, nil // the form closed while it scanned
+		}
+		s, cmd := m.setup.update(msg)
+		return m.afterSetup(s, cmd)
+	case linkScanMsg:
+		d, ok := store.Find(m.domains, msg.name)
+		switch {
+		case !ok:
+			return m, nil // deleted while the scan ran
+		case m.busy:
+			m.err = errors.New("a change is still running: press l again in a moment")
+			return m, nil
+		}
+		return m.linkProject(d, msg.files)
 	case previewMsg:
 		if msg.err != nil {
 			m.err = msg.err
@@ -98,8 +110,9 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.confirmKey(k)
 	case modeLog:
 		return m.logKey(msg)
-	case modeScan:
-		return m.scanKey(msg)
+	case modeSetup:
+		s, cmd := m.setup.update(msg)
+		return m.afterSetup(s, cmd)
 	case modePreview:
 		return m.previewKey(msg)
 	}
@@ -116,6 +129,7 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.table.Focus()
 		}
 		m.table.SetStyles(styles)
+		m.table.SetRows(m.rows()) // the row under the cursor draws its color only while it isn't highlighted
 		return m, nil
 	}
 	if m.onServices {
@@ -125,7 +139,10 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.openPreview() // reading the compose file is safe while a change runs
 	}
 	if k == "i" && m.origin.Dir != "" {
-		return m, m.runScan(true) // so is scanning the project
+		m.mode, m.err = modeSetup, nil
+		m.setup = NewSetup(m.ctx, m.backend, m.domains, m.origin)
+		m.setup.embedded = true
+		return m, m.setup.Init() // so is opening the setup form, which scans the project
 	}
 	if !m.busy {
 		if next, cmd, ok := m.listKey(k); ok {
@@ -133,12 +150,35 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	var cmd tea.Cmd
-	wasOnAddRow := m.onAddRow()
+	cursor := m.table.Cursor()
 	m.table, cmd = m.table.Update(msg)
-	if m.onAddRow() != wasOnAddRow {
-		m.table.SetRows(m.rows()) // the add row is dim only while the cursor is elsewhere
+	if m.table.Cursor() != cursor {
+		m.table.SetRows(m.rows()) // the row under the cursor draws its mark and the add row without color
 	}
 	return m, cmd
+}
+
+// afterSetup stores the setup form after it handled a message. Once the form
+// is done, the list shows again, and a form that saved hands over its change,
+// which runs with the spinner on the project's name: a done form returns no
+// command unless it saved. A second change must not start before the first
+// one ends, so the form stays open while one runs.
+func (m Model) afterSetup(s Setup, cmd tea.Cmd) (tea.Model, tea.Cmd) {
+	switch {
+	case !s.done:
+		m.setup = s
+		return m, cmd
+	case cmd != nil && m.busy:
+		s.done, s.err = false, errors.New("a change is still running: press enter again in a moment")
+		m.setup = s
+		return m, nil
+	}
+	m.setup, m.mode = s, modeList
+	if cmd == nil {
+		return m, nil
+	}
+	m.selectName = s.projectName()
+	return m.start(m.selectName, cmd)
 }
 
 // openAdd opens the add form, for a subdomain of parent when it is set.
@@ -179,7 +219,7 @@ func (m Model) listKey(k string) (Model, tea.Cmd, bool) {
 			return m, nil, true
 		}
 		m.selectName = d.Name
-		started, cmd := m.start(d.Name, m.change(next))
+		started, cmd := m.start(d.Name, m.change(next, true))
 		return started, cmd, true
 	case "s":
 		next, cmd := m.toggleHTTPS(d)
@@ -209,7 +249,7 @@ func (m Model) toggleHTTPS(d store.Domain) (Model, tea.Cmd) {
 		return m, nil
 	}
 	m.selectName = d.Name
-	return m.start(d.Name, m.change(next))
+	return m.start(d.Name, m.change(next, true))
 }
 
 // serviceKey handles the keys while they act on the status bar's services:
@@ -282,11 +322,11 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 		m.adding = d
 	}
 	o := m.form.original
-	cmd := m.change(next)
+	cmd := m.change(next, true)
 	if m.form.editing != "" && d.Name == o.Name && d.Address == o.Address && d.Port == o.Port {
 		cmd = m.save(next) // only the compose file changed, which nothing applies
 	}
-	if linked(d) && (d.Compose != o.Compose || d.Address != o.Address) {
+	if store.HasCompose(d.Compose) && (d.Compose != o.Compose || d.Address != o.Address) {
 		cmd = m.thenLink(cmd, d) // the .env follows the file and the address
 	}
 	return m.start(cmp.Or(m.form.editing, d.Name), cmd)
@@ -343,5 +383,5 @@ func (m Model) confirmKey(k string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.selectName = neighbor(m.domains, next, m.target)
-	return m.start(m.target, m.change(next))
+	return m.start(m.target, m.change(next, true))
 }

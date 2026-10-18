@@ -1,7 +1,9 @@
 package check_test
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -127,8 +129,8 @@ func TestEnv_Run(t *testing.T) {
 func TestEnv_Run_Dnsmasq(t *testing.T) {
 	t.Parallel()
 
-	setBrew := func(running bool, user string) func(*testing.T, *mac) {
-		return func(_ *testing.T, m *mac) { m.fake.Set(brewInfo(m.p, "dnsmasq"), brewJSON("dnsmasq", running, user)) }
+	setDnsmasq := func(state string) func(*testing.T, *mac) {
+		return func(t *testing.T, m *mac) { t.Helper(); setService(t, m, "dnsmasq", state) }
 	}
 	runCases(t, []runCase{
 		{
@@ -151,33 +153,19 @@ func TestEnv_Run_Dnsmasq(t *testing.T) {
 			want: dnsmasqCheck.fail("a root job, system/sh.brew.dnsmasq, runs dnsmasq and shadows lodo's", "lodo setup"),
 		},
 		{
-			name: "brew fails",
-			change: func(_ *testing.T, m *mac) {
-				m.fake.Fail(brewInfo(m.p, "dnsmasq"), `Error: No available formula with the name "dnsmasq".`)
-			},
-			want: dnsmasqCheck.fail(
-				`read dnsmasq status: {root}/opt/homebrew/bin/brew services info dnsmasq --json: Error: No available formula with the name "dnsmasq".`,
-				"lodo setup"),
-		},
-		{
 			name:   "not running",
-			change: setBrew(false, "tester"),
+			change: setDnsmasq(stopped),
 			want:   dnsmasqCheck.fail("not running", "lodo setup"),
 		},
 		{
 			name:   "turned off",
-			change: func(_ *testing.T, m *mac) { m.fake.Set(brewInfo(m.p, "dnsmasq"), brewOffJSON("dnsmasq")) },
+			change: func(t *testing.T, m *mac) { t.Helper(); setService(t, m, "dnsmasq", off) },
 			want:   dnsmasqCheck.off("turned off: no .test name resolves until it is on"),
 		},
 		{
-			name:   "runs as another user",
-			change: setBrew(true, "nobody"),
-			want:   dnsmasqCheck.fail("runs as nobody", "lodo setup"),
-		},
-		{
-			name:   "brew names no user",
-			change: setBrew(true, ""),
-			want:   dnsmasqCheck.pass("running as tester, pid 42"),
+			name:   "runs as root",
+			change: setDnsmasq(asRoot),
+			want:   dnsmasqCheck.fail("runs as root", "lodo setup"),
 		},
 	})
 }
@@ -399,7 +387,7 @@ func TestEnv_Run_Resolvers(t *testing.T) {
 			name: "dnsmasq turned off, lodo's files removed",
 			change: func(t *testing.T, m *mac) {
 				t.Helper()
-				m.fake.Set(brewInfo(m.p, "dnsmasq"), brewOffJSON("dnsmasq"))
+				setService(t, m, "dnsmasq", off)
 				for _, name := range []string{"crm.test", "dashboard.crm.test"} {
 					removeFile(t, filepath.Join(m.p.ResolverDir, name))
 				}
@@ -409,14 +397,14 @@ func TestEnv_Run_Resolvers(t *testing.T) {
 		},
 		{
 			name:   "dnsmasq turned off, lodo's files left",
-			change: func(_ *testing.T, m *mac) { m.fake.Set(brewInfo(m.p, "dnsmasq"), brewOffJSON("dnsmasq")) },
+			change: func(t *testing.T, m *mac) { t.Helper(); setService(t, m, "dnsmasq", off) },
 			want:   resolversCheck.off("dnsmasq turned off, but lodo apply should remove these: crm.test, dashboard.crm.test"),
 		},
 		{
 			name: "dnsmasq turned off, script out of date",
 			change: func(t *testing.T, m *mac) {
 				t.Helper()
-				m.fake.Set(brewInfo(m.p, "dnsmasq"), brewOffJSON("dnsmasq"))
+				setService(t, m, "dnsmasq", off)
 				writeFile(t, m.p.Script, "#!/bin/sh\nexit 0\n")
 			},
 			want: resolversCheck.fail("script out of date", "lodo setup"),
@@ -434,7 +422,7 @@ func TestEnv_Run_ResolverForLocal(t *testing.T) {
 			name: "present",
 			change: func(t *testing.T, m *mac) {
 				t.Helper()
-				writeFile(t, filepath.Join(m.p.ResolverDir, "local"), "nameserver 127.0.0.1\nport 53535\n")
+				writeFile(t, m.p.ResolverLocal, "nameserver 127.0.0.1\nport 53535\n")
 			},
 			want: want,
 		},
@@ -442,7 +430,7 @@ func TestEnv_Run_ResolverForLocal(t *testing.T) {
 			name: "a dangling symlink",
 			change: func(t *testing.T, m *mac) {
 				t.Helper()
-				symlink(t, filepath.Join(m.root, "nowhere"), filepath.Join(m.p.ResolverDir, "local"))
+				symlink(t, filepath.Join(m.root, "nowhere"), m.p.ResolverLocal)
 			},
 			want: want,
 		},
@@ -505,12 +493,13 @@ func TestEnv_Run_NamesResolve(t *testing.T) {
 		},
 		{
 			name: "dnsmasq turned off",
-			change: func(_ *testing.T, m *mac) {
-				m.fake.Set(brewInfo(m.p, "dnsmasq"), brewOffJSON("dnsmasq"))
+			change: func(t *testing.T, m *mac) {
+				t.Helper()
+				setService(t, m, "dnsmasq", off)
 				m.fake.Set(dscacheutil(m.p, "crm.test"), macOSOutput("crm.test", "127.0.1.9"))
 			},
 			want: namesCheck.fail("crm.test: macOS: 127.0.1.9, want 127.0.1.1",
-				"turn dnsmasq on: brew services start dnsmasq, or tab and space in lodo"),
+				"turn dnsmasq on: brew services start dnsmasq, or tab and space in lodo ps"),
 		},
 		{
 			name: "caddy cannot reach an app",
@@ -543,8 +532,8 @@ func TestEnv_Run_NamesResolve(t *testing.T) {
 				m.domains = slices.Clone(m.domains)
 				m.domains[1].Port = m.app
 			},
-			want: namesCheck.fail("dashboard.crm.test: an app listens on [::1]:{app}, not on the name's address: lodo scan shows the host fix",
-				"lodo scan in the app's project, then start the app with the host it shows"),
+			want: namesCheck.fail("dashboard.crm.test: an app listens on [::1]:{app}, not on the name's address: start it with lodo dev in its project",
+				"stop the app, then start it with lodo dev in its project"),
 		},
 		{
 			name: "one app on Localhost, two names on its port",
@@ -562,8 +551,8 @@ func TestEnv_Run_NamesResolve(t *testing.T) {
 				m.domains[1].Port, m.domains[2].Port = m.app, m.app
 			},
 			want: namesCheck.fail("a.crm.test, b.crm.test: "+
-				"an app listens on [::1]:{app}, not on the name's address: lodo scan shows the host fix",
-				"lodo scan in the app's project, then start the app with the host it shows"),
+				"an app listens on [::1]:{app}, not on the name's address: start it with lodo dev in its project",
+				"stop the app, then start it with lodo dev in its project"),
 		},
 		{
 			name: "an app answers caddy badly",
@@ -628,7 +617,7 @@ func TestEnv_Run_Caddy(t *testing.T) {
 			domains: []store.Domain{
 				{Name: "crm.test", Address: "127.0.1.1", Enabled: true},
 			},
-			change: func(_ *testing.T, m *mac) { m.fake.Set(brewInfo(m.p, "caddy"), brewJSON("caddy", false, "")) },
+			change: func(t *testing.T, m *mac) { t.Helper(); setService(t, m, "caddy", stopped) },
 			want:   caddyCheck.skip("no enabled domain has a port"),
 		},
 		{
@@ -636,12 +625,12 @@ func TestEnv_Run_Caddy(t *testing.T) {
 			domains: []store.Domain{
 				{Name: "crm.test", Address: "127.0.1.1", Enabled: true},
 			},
-			change: func(_ *testing.T, m *mac) { m.fake.Set(brewInfo(m.p, "caddy"), brewOffJSON("caddy")) },
+			change: func(t *testing.T, m *mac) { t.Helper(); setService(t, m, "caddy", off) },
 			want:   caddyCheck.off("turned off: no http://name.test reaches its port until it is on"),
 		},
 		{
 			name:   "turned off",
-			change: func(_ *testing.T, m *mac) { m.fake.Set(brewInfo(m.p, "caddy"), brewOffJSON("caddy")) },
+			change: func(t *testing.T, m *mac) { t.Helper(); setService(t, m, "caddy", off) },
 			want:   caddyCheck.off("turned off: no http://name.test reaches its port until it is on"),
 		},
 		{
@@ -658,16 +647,8 @@ func TestEnv_Run_Caddy(t *testing.T) {
 			want: caddyCheck.fail("Homebrew's Caddyfile does not import lodo's", "lodo setup"),
 		},
 		{
-			name: "brew fails",
-			change: func(_ *testing.T, m *mac) {
-				m.fake.Fail(brewInfo(m.p, "caddy"), "Error: Formula caddy is not installed.")
-			},
-			want: caddyCheck.fail("read caddy status: {root}/opt/homebrew/bin/brew services info caddy --json: Error: Formula caddy is not installed.",
-				"lodo setup"),
-		},
-		{
 			name:   "not running",
-			change: func(_ *testing.T, m *mac) { m.fake.Set(brewInfo(m.p, "caddy"), brewJSON("caddy", false, "")) },
+			change: func(t *testing.T, m *mac) { t.Helper(); setService(t, m, "caddy", stopped) },
 			want:   caddyCheck.fail("not running", "lodo setup"),
 		},
 		{
@@ -744,7 +725,7 @@ func TestEnv_Prerequisites_DnsmasqOff(t *testing.T) {
 	t.Parallel()
 
 	m := newMac(t, healthyDomains)
-	m.fake.Set(brewInfo(m.p, "dnsmasq"), brewOffJSON("dnsmasq"))
+	setService(t, m, "dnsmasq", off)
 	if failed := check.Failed(m.env.Prerequisites(t.Context(), m.domains)); len(failed) != 0 {
 		t.Errorf("failed = %+v; a dnsmasq turned off must not keep the TUI shut", failed)
 	}
@@ -846,8 +827,8 @@ func newMac(t *testing.T, domains []store.Domain) *mac {
 	}
 	m.fake.Set(launchctlPrint(p, system.LoopbackLabel), "system/io.lodo.loopback = {\n\tstate = not running\n}\n")
 	m.fake.Set(run.Line(p.Ifconfig, "lo0"), lo0(store.OwnLast))
-	m.fake.Set(brewInfo(p, "dnsmasq"), brewJSON("dnsmasq", true, "tester"))
-	m.fake.Set(brewInfo(p, "caddy"), brewJSON("caddy", true, "tester"))
+	setService(t, m, "dnsmasq", running)
+	setService(t, m, "caddy", running)
 	m.fake.Set(run.Line(p.Sudo, "-n", "-k", "-l", p.Script), p.Script+"\n")
 	answers := map[string]string{}
 	for _, d := range domains {
@@ -885,29 +866,38 @@ func launchctlPrint(p paths.Paths, label string) string {
 	return run.Line(p.Launchctl, "print", "system/"+label)
 }
 
-func brewInfo(p paths.Paths, service string) string {
-	return run.Line(p.Brew, "services", "info", service, "--json")
-}
+// Service states setService makes brew.Info read.
+const (
+	running = "running" // registered, loaded, with a process
+	stopped = "stopped" // registered and loaded, no process: it crashed
+	off     = "off"     // no plist and not loaded, as brew services stop leaves it
+	asRoot  = "root"    // a root plist registers it
+)
 
-// brewJSON is brew services info --json output, trimmed to the fields lodo
-// reads, for a registered job. An empty user is JSON null, as brew prints for
-// a job that never ran.
-func brewJSON(service string, running bool, user string) string {
-	u, pid, status := "null", "null", "none"
-	if user != "" {
-		u = strconv.Quote(user)
+// setService makes service's job look like state to brew.Info: it writes or
+// removes the plist and sets what launchctl print shows.
+func setService(t *testing.T, m *mac, service, state string) {
+	t.Helper()
+	label := "sh.brew." + service
+	agent := filepath.Join(m.p.LaunchAgents, label+".plist")
+	line := run.Line(m.p.Launchctl, "print", "gui/501/"+label)
+	if err := os.Remove(agent); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		t.Fatal(err)
 	}
-	if running {
-		pid, status = "42", "started"
+	switch state {
+	case running, stopped:
+		writeFile(t, agent, "")
+	case asRoot:
+		writeFile(t, filepath.Join(m.p.LaunchDaemons, label+".plist"), "")
 	}
-	return fmt.Sprintf(`[{"name":%q,"running":%t,"loaded":%t,"user":%s,"pid":%s,"status":%q,"registered":true}]`,
-		service, running, running, u, pid, status)
-}
-
-// brewOffJSON is brew services info --json output for a job brew services
-// stop turned off: stopped and no longer registered.
-func brewOffJSON(service string) string {
-	return fmt.Sprintf(`[{"name":%q,"running":false,"loaded":false,"user":null,"pid":null,"status":"none","registered":false}]`, service)
+	switch state {
+	case running, asRoot:
+		m.fake.Set(line, "gui/501/"+label+" = {\n\tstate = running\n\tpid = 42\n}\n")
+	case stopped:
+		m.fake.Set(line, "gui/501/"+label+" = {\n\tstate = not running\n}\n")
+	default:
+		m.fake.Fail(line, `Could not find service "`+label+`" in domain for user gui: 501`)
+	}
 }
 
 // lo0 is ifconfig lo0 output on a Mac with the first n own addresses.

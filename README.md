@@ -3,7 +3,8 @@
 lodo lets several projects run on one Mac at the same time, each database and app on its usual port. Every
 project gets its own loopback address, like `127.0.1.3`, and a name that ends in `.test`, so media's Postgres
 listens on `127.0.1.3:5432` while blog's listens on `127.0.1.1:5432`. lodo is a terminal app: it keeps the list
-of names and makes dnsmasq, macOS's `/etc/resolver` files and, for names with a port, Caddy follow it.
+of names and makes dnsmasq, macOS's `/etc/resolver` files and, for names with a port, Caddy follow it, and
+`lodo dev` starts a project's Node apps on their names.
 
 ![lodo's terminal app listing two names, each with its address, port, compose file and checks](docs/images/lodo-screenshot.png)
 
@@ -57,17 +58,106 @@ a password, and neither does `lodo apply`.
 
 ## Using lodo
 
-`lodo` opens the list of names. It refuses to open while `lodo doctor` checks 1–5 fail, and prints them; a dnsmasq
-you turned off doesn't count.
+Run `lodo setup` once per Mac. After that, `lodo dev` is the command you use every day, in each project's folder:
+
+```sh
+cd ~/Projects/shop
+lodo dev
+```
+
+The first time, lodo doesn't list the project yet, so `lodo dev` opens the setup form: you pick the project's
+name and its apps' names, and `enter` saves them. Every later run starts the apps on their names right away, and
+`lodo dev --edit` opens the form again. `lodo ps` opens the dashboard, the list of every name with its checks.
+`lodo` alone prints the help.
+
+`lodo dev` and `lodo ps` refuse to start while `lodo doctor` checks 1–5 fail, and print them; a dnsmasq you turned
+off doesn't count.
+
+### lodo dev
+
+In a project, `lodo dev`:
+
+1. opens the setup form when no name in the list belongs to the project, or with `--edit`. `esc` saves nothing
+   and exits;
+2. warns about each app the scan found that has no name: `warn  apps/api has no name: lodo dev --edit adds
+   api.shop.test`;
+3. picks the package manager: `packageManager` in the project's `package.json`, else the lock file
+   (`pnpm-lock.yaml`, `yarn.lock`, `bun.lock` or `bun.lockb`, `package-lock.json`), else npm. It refuses a
+   project whose `package.json` has no `dev` script;
+4. prints each name and the address its app listens on, then hands the terminal to `<pm> run dev`, so `ctrl+c`
+   goes straight to the package manager:
+
+```text
+web.shop.test  https://web.shop.test  -> 127.0.1.1:3001
+starting: pnpm run dev
+```
+
+The apps get their address from a small Node hook. `lodo dev` writes `~/.config/lodo/bind.cjs` and
+`~/.config/lodo/dev/shop.test.cjs`, which holds the project's ports and addresses, and runs the dev script with
+`NODE_OPTIONS="--require …/shop.test.cjs"`, which every Node process under it loads, through pnpm and turbo too.
+A server that listens on one of the project's ports with no host, `localhost`, `127.0.0.1`, `::1`, `0.0.0.0` or
+`::` then listens on the project's address instead; other ports stay as they are. The hook also adds `.shop.test`
+to `__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS`, so Vite accepts the project's names with no `allowedHosts`. No project
+file changes. Only Node apps get it: start any other dev server on its address yourself, and run
+`docker compose up` yourself. The hook tells apps apart only by port, so `lodo dev` refuses a project with two
+names on one port and two addresses.
+
+Outside a project, `lodo dev` exits 1.
+
+### The setup form
+
+```text
+lodo dev · ~/Projects/flowy
+
+Project   flowy .test   address 127.0.1.2
+
+Apps
+  apps/web  web.flowy.test   port 3000
+  apps/api  api.flowy.test   port 4000
+
+Services  compose.dev.yaml
+  mail      mail.flowy.test  port 8025
+
+[x] link compose.dev.yaml  DOCKER_HOST_IP=127.0.1.2
+[x] set 2 .env lines
+    apps/api/.env:1  DATABASE_URL=postgres://***@flowy.test:5432/flowy
+    apps/api/.env:2  WEB_URL=http://web.flowy.test
+
+tab/shift+tab move  space toggle  enter save + start  esc cancel
+```
+
+The form shows what [the scan](#what-the-scan-reads) found: the project's name and address, then a row per app
+and per web page in its compose file, with a label and a port. The rows hold the project's listed names first,
+then the ones the scan proposes. Each label gets `.<project>.test`; an empty label gives the app the project's
+name alone, such as `flowy.test`, and only one row may have it. The two toggles link the compose file and set the
+`.env` lines shown, masked; the scan's notes follow them. `tab` and `shift+tab` move, `space` turns a toggle on or
+off, `enter` saves everything in one change, and `esc` cancels. A field that breaks a rule says why under it when
+you press `enter`. From `lodo dev`, `enter` saves and then starts the apps; from the dashboard's `i`, it saves and
+goes back to the list.
+
+The project's name is yours: the form suggests the folder's, such as `flowy.test`, and the subdomains follow
+what you type. Once saved, the name keeps the project's folder as `root` in `domains.json`, so later scans know
+the project by it. A name already listed that links a compose file in the project counts too. A link to a compose
+file that is gone, after you rename the project's folder or move the file, counts as none, and the form offers
+the project's file again. Typing a listed name that has no folder, or whose folder is gone, takes that name over:
+it keeps its settings and gets this folder. A listed name whose folder is still there is refused:
+`flow.test belongs to ~/Projects/flow: give this project another name`. A later scan keeps a listed name of the
+project on an app's port and address as that app's. A `.env` line is set with `l`'s guards below, and only while
+it still reads as the scan read it.
+
+### The dashboard
+
+`lodo ps` opens the list of names.
 
 ```text
  lodo   caddy ●   dnsmasq ●   loopback ●   resolvers ●
- ────────────────────────────────────────────────────────────────────────────────────────────
- name                   address          port   compose                          own  check
- ● blog.test              127.0.1.1               ~/Code/blog/compose.dev.yaml     own  dns ✓
-   ● dashboard.blog.test  127.0.1.1        3000                                    own  dns ✓  http ✓
- ● media.test             127.0.1.3               –                                own  dns ✓
- ○ old.test               127.0.0.1                                                     –
+ ─────────────────────────────────────────────────────────────────────────────────────────────
+ name                     enabled  address          port   compose                       check
+ ● blog.test              ✓        127.0.1.1               ~/Code/blog/compose.dev.yaml  dns ✓
+   ○ api.blog.test        ✓        127.0.1.1        3001                                 dns ✓
+   ● dashboard.blog.test  ✓        127.0.1.1        3000                                 dns ✓
+ ● media.test             ✓        127.0.1.3               –                             dns ✓
+ ○ old.test                        127.0.0.1                                             –
    Add new domain
 ```
 
@@ -78,8 +168,12 @@ off, `tab` goes back to the names. A service turned off stays off through every 
 dnsmasq off no `.test` name resolves, and lodo removes its `/etc/resolver` files, so no other account's process
 can answer `.test` lookups on dnsmasq's port. Turning dnsmasq on writes them again.
 
-`●` marks a name that is on, `○` one that is off. Each change saves `domains.json`, applies it and checks every
-name. The status line at the bottom, above the key help, says what failed, or why the selected name fails.
+`enabled` has a `✓` for a name that is on: lodo writes it into dnsmasq's config, the resolver files and, with a
+port, Caddy's sites. The mark before a name sums up its check column with the top line's marks: a green `●` when
+every check passed, a red `○` when one failed, like `api.blog.test`'s app above, and a dim `○` when nothing was
+checked, because the name is off or a service you turned off explains it. The selected row draws its mark without
+color, which would cut the row's highlight. Each change saves `domains.json`, applies it and checks every name.
+The status line at the bottom, above the key help, says what failed, or why the selected name fails.
 
 | Key         | What it does                                       |
 | ----------- | -------------------------------------------------- |
@@ -91,7 +185,7 @@ name. The status line at the bottom, above the key help, says what failed, or wh
 | `s`         | turn HTTPS on or off; the name needs a port        |
 | `l`         | link it to the project's compose file and `.env`   |
 | `p`         | preview the compose file, as lodo would change it  |
-| `i`         | scan the project lodo started in and review it     |
+| `i`         | open the setup form for where `lodo ps` started    |
 | `g`         | show dnsmasq's query log; `g` or `esc` goes back   |
 | `r`         | read `domains.json` again and apply it             |
 | `tab`       | move the keys to Caddy and dnsmasq, and back       |
@@ -103,11 +197,12 @@ you type a new name, the form fills in the address: the parent's address for a s
 the lowest free own address. Typing in the address field stops that. A port needs Caddy installed and set up;
 until then the form says what to run.
 
-### Scanning a project
+### What the scan reads
 
-When `lodo` starts inside a project, it scans it. A project is the git root above the folder, or outside git the
-nearest folder above it with a lock file and its manifest (`pnpm-lock.yaml` and `package.json`, `go.sum` and
-`go.mod`); your home folder never counts, and `skills-lock.json` is no lock file. The scan reads, and never writes:
+`lodo dev`, the setup form and `lodo scan` all start from a scan of the project. A project is the git root above
+the folder, or outside git the nearest folder above it with a lock file and its manifest (`pnpm-lock.yaml` and
+`package.json`, `go.sum` and `go.mod`); your home folder never counts, and `skills-lock.json` is no lock file. The
+scan reads, and never writes:
 
 - the apps: the root's `package.json` `dev` script, or in a workspace (`pnpm-workspace.yaml` or `workspaces`)
   each package whose `dev` script starts a dev server lodo knows, and any package under `apps/` with a `dev`
@@ -117,7 +212,7 @@ nearest folder above it with a lock file and its manifest (`pnpm-lock.yaml` and 
 - each app's port: `-p` or `--port`, `PORT=` before the command, a literal `port:` in `vite.config` or
   `astro.config`, else the framework's own: 3000 for Next, 5173 for Vite, 4200 for Angular, and so on. NestJS,
   Create React App and an unknown command first read `PORT=` from the app's `.env`, then `.env.example`; NestJS
-  has no default. A port it can't read stays empty, with a note.
+  has no default. A port it can't read stays empty, with a note to set it in `lodo dev --edit`.
 - the compose file: up to 3 folders deep, `.dev` first, never in `node_modules`, `vendor` or `testdata`.
 - the web pages in that file: Mailpit (`axllent/mailpit`, from any registry, at any tag) and the port on your Mac
   its inbox, port 8025 in the container, is published on.
@@ -127,38 +222,18 @@ nearest folder above it with a lock file and its manifest (`pnpm-lock.yaml` and 
   `127.0.0.1`. The root's `.env` counts only when the root is the app; in a workspace it feeds compose.
 
 It proposes the project's name, a subdomain per app, such as `admin.media.test` with its port, `mail.media.test`
-for Mailpit's inbox, the compose file to link, the `.env` lines to set, and the `dev` lines that listen on every
-address. All of a project's apps share its address, and so does the inbox. The inbox is skipped when a listed
-name has its port there, or when the project runs another compose file than the one the scan read, or none. When
-two want the same port, an app whose port only its code sets (NestJS, Create React App, an unknown command) keeps
-it, and the others move up: Create React App on 3000, then Next on 3001, Vite on 3002. The `dev` line the review
-shows then adds `--port 3001` too; until you change it, `lodo doctor` lists that name as not running. Two apps
-that can't move get two addresses. A Next app whose `next.config` has no `allowedDevOrigins` gets a note: Next 16.2 and later
-refuse hot reload from other hosts.
+for Mailpit's inbox, the compose file to link and the `.env` lines to set. All of a project's apps share its
+address, and so does the inbox. Every app keeps its own port; when another name already has that port on the
+address, the app gets the next free address and a note to give one of them another port, since `lodo dev` binds
+one app per port. The inbox is skipped when a listed name has its port there, or when
+the project runs another compose file than the one the scan read, or none.
 
 In an app's `.env`, an http or ws URL on a port a name serves becomes that name, https when HTTPS is on:
 `API_URL=http://localhost:3001` becomes `API_URL=http://web.media.test`. Any URL on a port the compose file binds
 to `DOCKER_HOST_IP`, while the `.env` compose runs with sets the project's address, becomes
 `<project>.test:<port>`, such as `postgres://…@media.test:5432`. Another http or ws port gets a note, and the rest
-stays: `localhost` still reaches it. lodo prints a URL's user and password as `***`, in the review and in
-`lodo scan`.
-
-The project's name is yours: the scan suggests the folder's, such as `media.test`, and `e` in the review changes
-it; the subdomains follow. Once added, the name keeps the project's folder as `root` in `domains.json`, so later
-scans know it by that name. A name already listed that links a compose file in the project counts too. A link to
-a compose file that is gone, after you rename the project's folder or move the file, counts as none: the review
-offers the project's file again, and `e` with the old name, such as `calling`, gives that name the renamed folder.
-`↑/↓` in the name field picks an app instead: `api.media` names it `api.media.test`, and `media` alone gives it
-`media.test`. lodo refuses a name for an app whose port it can't tell, since a later scan couldn't find the name
-again. A later scan keeps a listed name of the project on an app's port and address as that app's. When the
-project is listed already, give `media.test` the app's port with `e` in the list, and delete the app's own name.
-
-When none of the project's names is listed, the review opens: `y` or `enter` adds every name, links the compose
-file and sets the `.env` lines shown as `set` in one change, and `n` or `esc` goes back, so lodo offers it again
-next time. A `.env` line is set with `l`'s guards below, and only while it still reads as the scan read it;
-restart the dev servers after, since they read `.env` when they start. A listed project only gets a note in the
-status line, such as `scan: 1 line to change · i reviews`. `i` scans again at any time. `lodo scan` prints the
-same review, `lodo scan --json` the same data for scripts, and `--name hugger` names the project `hugger.test`.
+stays: `localhost` still reaches it. lodo prints a URL's user and password as `***`, in the setup form and in
+`lodo scan`. Restart the dev servers after the form sets a line, since they read `.env` when they start.
 
 ### Compose files
 
@@ -172,21 +247,13 @@ started, or `none`.
 - A `localhost` URL in `environment` takes the project's name, or the subdomain Caddy serves on that port:
   `http://localhost:3000` becomes `http://dashboard.blog.test`. A user and password in the URL stay.
 - Healthchecks, commands and comments keep `localhost`: inside a container it is the container itself.
-- Above the file, each dev server started without a host in the project's `package.json` files, or in a shell
-  script one of their scripts runs, such as `scripts/dev.sh`, gets one: `next dev -H <address>`, `vite --host
-  <address>`, `wrangler dev --ip <address>`. Without it the server listens on every address, so two projects can't
-  both use port 3000. In a turbo project, one with a `turbo.json`, whose root `.env` sets `DOCKER_HOST_IP` to
-  the project's address, or will once `y` links its compose file, the host is `${DOCKER_HOST_IP:-127.0.0.1}`, and
-  the root's line that runs turbo's `dev` gets `DOCKER_HOST_IP="$(sed … .env)"` in front: turbo starts the apps
-  without the root's `.env`. Otherwise the host is the address itself. lodo doesn't edit these files, since git tracks them; you add the flag. After
-  `l`, the status line says when one needs it.
 
 `l` links the selected name: the compose file of the project lodo started in, or outside one the name's own,
 becomes the name's, and `DOCKER_HOST_IP=<address>` goes into the `.env` that file runs with. That is the file a
 `package.json` script passes with `--env-file`, else the project root's `.env`. lodo leaves a `.env` that git
 tracks alone: this Mac's address doesn't belong in a shared file. It also refuses a `.env` outside the project,
-directly or through a symlink. The scan's `y`, `l` in the preview, and a form save that changes a linked name's
-compose file or address do the same.
+directly or through a symlink. The setup form's link toggle, `l` in the preview, and a form save that changes a
+linked name's compose file or address do the same.
 
 ### HTTPS
 
@@ -219,13 +286,18 @@ shape of URL as production, and `Secure` cookies work:
 3. Register the callback with the provider: `https://app.blog.test/api/auth/callback/github` for Better Auth
    and Auth.js; other libraries use their own path.
 
+Step 2 matters because Next builds `request.url` from its own host and port, not from the request: code that
+builds an absolute URL from it, such as an OAuth callback, gets `http://localhost:3000`. The `Host` and
+`X-Forwarded-Host` headers keep the `.test` name, so code and libraries that read them, such as Auth.js with
+`trustHost`, get it. Redirects within the app stay on the `.test` name: Next sends them as relative URLs.
+
 Providers check callback URLs differently. A GitHub OAuth app takes any URL, so the `.test` callback works.
 **Google refuses it:** its redirect URIs must use a host whose top-level domain is on the public suffix list,
 and `.test` never is. Only `localhost` is exempt. For Google sign-in, either:
 
 - run the sign-in on `localhost`: callback `http://localhost:3000/api/auth/callback/google`, the app's URL set
-  to `http://localhost:3000`, and the app opened there while you work on sign-in. The app has to answer on
-  `127.0.0.1` for that, so it shares port 3000 with every other project;
+  to `http://localhost:3000`, and the app opened there while you work on sign-in. Start it with `pnpm dev`, not
+  `lodo dev`, for that: it then listens on `127.0.0.1` and shares port 3000 with every other project;
 - or use a name under a domain you own, such as `app.dev.example.com`. Google only checks the URL's text and
   never visits it, so the name doesn't need a public DNS record. lodo serves only `.test` names, so such a name
   needs its own DNS and certificate setup.
@@ -241,18 +313,23 @@ and `.test` never is. Only `localhost` is exempt. For Google sign-in, either:
   other address in `127.0.0.0/8`, can be shared.
 - **A port makes `http://<name>` reach `<address>:<port>`** through Caddy on port 80, and `https://<name>` too,
   on port 443, once HTTPS is on. Ports 80 and 443 themselves are refused, because Caddy listens there.
-- **Apps listen on their project's address**, for example `next dev -H 127.0.1.3` or `vite --host 127.0.1.3`.
+- **Apps listen on their project's address.** `lodo dev` puts Node apps there; start anything else with its own
+  host flag, such as `--host 127.0.1.3`.
 - **Docker:** publish ports as `"${DOCKER_HOST_IP:-127.0.0.1}:5432:5432"`, which `p` shows on the project's
   compose file, and `l` writes `DOCKER_HOST_IP=127.0.1.3` into the project's `.env`, so each project's Postgres
   gets port 5432 on its own address.
 
 ## Commands
 
+`lodo dev` starts the project in the current folder on its names, and opens the setup form first when the
+project has no name yet; `--edit` opens it every time. See [lodo dev](#lodo-dev). `lodo ps` opens the dashboard.
+`lodo` alone, or `lodo help`, prints the usage.
+
 `lodo apply` writes lodo's files from `domains.json`, restarts dnsmasq, runs the resolver script, restarts Caddy
 when its sites changed or it stopped, then checks every enabled name, prints one line each and exits 1 if one
-fails. The list does the same after every change. A name whose app isn't running is marked `–` in apply's
-output and doesn't count, since apply can't start it; the list still shows its `http ✗`. `lodo apply` refuses
-to run before `lodo setup`. Use it after editing `domains.json` by hand:
+fails. The dashboard and the setup form do the same after every change. A name whose app isn't running is marked
+`–` in apply's output and doesn't count, since apply can't start it; the dashboard still shows its red `○`.
+`lodo apply` refuses to run before `lodo setup`. Use it after editing `domains.json` by hand:
 
 ```json
 {"version": 1, "domains": [
@@ -272,19 +349,19 @@ to run before `lodo setup`. Use it after editing `domains.json` by hand:
 6. `generated files`: lodo's generated files in `~/.config/lodo` match `domains.json`.
 7. `names resolve`: each enabled name resolves through dnsmasq and macOS; with a port, Caddy reaches the app.
    A name whose app isn't running still passes and is listed after `not running:`. An app that listens on
-   `127.0.0.1` or `::1` instead of its name's address fails, with `lodo scan` as the fix. lodo can't tell whose
-   app that is, so every stopped name on that port fails with it, listed once. An app on its own address that
-   gives Caddy no HTTP answer fails too. The fix is `lodo apply` when a failure needs it; otherwise each failure
-   names its own.
+   `127.0.0.1` or `::1` instead of its name's address fails: start it with `lodo dev` in its project. lodo can't
+   tell whose app that is, so every stopped name on that port fails with it, listed once. An app on its own
+   address that gives Caddy no HTTP answer fails too. The fix is `lodo apply` when a failure needs it, and "stop
+   the app, then start it with lodo dev in its project" when every failure is an app on the wrong address;
+   otherwise each failure names its own.
 8. `caddy`, only when an enabled name has a port: Caddy is installed, imports lodo's file, runs, passes
    `caddy validate`, and holds port 80.
 
-`lodo scan` prints what the project in the current folder lacks from the list, as the TUI's review shows it, and
+`lodo scan` prints what the project in the current folder lacks from the list, as the setup form shows it, and
 changes nothing; only `git ls-files` runs, to skip the `.env` files git tracks. `--json` prints it for scripts,
 with the same `***` in URLs, and `--name hugger` proposes it under `hugger.test`. It exits 1 outside a project.
 
-`lodo uninstall` removes what setup installed; see [Uninstall](#uninstall). `lodo version` prints the version, and
-`lodo help` the usage.
+`lodo uninstall` removes what setup installed; see [Uninstall](#uninstall). `lodo version` prints the version.
 
 ## How it works
 
@@ -298,7 +375,14 @@ with the same `***` in URLs, and `--name hugger` proposes it under `hugger.test`
   has only `127.0.0.1` by default.
 - **Caddy** runs as you on port 80, and on 443 for HTTPS names. Homebrew's `Caddyfile` imports
   `~/.config/lodo/Caddyfile`, which has one `http://<name>` site per enabled name with a port, forwarding to
-  `<address>:<port>`; an HTTPS name's site also lists `https://<name>`.
+  `<address>:<port>`; an HTTPS name's site also lists `https://<name>`. The app gets the `.test` name as `Host`,
+  so origin checks such as Mailpit's live inbox pass. On Next's dev paths, a site turns its own `Origin` into
+  `http://localhost:<port>`, which Next's dev check accepts with no `allowedDevOrigins`; any other page's `Origin`
+  passes unchanged, so Next still refuses its hot reload requests.
+- **`lodo dev`** runs the project's `dev` script with `NODE_OPTIONS` loading `~/.config/lodo/dev/<project>.cjs`,
+  which hands the project's ports and addresses to `~/.config/lodo/bind.cjs`. That hook makes a Node server that
+  listens on one of those ports listen on the project's address, and adds `.<project>` to
+  `__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS`, which Vite adds to its allowed hosts.
 - **`~/.config/lodo/domains.json`** is the only source of truth. lodo rewrites its generated files from it on
   every change.
 
@@ -321,11 +405,11 @@ Start with `lodo doctor`: every failed check prints the command that fixes it.
   files both match subdomains. Add a row only to give it another address or a port.
 - **`502 Bad Gateway` on `http://dashboard.blog.test`:** Caddy is up but nothing listens on `127.0.1.1:3000`. When
   the app isn't running, check 7 lists it as not running. When it listens on `localhost` instead, as Vite does
-  without `--host 127.0.1.1` (Node puts `localhost` on `::1`), the check says `an app listens on [::1]:3000,
-  not on the name's address`, and `lodo scan` shows the host fix. An app that serves HTTPS itself gets the same 502; the check
-  says it `gave Caddy no HTTP answer`. Docker ports bind `DOCKER_HOST_IP`.
+  when started without `lodo dev` (Node puts `localhost` on `::1`), the check says `an app listens on [::1]:3000,
+  not on the name's address`: start it with `lodo dev`. An app that serves HTTPS itself gets the same 502; the
+  check says it `gave Caddy no HTTP answer`. Docker ports bind `DOCKER_HOST_IP`.
 - **The wrong app answers:** a Node app listening on `*:3000` answers on every loopback address, so it shadows
-  other projects' port 3000. Start each app on its own address: `next dev -H 127.0.1.3`.
+  other projects' port 3000. Start each project with `lodo dev`, which puts its apps on its own address.
 - **`http://dashboard.blog.test` refuses the connection:** Caddy isn't running or another program holds port 80.
   Check 8 names it.
 - **Names resolve for one app but not another:** a VPN or Cloudflare WARP is capturing DNS.
@@ -347,7 +431,7 @@ on port 53 again, as before lodo: `sudo brew services start dnsmasq`.
 go test -race ./...                       # all tests
 go vet ./... && golangci-lint run ./...   # lint, config in .golangci.yml
 go test ./internal/tui -update            # rewrite that package's golden files after an intended change
-go run ./cmd/lodo doctor                    # run lodo from source
+go run ./cmd/lodo doctor                  # run lodo from source
 ```
 
 ### Change it and use it right away
@@ -358,20 +442,21 @@ Edit the code, then install the new build over the old one. It runs at once, as 
 ```sh
 go vet ./... && go test -race ./... && golangci-lint run ./...   # the checks CI runs
 go install ./cmd/lodo                                              # replaces ~/go/bin/lodo
-lodo
+lodo ps
 ```
 
-| What you changed                                      | After `go install`                       |
-| ----------------------------------------------------- | ---------------------------------------- |
-| TUI, messages, checks, the CLI                        | nothing, just run `lodo`                   |
-| What goes into the generated dnsmasq or Caddy files   | `lodo apply`                               |
-| The root script, the sudoers rule or the loopback job | `lodo setup`, which asks for your password |
+| What you changed                                      | After `go install`                                   |
+| ----------------------------------------------------- | ---------------------------------------------------- |
+| TUI, messages, checks, the CLI                        | nothing, just run `lodo ps` or `lodo dev`            |
+| The listen hook, `internal/dev/bind.cjs`              | nothing: the next `lodo dev` writes it               |
+| What goes into the generated dnsmasq or Caddy files   | `lodo apply`                                         |
+| The root script, the sudoers rule or the loopback job | `lodo setup`, which asks for your password           |
 
 `lodo doctor` tells you which applies: "script out of date" means `lodo setup`, and "generated files out of date"
 means `lodo apply`.
 
 Golden files live in each package's `testdata/`; only packages that have them take `-update`. No test changes
-the system, and the few that run `dnsmasq --test`, `caddy validate`, `visudo -c` or `plutil -lint` skip when the
-tool is missing. `go build -ldflags "-X main.Version=v0.1.0" -o lodo ./cmd/lodo` sets the version `lodo version`
-prints. `docs/plan.md` holds the design and its decisions, `docs/setup-log.md` the hand test on a real Mac, and
-`CLAUDE.md` the layout and rules for changing the code.
+the system, and the few that run `dnsmasq --test`, `caddy validate`, `visudo -c`, `plutil -lint` or `node --test` skip
+when the tool is missing. `go build -ldflags "-X main.Version=v0.1.0" -o lodo ./cmd/lodo` sets the version
+`lodo version` prints. `docs/plan.md` holds the design and its decisions, `docs/setup-log.md` the hand test on a real
+Mac, and `CLAUDE.md` the layout and rules for changing the code.

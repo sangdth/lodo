@@ -22,11 +22,11 @@ import (
 // The name column fits its longest row; the compose column takes the rest.
 // The check column widens to secureWidth only while a name has HTTPS on.
 const (
+	enabledWidth    = 7 // its title; the cell is ✓ or empty
 	addressWidth    = 15
 	portWidth       = 5
-	ownWidth        = 3
-	checkWidth      = 13 // dns ✓  http ✓
-	secureWidth     = 22 // dns ✓  http ✓  https ✓
+	checkWidth      = 5  // dns ✓
+	secureWidth     = 14 // dns ✓  https ✓
 	minNameWidth    = 12
 	minComposeWidth = 8
 	columns         = 6
@@ -39,7 +39,7 @@ const (
 const (
 	boxWidthPercent  = 80
 	boxHeightPercent = 80
-	minBoxWidth      = 91
+	minBoxWidth      = 100
 )
 
 // formHeight is the lines the form needs: a title between two blank lines,
@@ -51,10 +51,10 @@ var statusParts = []struct {
 	id    int
 	label string
 }{
-	{8, "caddy"},
-	{1, "dnsmasq"},
-	{3, "loopback"},
-	{4, "resolvers"},
+	{check.IDCaddy, "caddy"},
+	{check.IDDnsmasq, "dnsmasq"},
+	{check.IDLoopback, "loopback"},
+	{check.IDResolvers, "resolvers"},
 }
 
 // services are the status bar's parts that space turns on and off, in the
@@ -91,19 +91,12 @@ const servicesHelp = " ←/→ or h/l pick  space on/off  tab back to the names\
 
 // The keys each mode takes, shown on the last lines.
 var help = map[mode]string{
-	modeList:    " a sub  e edit  d del  space on/off  l link  p preview\n s https  i scan  g log  r apply  tab top  q quit",
+	modeList:    " a sub  e edit  d del  space on/off  l link  p preview\n s https  i set up  g log  r apply  tab top  q quit",
 	modeForm:    " enter save  tab next field  esc cancel\n",
 	modeConfirm: " y delete  any other key keeps it\n",
 	modeLog:     " g or esc back to the list  ↑/↓ scroll\n q quit",
 	modePreview: " p or esc back to the list  ↑/↓ ←/→ scroll  l write the .env line\n q quit",
-	modeScan:    " y or enter add and link  e name  n or esc back to the list  ↑/↓ ←/→ scroll\n q quit",
 }
-
-// renameHelp is the review's keys while its name is edited.
-const renameHelp = " enter use this name  ↑/↓ an app's name  esc keep the old one\n"
-
-// scanFixesHelp is the review's keys when it holds only lines to change.
-const scanFixesHelp = " e name  n or esc back to the list  ↑/↓ ←/→ scroll\n q quit"
 
 // View draws the status bar, a rule, the table or the form, the status line
 // and the keys in a bordered box at the middle of the terminal.
@@ -116,8 +109,10 @@ func (m Model) View() tea.View {
 		body = m.logView()
 	case modePreview:
 		body = m.previewView()
-	case modeScan:
-		body = m.scanView()
+	case modeSetup:
+		s := m.setup
+		s.width = m.innerWidth()
+		body = strings.Join(s.lines(), "\n")
 	}
 	keys := strings.Split(m.keys(), "\n")
 	for i, line := range keys {
@@ -147,10 +142,8 @@ func (m Model) keys() string {
 		return servicesHelp
 	case m.mode == modeList && m.onAddRow():
 		return addRowHelp
-	case m.mode == modeScan && m.renaming:
-		return renameHelp
-	case m.mode == modeScan && !m.canAccept():
-		return scanFixesHelp
+	case m.mode == modeSetup:
+		return m.setup.help() + "\n"
 	}
 	return help[m.mode]
 }
@@ -163,7 +156,7 @@ func (m Model) widths() (name, compose int) {
 	for _, d := range m.listed() {
 		name = max(name, ansi.StringWidth(indent(d)+"● "+d.Name))
 	}
-	room := m.innerWidth() - addressWidth - portWidth - ownWidth - m.checkWidth() - 2*columns
+	room := m.innerWidth() - enabledWidth - addressWidth - portWidth - m.checkWidth() - 2*columns
 	compose = room - name
 	if compose < minComposeWidth {
 		compose = minComposeWidth
@@ -178,10 +171,10 @@ func (m *Model) layout() {
 	name, compose := m.widths()
 	m.table.SetColumns([]table.Column{
 		{Title: "name", Width: name},
+		{Title: "enabled", Width: enabledWidth},
 		{Title: "address", Width: addressWidth},
 		{Title: "port", Width: portWidth},
 		{Title: "compose", Width: compose},
-		{Title: "own", Width: ownWidth},
 		{Title: "check", Width: m.checkWidth()},
 	})
 	m.table.SetWidth(m.innerWidth())
@@ -224,34 +217,58 @@ func (m Model) logHeight() int {
 }
 
 // rows renders one table row per domain, its mark indented with its name,
-// and the add row last: dim, unless the cursor is on it.
+// and the add row last: dim, unless it is highlighted.
 func (m Model) rows() []table.Row {
 	listed := m.listed()
 	_, composeWidth := m.widths()
+	highlighted := -1 // no row while the keys act on the services
+	if !m.onServices {
+		highlighted = m.table.Cursor()
+	}
 	rows := make([]table.Row, len(listed), len(listed)+1)
 	for i, d := range listed {
-		mark := "○"
-		switch {
-		case m.spins(d):
-			mark = m.spinner.View()
-		case d.Enabled:
-			mark = "●"
+		enabled := ""
+		if d.Enabled {
+			enabled = "✓"
 		}
 		port := ""
 		if d.Port > 0 {
 			port = strconv.Itoa(d.Port)
 		}
-		own := ""
-		if store.IsOwn(d.Address) {
-			own = "own"
-		}
-		rows[i] = table.Row{indent(d) + mark + " " + d.Name, d.Address, port, m.composeCell(d, composeWidth), own, m.checkCell(d)}
+		name := indent(d) + m.nameMark(d, i == highlighted) + " " + d.Name
+		rows[i] = table.Row{name, enabled, d.Address, port, m.composeCell(d, composeWidth), m.checkCell(d)}
 	}
 	add := addRowText
-	if !m.onAddRow() {
+	if highlighted < len(listed) {
 		add = m.styles.dim.Render(add)
 	}
 	return append(rows, table.Row{add, "", "", "", "", ""})
+}
+
+// nameMark shows how d's checks went, with the status bar's marks (state): a
+// green ● when every check passed, a red ○ when one failed, and a dim ○ when
+// nothing was checked: d is off, has no result yet, or fails only because of
+// a service turned off (expected). The spinner shows while a change or check
+// for d runs. The highlighted row's mark has no color, which would end the
+// row's highlight right after the mark.
+func (m Model) nameMark(d store.Domain, highlighted bool) string {
+	if m.spins(d) {
+		return m.spinner.View()
+	}
+	r, ok := m.results[d.Name]
+	mark, style := "○", m.styles.bad
+	switch {
+	case !d.Enabled || !ok:
+		style = m.styles.dim
+	case r.OK():
+		mark, style = "●", m.styles.ok
+	case m.expected(r):
+		style = m.styles.dim
+	}
+	if highlighted {
+		return mark
+	}
+	return style.Render(mark)
 }
 
 // indent moves a subdomain's row in by two columns per label under its
@@ -283,9 +300,6 @@ func (m Model) checkCell(d store.Domain) string {
 		return "…"
 	}
 	cell := "dns " + mark(r.Direct && r.System)
-	if d.Port > 0 {
-		cell += "  http " + mark(r.HTTP)
-	}
 	if r.Secure {
 		cell += "  https " + mark(r.HTTPS)
 	}
@@ -441,26 +455,29 @@ func (m Model) logView() string {
 
 // nameInput draws the name field as wide as its text, or its placeholder, and
 // the form's dimmed suffix after it, which can't be edited.
-func (m Model) nameInput() string { return m.suffixed(m.form.inputs[fieldName], m.form.suffix) }
+func (m Model) nameInput() string { return m.styles.suffixed(m.form.inputs[fieldName], m.form.suffix) }
 
-// suffixed draws a name field at its text's width with its suffix, dimmed,
-// right after it.
-func (m Model) suffixed(in textinput.Model, suffix string) string {
+// suffixed draws a field at its text's width with its suffix, dimmed, right
+// after it.
+func (st styles) suffixed(in textinput.Model, suffix string) string {
+	if !in.Focused() && (in.Value() != "" || in.Placeholder == "") {
+		return in.Styles().Blurred.Text.Inline(true).Render(in.Value()) + st.dim.Render(suffix) // no cursor cell before the suffix
+	}
 	width := ansi.StringWidth(in.Value())
 	if width == 0 {
 		width = ansi.StringWidth(in.Placeholder)
 	}
 	in.SetWidth(width)
-	return in.View() + m.styles.dim.Render(suffix)
+	return in.View() + st.dim.Render(suffix)
 }
 
 // expected reports whether r fails only because of a service turned off:
 // dnsmasq off fails every name, Caddy off fails the http probes.
 func (m Model) expected(r check.Result) bool {
-	if c, ok := m.check(serviceCheck("dnsmasq")); ok && c.Off {
+	if c, ok := m.check(check.IDDnsmasq); ok && c.Off {
 		return true
 	}
-	c, ok := m.check(serviceCheck("caddy"))
+	c, ok := m.check(check.IDCaddy)
 	return ok && c.Off && r.Direct && r.System
 }
 

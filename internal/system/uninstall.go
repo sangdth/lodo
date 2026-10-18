@@ -31,7 +31,7 @@ func Uninstall(ctx context.Context, p paths.Paths, r run.Runner, out io.Writer) 
 		fn        func() (string, error)
 	}{
 		{"lodo's /etc/resolver files removed", "lodo uninstall", func() (string, error) { return "", removeResolverFiles(ctx, p, r) }},
-		{"dnsmasq stopped", "brew services stop dnsmasq", func() (string, error) { return "", brew.Stop(ctx, r, p.Brew, "dnsmasq") }},
+		{"dnsmasq stopped", "brew services stop dnsmasq", func() (string, error) { return "", brew.Stop(ctx, r, p, "dnsmasq") }},
 		{"Homebrew's dnsmasq.conf restored", "edit " + p.SystemConf + " by hand", func() (string, error) { return restoreSystemConf(p) }},
 		{"Caddy's local CA no longer trusted", "sudo security remove-trusted-cert -d " + p.TrustedCA, func() (string, error) { return "", untrustCaddy(ctx, p, r) }},
 		{"Caddy no longer serves lodo's sites", "edit " + p.SystemCaddyfile + " by hand", func() (string, error) { return restoreCaddy(ctx, p, r) }},
@@ -96,7 +96,7 @@ func restoreCaddy(ctx context.Context, p paths.Paths, r run.Runner) (string, err
 	if !CaddySetUp(p) {
 		return "", nil
 	}
-	if err := brew.Stop(ctx, r, p.Brew, "caddy"); err != nil {
+	if err := brew.Stop(ctx, r, p, "caddy"); err != nil {
 		return "", err
 	}
 	if exists(p.SystemCaddyfileBackup) {

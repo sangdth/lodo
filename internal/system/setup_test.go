@@ -3,6 +3,7 @@ package system_test
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -30,7 +31,48 @@ func newMac(t *testing.T, withCaddy bool) (paths.Paths, *run.Fake) {
 	for _, label := range system.DnsmasqSystemLabels {
 		r.Fail(run.Line(p.Launchctl, "print", "system/"+label), "Could not find service")
 	}
+	setService(t, p, r, "dnsmasq", running)
+	if withCaddy {
+		setService(t, p, r, "caddy", running)
+	}
 	return p, r
+}
+
+// Service states setService gives a Homebrew job.
+const (
+	running = "running" // registered, loaded, with a process
+	crashed = "crashed" // registered and loaded, no process
+	off     = "off"     // no plist and not loaded, as brew services stop leaves it
+)
+
+// setService makes service's job look like state to brew.Info: it writes or
+// removes the plist and sets what launchctl print shows.
+func setService(t *testing.T, p paths.Paths, r *run.Fake, service, state string) {
+	t.Helper()
+	plist := filepath.Join(p.LaunchAgents, "sh.brew."+service+".plist")
+	switch state {
+	case running:
+		writeFile(t, plist, "")
+		r.Set(printJob(p, service), "\tstate = running\n\tpid = 42\n")
+	case crashed:
+		writeFile(t, plist, "")
+		r.Set(printJob(p, service), "\tstate = not running\n")
+	default:
+		if err := os.Remove(plist); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			t.Fatal(err)
+		}
+		r.Fail(printJob(p, service), "Could not find service")
+	}
+}
+
+// printJob is the launchctl print that reads service's state.
+func printJob(p paths.Paths, service string) string {
+	return run.Line(p.Launchctl, "print", "gui/501/sh.brew."+service)
+}
+
+// restartCalls are the calls brew.Restart makes for a loaded service.
+func restartCalls(p paths.Paths, service string) []string {
+	return []string{printJob(p, service), run.Line(p.Launchctl, "kickstart", "-k", "gui/501/sh.brew."+service)}
 }
 
 // setupCalls is the command sequence of a setup on a Mac without a root
@@ -50,14 +92,12 @@ func setupCalls(p paths.Paths, withCaddy bool) []string {
 		install("644", "io.lodo.loopback.plist", p.LoopbackPlist),
 		run.Line(p.Sudo, "-n", p.Launchctl, "bootout", "system/io.lodo.loopback"),
 		run.Line(p.Sudo, "-n", p.Launchctl, "bootstrap", "system", p.LoopbackPlist),
-		run.Line(p.Brew, "services", "restart", "dnsmasq"),
 	}
+	calls = append(calls, restartCalls(p, "dnsmasq")...)
 	if withCaddy {
-		calls = append(calls,
-			run.Line(p.Caddy, "validate", "--config", p.SystemCaddyfile, "--adapter", "caddyfile"),
-			run.Line(p.Brew, "services", "restart", "caddy"),
-			run.Line(p.Brew, "services", "info", "caddy", "--json"),
-		)
+		calls = append(calls, run.Line(p.Caddy, "validate", "--config", p.SystemCaddyfile, "--adapter", "caddyfile"))
+		calls = append(calls, restartCalls(p, "caddy")...)
+		calls = append(calls, printJob(p, "caddy"))
 	}
 	return append(calls, run.Line(p.Sudo, "-n", "-k", p.Script))
 }
@@ -169,7 +209,7 @@ func TestSetup_RemovesResolverLocal(t *testing.T) {
 	t.Parallel()
 
 	p, r := newMac(t, false)
-	local := filepath.Join(p.ResolverDir, "local")
+	local := p.ResolverLocal
 	writeFile(t, local, "nameserver 127.0.0.1\n")
 	if err := system.Setup(context.Background(), p, r, &strings.Builder{}); err != nil {
 		t.Fatal(err)
@@ -236,7 +276,7 @@ func TestSetup_Failures(t *testing.T) {
 			prepare: func(_ *testing.T, p paths.Paths, r *run.Fake) {
 				r.Fail(run.Line(p.Sudo, "-n", "-k", p.Script), "sudo: a password is required")
 			},
-			wantStep: "sudo runs the resolver script without a password", wantFix: "lodo setup", wantCalls: 12,
+			wantStep: "sudo runs the resolver script without a password", wantFix: "lodo setup", wantCalls: 13,
 		},
 	}
 	for _, tt := range tests {

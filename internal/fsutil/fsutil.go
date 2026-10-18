@@ -62,8 +62,9 @@ const MaxProjectFile = 1 << 20
 // ReadRegular returns the content of the regular file at path, following
 // symlinks. It refuses a directory, a device or a FIFO before it opens one,
 // since opening a FIFO blocks and a device can be endless, and it refuses a
-// file over limit bytes. A missing file's error matches fs.ErrNotExist.
-func ReadRegular(path string, limit int64) ([]byte, error) {
+// file over MaxProjectFile bytes. A missing file's error matches
+// fs.ErrNotExist.
+func ReadRegular(path string) ([]byte, error) {
 	info, err := os.Stat(path)
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", path, err)
@@ -83,12 +84,12 @@ func ReadRegular(path string, limit int64) ([]byte, error) {
 	if !info.Mode().IsRegular() {
 		return nil, fmt.Errorf("read %s: not a regular file", path)
 	}
-	data, err := io.ReadAll(io.LimitReader(f, limit+1))
+	data, err := io.ReadAll(io.LimitReader(f, MaxProjectFile+1))
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", path, err)
 	}
-	if int64(len(data)) > limit {
-		return nil, fmt.Errorf("read %s: larger than %d bytes", path, limit)
+	if len(data) > MaxProjectFile {
+		return nil, fmt.Errorf("read %s: larger than %d bytes", path, MaxProjectFile)
 	}
 	return data, nil
 }

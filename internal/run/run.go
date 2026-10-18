@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -23,6 +24,10 @@ type Runner interface {
 	// RunTTY runs name with args attached to the terminal, so sudo can ask
 	// for a password.
 	RunTTY(ctx context.Context, name string, args ...string) error
+	// Replace replaces lodo's process with name, an absolute path, run with
+	// args and env in dir, so the terminal's Ctrl-C reaches name directly. On
+	// success it never returns.
+	Replace(dir, name string, args, env []string) error
 }
 
 // Error is a command that failed to start, exited non-zero or ran out of time.
@@ -100,4 +105,13 @@ func (e Exec) RunTTY(ctx context.Context, name string, args ...string) error {
 		return &Error{Cmd: Line(name, args...), Err: err}
 	}
 	return nil
+}
+
+// Replace implements Runner.
+func (e Exec) Replace(dir, name string, args, env []string) error {
+	if err := os.Chdir(dir); err != nil {
+		return &Error{Cmd: Line(name, args...), Err: err}
+	}
+	err := syscall.Exec(name, append([]string{name}, args...), env) //nolint:gosec // G204: same as Run
+	return &Error{Cmd: Line(name, args...), Err: err}
 }

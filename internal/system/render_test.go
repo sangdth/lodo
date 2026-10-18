@@ -98,14 +98,15 @@ func TestScript_Run(t *testing.T) {
 			wantStderr: "crm.test alone: lodo did not write it",
 		},
 		{
+			// _ can't start a name, so grep drops the filler at once; x makes it try a match at every byte.
 			name:       "list as long as the cap",
-			list:       "crm.test\n" + strings.Repeat("x", system.MaxScriptInput-len("crm.test\n")),
+			list:       "crm.test\n" + strings.Repeat("_", system.MaxScriptInput-len("crm.test\n")),
 			after:      map[string]string{"crm.test": resolver},
 			wantStdout: "lodo: 1 resolver files written, 0 removed, 1 lines skipped\n",
 		},
 		{
 			name:       "list longer than the cap",
-			list:       "crm.test\n" + strings.Repeat("x", system.MaxScriptInput-len("crm.test\n")+1),
+			list:       "crm.test\n" + strings.Repeat("_", system.MaxScriptInput-len("crm.test\n")+1),
 			before:     map[string]string{"old.test": resolver},
 			after:      map[string]string{"old.test": resolver},
 			wantFail:   true,
