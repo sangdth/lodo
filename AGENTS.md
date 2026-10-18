@@ -2,7 +2,7 @@
 
 `lodo` is a Go terminal app that manages `.test` names on macOS through dnsmasq, `/etc/resolver` files and
 Caddy. `docs/plan.md` holds the design, the settled decisions and the phases; `docs/setup-log.md` records
-the hand test on a real Mac.
+the hand test on a real Mac. The README stays short; user-facing detail goes in `docs/reference.md`.
 
 ## Commands
 
