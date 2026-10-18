@@ -365,21 +365,31 @@ own, inline in the terminal; the dashboard's `i` opens the same form in its box.
 - **Log:** a `viewport` tailing `dnsmasq.log`, polled every 500 ms; `g` or `esc` returns.
 - **Setup form:** the only review UI. It scans the project (`scan.Find`, `scan.Propose`) and shows the project's
   label with `.test` dimmed and its address, then a row per app and per compose web page: a label with `.<project>`
-  dimmed and a port. An empty label names the app `<project>` alone; only one row may. Below them sit the `[x] link
-  <compose file>` and `[x] set N .env lines` toggles, with the lines masked, and the scan's notes.
-  `tab`/`shift+tab` move, `space` toggles, `enter` adds, links and sets them in one change, `esc` saves nothing.
-  The rows hold the project's listed names, then the names the scan proposes to add; the subdomains follow the
-  project's label. Leaving a changed field scans again, so the `.env` lines and notes follow the names and ports as
-  typed. The project is named by the listed name whose `root` is its folder, else by the listed name that links a
-  compose file in it, else by its folder. `enter` saves the folder as the project name's `root`. A listed name
-  typed in whose `root` is unset or gone (`Backend.Gone`) is taken over: it keeps its settings and gets the folder.
-  One whose folder still exists is refused under the name field: "flow.test belongs to ~/Projects/flow: give this
-  project another name". The notes point at `lodo dev --edit`; two apps on one port get one, since `lodo dev` binds
-  one app per port, and the second app the next free address. Mailpit in the project's best compose file gets
+  dimmed and a port. An empty label names the app `<project>` alone; only one row may, the root's app's when the
+  project has one, and no label may be another app's folder's, since a later scan ties each app to its folder's
+  name. Below them sit the `[x] link <compose file>` and `[x] set N .env lines` toggles, with the lines masked, and
+  the scan's notes. `tab`/`shift+tab` move, `space` toggles, `enter` adds, links and sets them in one change, `esc`
+  saves nothing. The rows hold the project's listed names, then the names the scan proposes to add; the subdomains
+  follow the project's label. Leaving a changed field scans again, so the `.env` lines and notes follow the names
+  and ports as typed. The project is named by the listed name whose `root` is its folder, by `os.SameFile`, so
+  another case or symlink of the path counts, else by the listed name that links a compose file in it, unless that
+  name's project has another folder still there, else by its folder; when the folder's name is another project's
+  whose folder still exists, such as a second clone's, by the first of `<folder>-2.test`, `<folder>-3.test` … that
+  no listed name uses, with an address of its own. `enter` saves the folder as the project name's `root`. A listed
+  name, typed in or picked by the scan, whose `root` is unset or gone is taken over: it keeps its settings and gets
+  the folder, and the project's old name goes with its names. One whose folder still exists is refused under the
+  name field: "flow.test belongs to ~/Projects/flow: give this project another name" (`scan.Taken` with
+  `Backend.Gone`, `scan.BelongsTo`). `lodo scan --name` follows the same rule: a refused name gets that note and
+  nothing else. The notes point at `lodo dev --edit`; two apps on one port get one, since `lodo dev` binds one app
+  per port, and the second app the next free address. Mailpit in the project's best compose file gets
   `mail.<project>` with the port its inbox is published on (`scan.webImages` lists the images lodo names), unless a
   listed name has that port on the address or the project runs another compose file, or none. A link to a compose
   file that is gone counts as none, so the form offers the project's file. From `lodo dev`, `enter` saves and then
-  starts the apps; from the dashboard's `i`, it saves and returns to the list.
+  starts the apps; from the dashboard's `i`, it saves and returns to the list. A form taller than its height, the
+  terminal's or the box's, scrolls its middle by hand, with no `viewport`: the title, the status line and the keys
+  stay, a dim `↑ more` or `↓ more` takes the window's first or last line while lines are hidden, and the window
+  moves only to keep the focused field and its error in sight; on the last stop, down scrolls on to the notes below
+  before the focus wraps.
 - **Compose:** a compose path is saved without an apply: it changes no generated file. `p` previews the file
   rewritten by `compose.Rewrite` in a `viewport`, the changed lines marked, with the `.env` line; `l` links. The
   preview scrolls sideways with the arrows only. lodo writes only `.env` lines in a project: `DOCKER_HOST_IP` in
@@ -805,6 +815,8 @@ bun need nothing.
 | 11.10 | Scan: drop the host fixes (`-H`, turbo's `HOST_IP` line) and the `allowedDevOrigins` note      |
 | 11.11 | `lodo dev` warns about a scanned app with no name                                              |
 | 11.12 | README, AGENTS.md, usage text, this phase                                                      |
+| 11.13 | Scan: a clone of a listed project gets `<label>-2.test`; `--name` refuses a live one's name    |
+| 11.14 | Setup form: the middle scrolls and keeps the focused field in sight                            |
 
 The setup form, prefilled from the scan on a first run and from `domains.json` with `--edit`:
 
@@ -881,8 +893,8 @@ only review UI, and `lodo dev --edit` reopens it. Out of it: `docker compose up`
 
 Tests: `bind.cjs` under `node --test` with servers on listed and unlisted ports, skipped without `node`; package
 manager detection on fake trees; `lodo dev` with `run.Fake` records the `Replace` call and its env; the first
-run and `--edit` open the setup form (goldens for both, and for `tab` order and a toggle); `i` in the dashboard
-opens it too.
+run and `--edit` open the setup form (goldens for both, for `tab` order and a toggle, and for a form that
+scrolls); `i` in the dashboard opens it too, and it scrolls in the box.
 
 ## Tests
 

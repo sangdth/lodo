@@ -67,16 +67,16 @@ func Find(dir string, tracked func(path string) bool) (Project, bool) {
 // nonLabel matches what a folder's name holds that a DNS label can't.
 var nonLabel = regexp.MustCompile(`[^a-z0-9-]+`)
 
-// label returns the DNS label a folder's name suggests: flowy for
+// Label returns the DNS label a folder's name suggests: flowy for
 // ~/Projects/Flowy, my-app for my_app. It is empty when nothing is left.
-func label(folder string) string {
+func Label(folder string) string {
 	return strings.Trim(nonLabel.ReplaceAllString(strings.ToLower(folder), "-"), "-")
 }
 
 // Name is the name a project's folder suggests: flowy.test for
 // ~/Projects/flowy. It is empty when the folder's name makes no valid label.
 func Name(root string) string {
-	name := label(filepath.Base(root)) + store.Suffix
+	name := Label(filepath.Base(root)) + store.Suffix
 	if store.ValidateName(name) != nil {
 		return ""
 	}
@@ -149,15 +149,55 @@ func (p Proposal) CanAccept() bool {
 // projectName returns the project's name: the listed name whose Root is the
 // project's folder, else the project of the listed name that links a compose
 // file in it, whatever its folder is called (hugger.test for
-// huggerhustle/platform-v2), else what the folder suggests.
-func projectName(p Project, domains []store.Domain) string {
-	if i := slices.IndexFunc(domains, func(d store.Domain) bool { return d.Root == p.Root }); i >= 0 {
+// huggerhustle/platform-v2), unless that project is another's (Taken), else
+// what the folder suggests. When that name is another project's, such as a
+// second clone's, it is the first of <label>-2.test, <label>-3.test … that no
+// listed name has, so the project gets its own names and address.
+func projectName(p Project, domains []store.Domain, gone func(path string) bool) string {
+	if i := slices.IndexFunc(domains, func(d store.Domain) bool { return SameFolder(d.Root, p.Root) }); i >= 0 {
 		return domains[i].Name
 	}
-	if i := slices.IndexFunc(domains, func(d store.Domain) bool { return linksInside(d, p.Root) }); i >= 0 {
+	if i := slices.IndexFunc(domains, func(d store.Domain) bool {
+		owner, ok := store.Find(domains, store.Project(d.Name))
+		return linksInside(d, p.Root) && (!ok || !Taken(owner, p.Root, gone))
+	}); i >= 0 {
 		return store.Project(domains[i].Name)
 	}
-	return p.Name
+	if d, ok := store.Find(domains, p.Name); !ok || !Taken(d, p.Root, gone) {
+		return p.Name
+	}
+	base := strings.TrimSuffix(p.Name, store.Suffix)
+	for n := 2; ; n++ {
+		name := base + "-" + strconv.Itoa(n) + store.Suffix
+		if !slices.ContainsFunc(domains, func(d store.Domain) bool { return store.Project(d.Name) == name }) {
+			return name
+		}
+	}
+}
+
+// Taken reports whether the listed name d belongs to another project than the
+// one at root: its Root is another folder, and gone, which reports whether
+// nothing is at a path any more, says it is still there. A name whose Root is
+// unset, root or gone is the project's to take over.
+func Taken(d store.Domain, root string, gone func(path string) bool) bool {
+	return d.Root != "" && !SameFolder(d.Root, root) && !gone(d.Root)
+}
+
+// SameFolder reports whether a and b name one folder: macOS ignores case, and
+// /tmp is /private/tmp, so os.Getwd's path can differ from a saved Root.
+func SameFolder(a, b string) bool {
+	if a == b {
+		return true
+	}
+	x, errA := os.Stat(a)
+	y, errB := os.Stat(b)
+	return errA == nil && errB == nil && os.SameFile(x, y)
+}
+
+// BelongsTo is why a project can't take name: it belongs to the project in
+// folder.
+func BelongsTo(name, folder string) error {
+	return errors.New(name + " belongs to " + folder + ": give this project another name")
 }
 
 // Propose compares the project with the listed domains. name is the name the
@@ -171,15 +211,16 @@ func projectName(p Project, domains []store.Domain) string {
 // port. Each page gets its label's subdomain, such as mail.shop.test, with
 // its port on the address of the project's name, unless a listed name has
 // that port there, or the project runs none or another compose file than the
-// first, which the pages come from. Names already
-// listed stay as they are, and a listed name the user chose gets the folder
-// as Root (Claim). The project's best compose file is offered when no name of
-// the project links one that is still there (linked). A project with no app
-// and no compose file gets nothing. labels maps an app's folder to the label the user
-// gave it, "" for the project's name alone (CheckLabel); an app without one
-// keeps a listed name of the project on its port (aliasOf). The apps' .env
-// lines that point at this Mac's own host get the names (envFixes).
-func Propose(p Project, domains []store.Domain, name string, labels map[string]string) Proposal {
+// first, which the pages come from. Names already listed stay as they are,
+// and a listed name whose folder is unset or gone gets the folder as Root
+// (Claim); a name the user chose that is another project's (Taken, by gone)
+// gets only a note. The project's best compose file is offered when
+// no name of the project links one that is still there (linked). A project
+// with no app and no compose file gets nothing. An app whose folder's name
+// isn't listed keeps a listed name of the project on its port (aliasOf). The
+// apps' .env lines that point at this Mac's own host get the names
+// (envFixes).
+func Propose(p Project, domains []store.Domain, name string, gone func(path string) bool) Proposal {
 	prop := Proposal{Root: p.Root, Add: []store.Domain{}, Env: []Fix{}, Notes: []string{}, Dirs: map[string]string{}}
 	if name != "" {
 		if err := store.ValidateProject(name); err != nil {
@@ -188,21 +229,27 @@ func Propose(p Project, domains []store.Domain, name string, labels map[string]s
 		}
 		p.Name = name
 	} else {
-		p.Name = projectName(p, domains)
+		p.Name = projectName(p, domains, gone)
 	}
 	prop.Name = p.Name
 	if p.Name == "" || (len(p.Apps) == 0 && len(p.Compose) == 0) {
 		return prop
 	}
-	if d, ok := store.Find(domains, p.Name); ok && name != "" && d.Root != p.Root {
-		prop.Claim = true // the user named a listed name: it becomes the project's
+	if d, ok := store.Find(domains, p.Name); ok && !SameFolder(d.Root, p.Root) {
+		switch {
+		case !Taken(d, p.Root, gone):
+			prop.Claim = true // a listed name whose folder is unset or gone becomes the project's
+		case name != "":
+			prop.Notes = append(prop.Notes, BelongsTo(p.Name, d.Root).Error())
+			return prop
+		}
 	}
 	prop.Address, prop.Listed = projectAddress(p, domains)
 	if prop.Address == "" {
 		prop.Notes = append(prop.Notes, store.ErrBlockFull.Error()+": free one, then scan again")
 		return prop
 	}
-	apps, appNotes := entries(p, domains, labels, prop.Address)
+	apps, appNotes := entries(p, domains, prop.Address)
 	prop.Notes = append(prop.Notes, appNotes...)
 
 	list := slices.Clone(domains)
@@ -291,16 +338,16 @@ func Propose(p Project, domains []store.Domain, name string, labels map[string]s
 
 // entries names the project's apps, the root's entry first: the root app gets
 // the project's name, and each other app a subdomain named after its folder,
-// the label the user gave it in labels, or a listed name of the project on its
-// port on address (aliasOf). It also returns notes on what it couldn't decide.
-func entries(p Project, domains []store.Domain, labels map[string]string, address string) ([]entry, []string) {
+// or a listed name of the project on its port on address (aliasOf). It also
+// returns notes on what it couldn't decide.
+func entries(p Project, domains []store.Domain, address string) ([]entry, []string) {
 	var notes []string
 	apps := []entry{{dir: ".", name: p.Name}}
 	own := map[string]bool{} // the names apps get by default
 	_, listed := store.Find(domains, p.Name)
 	for _, a := range p.Apps {
 		if a.Dir != "." {
-			own[label(path.Base(a.Dir))+"."+p.Name] = true
+			own[Label(path.Base(a.Dir))+"."+p.Name] = true
 			continue
 		}
 		apps[0].app, own[p.Name] = a, true
@@ -312,19 +359,8 @@ func entries(p Project, domains []store.Domain, labels map[string]string, addres
 		if a.Dir == "." {
 			continue
 		}
-		name, bare := label(path.Base(a.Dir))+"."+p.Name, false
-		if lbl, ok := labels[a.Dir]; ok {
-			switch err := CheckLabel(p, domains, p.Name, a.Dir, lbl); {
-			case err != nil:
-				notes = append(notes, a.Dir+": "+err.Error())
-			case lbl != "":
-				name = lbl + "." + p.Name
-			case apps[0].dir == ".":
-				name, bare = p.Name, true
-			default:
-				notes = append(notes, a.Dir+": "+apps[0].dir+" has "+p.Name)
-			}
-		} else if _, listed := store.Find(domains, name); !listed && a.Port > 0 {
+		name := Label(path.Base(a.Dir)) + "." + p.Name
+		if _, listed := store.Find(domains, name); !listed && a.Port > 0 {
 			if alias, ok := aliasOf(domains, p.Name, address, a.Port, own); ok {
 				name, own[alias] = alias, true // one app per listed name; the next keeps its folder's
 			}
@@ -335,10 +371,6 @@ func entries(p Project, domains []store.Domain, labels map[string]string, addres
 		}
 		if _, listed := store.Find(domains, name); !listed && a.Port == 0 {
 			notes = append(notes, name+": "+noPort)
-		}
-		if bare {
-			apps[0] = entry{dir: a.Dir, name: name, app: a} // the project's name serves the app
-			continue
 		}
 		if i := slices.IndexFunc(apps[1:], func(e entry) bool { return e.name == name }); i >= 0 {
 			notes = append(notes, a.Dir+": "+apps[i+1].dir+" has "+name)
@@ -351,34 +383,6 @@ func entries(p Project, domains []store.Domain, labels map[string]string, addres
 
 // noPort is the note for an app whose port lodo can't read.
 const noPort = "lodo can't tell its port; set it in lodo dev --edit"
-
-// CheckLabel says why app dir can't take lbl in project: an invalid name,
-// another app's name by default, a name listed on another port, the bare name
-// when the root is an app or the bare name is listed, or an app whose port
-// lodo can't tell, whose name a later scan couldn't find. lbl "" means the
-// project's name alone.
-func CheckLabel(p Project, domains []store.Domain, project, dir, lbl string) error {
-	if lbl != "" {
-		if err := store.ValidateName(lbl + "." + project); err != nil {
-			return err
-		}
-		if i := slices.IndexFunc(p.Apps, func(a App) bool { return a.Dir != dir && a.Dir != "." && label(path.Base(a.Dir)) == lbl }); i >= 0 {
-			return errors.New(p.Apps[i].Dir + " has " + lbl + "." + project)
-		}
-	} else if slices.ContainsFunc(p.Apps, func(a App) bool { return a.Dir == "." }) {
-		return errors.New("the root's app has " + project)
-	} else if _, listed := store.Find(domains, project); listed {
-		return errors.New(project + " is listed: give it the app's port in lodo dev --edit")
-	}
-	i := slices.IndexFunc(p.Apps, func(a App) bool { return a.Dir == dir })
-	if i < 0 || p.Apps[i].Port == 0 {
-		return ErrUnknownPort
-	}
-	if d, listed := store.Find(domains, lbl+"."+project); lbl != "" && listed && d.Port > 0 && d.Port != p.Apps[i].Port {
-		return fmt.Errorf("%s is listed on port %d, not this app's %d", d.Name, d.Port, p.Apps[i].Port)
-	}
-	return nil
-}
 
 // aliasOf returns the listed name of project that routes port on address and
 // that no app is named after by default (own): the bare name or label the
@@ -430,7 +434,8 @@ func onPort(domains []store.Domain, address string, port int) string {
 	return ""
 }
 
-// linksInside reports whether d links a compose file inside root.
+// linksInside reports whether d links a compose file inside root. It compares
+// the paths as written, unlike SameFolder.
 func linksInside(d store.Domain, root string) bool {
 	return strings.HasPrefix(d.Compose, root+string(filepath.Separator))
 }

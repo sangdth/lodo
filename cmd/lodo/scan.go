@@ -11,7 +11,6 @@ import (
 	"github.com/sangdth/lodo/internal/compose"
 	"github.com/sangdth/lodo/internal/scan"
 	"github.com/sangdth/lodo/internal/store"
-	"github.com/sangdth/lodo/internal/system"
 	"github.com/sangdth/lodo/internal/tui"
 )
 
@@ -33,12 +32,11 @@ func (a app) scan(ctx context.Context, dir string, o options) int {
 		a.fail(err)
 		return 1
 	}
-	p, ok := scan.Find(dir, func(path string) bool { return system.Tracked(ctx, a.paths, a.runner, path) })
+	_, proposal, ok := tui.NewBackend(a.paths, a.runner).Scan(ctx, dir, name, domains)
 	if !ok {
 		a.fail(scan.ErrNoProject)
 		return 1
 	}
-	proposal := scan.Propose(p, domains, name, nil)
 	if o.json {
 		enc := json.NewEncoder(a.stdout)
 		enc.SetIndent("", "  ")

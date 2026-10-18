@@ -43,10 +43,8 @@ type Backend interface {
 	// SetService turns dnsmasq or Caddy on or off.
 	SetService(ctx context.Context, service string, on bool) error
 	// Scan reads the project dir is in and proposes what the list lacks for
-	// it, under name when the user chose one and with the labels the user gave
-	// its apps; ok is false outside a project.
-	Scan(ctx context.Context, dir, name string, labels map[string]string, domains []store.Domain) (
-		p scan.Project, proposal scan.Proposal, ok bool)
+	// it, under name when the user chose one; ok is false outside a project.
+	Scan(ctx context.Context, dir, name string, domains []store.Domain) (p scan.Project, proposal scan.Proposal, ok bool)
 	// ReadCompose returns the compose file at path.
 	ReadCompose(path string) ([]byte, error)
 	// LinkEnv writes DOCKER_HOST_IP=address into the .env the compose file at
@@ -103,14 +101,12 @@ func (b backend) Gone(path string) bool {
 	return errors.Is(err, fs.ErrNotExist)
 }
 
-func (b backend) Scan(ctx context.Context, dir, name string, labels map[string]string, domains []store.Domain) (
-	scan.Project, scan.Proposal, bool,
-) {
+func (b backend) Scan(ctx context.Context, dir, name string, domains []store.Domain) (scan.Project, scan.Proposal, bool) {
 	p, ok := scan.Find(dir, func(path string) bool { return system.Tracked(ctx, b.paths, b.runner, path) })
 	if !ok {
 		return scan.Project{}, scan.Proposal{}, false
 	}
-	return p, scan.Propose(p, domains, name, labels), true
+	return p, scan.Propose(p, domains, name, b.Gone), true
 }
 
 func (b backend) ReadCompose(path string) ([]byte, error) {

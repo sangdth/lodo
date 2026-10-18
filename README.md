@@ -52,8 +52,10 @@ Run `lodo setup` as yourself, not with `sudo`. It asks for your password once, b
 9. runs the script through `sudo -n` to prove the rule works, then prints `lodo doctor`'s checks.
 
 It prints one line per step and stops at the first failure, with the command that fixes it. Running it again is
-safe: it repairs the setup and keeps the first backup. Do so after you install Caddy, and after you upgrade lodo
-when `lodo doctor` reports "script out of date". After setup, adding, editing and deleting names never asks for
+safe: it repairs the setup, prints the same lines and keeps the first backup. A backup that holds lodo's lines, made
+after lodo had already changed the file, loses them, and goes when nothing else is left, so uninstall never puts
+them back. Do so after you install Caddy, and after you upgrade lodo when `lodo doctor` reports "script out of
+date". After setup, adding, editing and deleting names never asks for
 a password, and neither does `lodo apply`.
 
 ## Using lodo
@@ -126,24 +128,31 @@ Services  compose.dev.yaml
 tab/shift+tab move  space toggle  enter save + start  esc cancel
 ```
 
-The form shows what [the scan](#what-the-scan-reads) found: the project's name and address, then a row per app
-and per web page in its compose file, with a label and a port. The rows hold the project's listed names first,
-then the ones the scan proposes. Each label gets `.<project>.test`; an empty label gives the app the project's
-name alone, such as `flowy.test`, and only one row may have it. The two toggles link the compose file and set the
-`.env` lines shown, masked; the scan's notes follow them. `tab` and `shift+tab` move, `space` turns a toggle on or
-off, `enter` saves everything in one change, and `esc` cancels. A field that breaks a rule says why under it when
-you press `enter`. From `lodo dev`, `enter` saves and then starts the apps; from the dashboard's `i`, it saves and
-goes back to the list.
+The form shows what [the scan](#what-the-scan-reads) found: the project's name and address, then a row per app and
+per web page in its compose file, with a label and a port. The rows hold the project's listed names first, then the
+ones the scan proposes. Each label gets `.<project>.test`; an empty label gives the app the project's name alone,
+such as `flowy.test`, and only one row may have it: the root's app, when the project has one. No label may be
+another app's folder name, since a later scan ties each app to its folder's name. The two toggles link the compose
+file and set the `.env` lines shown, masked; the scan's notes follow them. `tab` and `shift+tab` move, `space` turns
+a toggle on or off, `enter` saves everything in one change, and `esc` cancels. A field that breaks a rule says why
+under it when you press `enter`. From `lodo dev`, `enter` saves and then starts the apps; from the dashboard's `i`,
+it saves and goes back to the list. A form taller than the terminal, or than the dashboard's box, scrolls: the
+title, the status line and the keys stay put, a dim `↑ more` or `↓ more` stands for the hidden lines, and the field
+with the focus stays in view. At the last toggle, `tab` scrolls the lines under it into view before it goes back to
+the top.
 
-The project's name is yours: the form suggests the folder's, such as `flowy.test`, and the subdomains follow
-what you type. Once saved, the name keeps the project's folder as `root` in `domains.json`, so later scans know
-the project by it. A name already listed that links a compose file in the project counts too. A link to a compose
-file that is gone, after you rename the project's folder or move the file, counts as none, and the form offers
-the project's file again. Typing a listed name that has no folder, or whose folder is gone, takes that name over:
-it keeps its settings and gets this folder. A listed name whose folder is still there is refused:
-`flow.test belongs to ~/Projects/flow: give this project another name`. A later scan keeps a listed name of the
-project on an app's port and address as that app's. A `.env` line is set with `l`'s guards below, and only while
-it still reads as the scan read it.
+The project's name is yours: the form suggests the folder's, such as `flowy.test`, and the subdomains follow what
+you type. When that name belongs to another folder that is still there, such as a second clone of the repo, it
+suggests the first of `flowy-2.test`, `flowy-3.test` … that no listed name uses, with an address of its own. Once
+saved, the name keeps the project's folder as `root` in `domains.json`, so later scans know the project by it, even
+when you reach the folder by another path, such as with other capital letters. A name already listed that links a
+compose file in the project counts too, unless its project's folder is another one that is still there. A link to a
+compose file that is gone, after you rename the project's folder or move the file, counts as none, and the form
+offers the project's file again. Typing a listed name that has no folder, or whose folder is gone, takes that name
+over: it keeps its settings and gets this folder, and the project's old name goes with its names. A listed name
+whose folder is still there is refused: `flow.test belongs to ~/Projects/flow: give this project another name`. A
+later scan keeps a listed name of the project on an app's port and address as that app's. A `.env` line is set with
+`l`'s guards below, and only while it still reads as the scan read it.
 
 ### The dashboard
 
@@ -359,7 +368,10 @@ fails. The dashboard and the setup form do the same after every change. A name w
 
 `lodo scan` prints what the project in the current folder lacks from the list, as the setup form shows it, and
 changes nothing; only `git ls-files` runs, to skip the `.env` files git tracks. `--json` prints it for scripts,
-with the same `***` in URLs, and `--name hugger` proposes it under `hugger.test`. It exits 1 outside a project.
+with the same `***` in URLs, and `--name hugger` proposes it under `hugger.test`. A listed `hugger.test` with no
+folder, or a gone one, becomes this folder's (`save  this folder as hugger.test's project`); one whose folder is
+still there gets only the note `hugger.test belongs to <folder>: give this project another name`. It exits 1
+outside a project.
 
 `lodo uninstall` removes what setup installed; see [Uninstall](#uninstall). `lodo version` prints the version.
 

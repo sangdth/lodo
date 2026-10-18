@@ -62,7 +62,7 @@ func TestPropose_Env(t *testing.T) {
 
 	const compose, prod = "/p/shop/compose.yaml", "/p/shop/compose.prod.yaml"
 	domains := []store.Domain{
-		{Name: "shop.test", Address: "127.0.1.4", Enabled: true, Compose: compose},
+		{Name: "shop.test", Address: "127.0.1.4", Enabled: true, Root: "/p/shop", Compose: compose},
 		{Name: "web.shop.test", Address: "127.0.1.4", Port: 3000, Enabled: true},
 		{Name: "api.shop.test", Address: "127.0.1.4", Port: 4000, Enabled: true, HTTPS: true},
 		{Name: "off.shop.test", Address: "127.0.1.4", Port: 5000},
@@ -116,7 +116,7 @@ func TestPropose_Env(t *testing.T) {
 				Env:   []EnvLine{{File: "apps/web/.env", Line: 1, Key: keyRE.FindStringSubmatch(tt.text)[1], Text: tt.text}},
 				Bound: tt.bound, ComposeAddress: tt.address,
 			}
-			got := Propose(p, list, "", nil)
+			got := Propose(p, list, "", gone)
 			var want []Fix
 			if tt.new != "" {
 				want = []Fix{{File: "apps/web/.env", Line: 1, Old: tt.old, New: tt.new}}
@@ -149,7 +149,7 @@ func TestPropose_Env(t *testing.T) {
 		})
 	}
 
-	got := Propose(Project{Root: "/p/shop", Name: "shop.test", Apps: []App{{Dir: "apps/web", Port: 3000}}, Shared: []string{"apps/web/.env"}}, domains, "", nil)
+	got := Propose(Project{Root: "/p/shop", Name: "shop.test", Apps: []App{{Dir: "apps/web", Port: 3000}}, Shared: []string{"apps/web/.env"}}, domains, "", gone)
 	if want := []string{"apps/web/.env: git tracks it, so lodo leaves its localhost URLs"}; !slices.Equal(got.Notes, want) {
 		t.Errorf("shared: Notes = %q, want %q", got.Notes, want)
 	}
