@@ -16,6 +16,7 @@ import (
 	"github.com/sangdth/lodo/internal/paths"
 	"github.com/sangdth/lodo/internal/run"
 	"github.com/sangdth/lodo/internal/scan"
+	"github.com/sangdth/lodo/internal/store"
 )
 
 func TestApp_Doctor(t *testing.T) {
@@ -210,4 +211,42 @@ func TestApp_Scan(t *testing.T) {
 			t.Errorf("a tracked .env gave:\n%s\nwant no set lines and its note", got)
 		}
 	})
+}
+
+// TestApp_ScanNameTaken scans shop under --name shop while shop.test is
+// listed for another folder: the scan claims it only when that folder is
+// unset or gone, and otherwise says whose it is and offers nothing.
+func TestApp_ScanNameTaken(t *testing.T) {
+	t.Parallel()
+
+	root, other := writeTree(t, shopTree), writeTree(t, shopTree)
+	tests := []struct {
+		name string
+		root string // shop.test's folder
+		want string
+	}{
+		{name: "another clone, still there", root: other, want: "note  shop.test belongs to " + other + ": give this project another name\n"},
+		{name: "a folder that is gone", root: filepath.Join(filepath.Dir(other), "moved"), want: "save  this folder as shop.test's project\n"},
+		{name: "no folder", want: "save  this folder as shop.test's project\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			p := paths.ForTest(t.TempDir())
+			if err := store.Save(p.DomainsJSON, []store.Domain{{Name: "shop.test", Address: "127.0.1.1", Enabled: true, Root: tt.root}}); err != nil {
+				t.Fatal(err)
+			}
+			var stdout, stderr strings.Builder
+			if code := newApp(p, run.NewFake(), &stdout, &stderr).scan(t.Context(), root, options{name: "shop"}); code != 0 {
+				t.Fatalf("exit code = %d, stderr %q", code, stderr.String())
+			}
+			got := stdout.String()
+			if !strings.Contains(got, tt.want) {
+				t.Errorf("scan lacks %q:\n%s", tt.want, got)
+			}
+			if tt.root == other && (strings.Contains(got, "add   ") || strings.Contains(got, "run lodo dev --edit")) {
+				t.Errorf("scan offers changes for another project's name:\n%s", got)
+			}
+		})
+	}
 }

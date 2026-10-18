@@ -127,10 +127,10 @@ func systemConf(p paths.Paths) (string, error) {
 	}
 	note := "backup kept in " + filepath.Base(p.SystemConfBackup)
 	if !exists(p.SystemConfBackup) {
-		if _, err := fsutil.WriteFile(p.SystemConfBackup, old, 0o644); err != nil {
-			return "", err
-		}
 		note = "backup in " + filepath.Base(p.SystemConfBackup)
+	}
+	if err := backUp(p.SystemConfBackup, old, StripSystemConf); err != nil {
+		return "", err
 	}
 	if _, err := fsutil.WriteFile(p.SystemConf, []byte(RewriteSystemConf(string(old), p)), 0o644); err != nil {
 		return "", err
@@ -224,8 +224,9 @@ func setupCaddy(ctx context.Context, p paths.Paths, r run.Runner) error {
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("read %s: %w", p.SystemCaddyfile, err)
 	}
-	if err == nil && !exists(p.SystemCaddyfileBackup) {
-		if _, err := fsutil.WriteFile(p.SystemCaddyfileBackup, old, 0o644); err != nil {
+	if err == nil || exists(p.SystemCaddyfileBackup) {
+		strip := func(s string) string { return StripSystemCaddyfile(s, p) }
+		if err := backUp(p.SystemCaddyfileBackup, old, strip); err != nil {
 			return err
 		}
 	}
@@ -318,6 +319,32 @@ func ownedRegular(info fs.FileInfo) error {
 const trustTries = 5
 
 var trustWait = 400 * time.Millisecond
+
+// backUp keeps the first backup of a system file, or makes it from current.
+// A backup that holds lodo's marker was made after lodo had changed the file,
+// so it loses lodo's lines; one with nothing else left is removed, since the
+// file held nothing of the user's.
+func backUp(backup string, current []byte, strip func(string) string) error {
+	content := current
+	if b, err := os.ReadFile(backup); err == nil { //nolint:gosec // G304: callers pass paths from paths.Paths
+		content = b
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("read %s: %w", backup, err)
+	}
+	if !slices.ContainsFunc(strings.Split(string(content), "\n"), func(l string) bool { return strings.TrimSpace(l) == Marker }) {
+		_, err := fsutil.WriteFile(backup, content, 0o644)
+		return err
+	}
+	rest := strip(string(content))
+	if strings.TrimSpace(rest) == "" {
+		if err := os.Remove(backup); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("remove %s: %w", backup, err)
+		}
+		return nil
+	}
+	_, err := fsutil.WriteFile(backup, []byte(rest), 0o644)
+	return err
+}
 
 // installFile stages content and installs it as root with mode.
 func installFile(ctx context.Context, p paths.Paths, r run.Runner, content, target, mode string) error {

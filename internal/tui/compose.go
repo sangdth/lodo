@@ -116,7 +116,7 @@ func (m Model) link(d store.Domain) (Model, tea.Cmd) {
 	}
 	ctx, b, dir, domains := m.ctx, m.backend, m.origin.Dir, m.domains
 	return m, func() tea.Msg {
-		project, _, _ := b.Scan(ctx, dir, "", nil, domains)
+		project, _, _ := b.Scan(ctx, dir, "", domains)
 		return linkScanMsg{name: d.Name, files: project.Compose}
 	}
 }

@@ -51,16 +51,14 @@ func (f *fakeBackend) PortsReady() error { return f.portsErr }
 func (f *fakeBackend) Gone(path string) bool { return !f.folders[path] }
 
 // Scan proposes with the real scan.Propose, on the project set in the fake.
-func (f *fakeBackend) Scan(_ context.Context, _, name string, labels map[string]string, domains []store.Domain) (
-	scan.Project, scan.Proposal, bool,
-) {
+func (f *fakeBackend) Scan(_ context.Context, _, name string, domains []store.Domain) (scan.Project, scan.Proposal, bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.scans++
 	if f.project.Root == "" {
 		return scan.Project{}, scan.Proposal{}, false
 	}
-	return f.project, scan.Propose(f.project, domains, name, labels), true
+	return f.project, scan.Propose(f.project, domains, name, f.Gone), true
 }
 
 func (f *fakeBackend) ReadCompose(path string) ([]byte, error) {

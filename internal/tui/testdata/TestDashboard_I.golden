@@ -1,3 +1,5 @@
+                                                                                
+                                                                                
 [90m╭──────────────────────────────────────────────────────────────────────────────╮[m
 [90m│[m [1mlodo[m                          caddy [32m●[m   dnsmasq [32m●[m   loopback [32m●[m   resolvers [32m●[m [90m│[m
 [90m│[m[90m──────────────────────────────────────────────────────────────────────────────[m[90m│[m
@@ -12,14 +14,11 @@
 [90m│[m                                                                              [90m│[m
 [90m│[m Services  [90mcompose.dev.yaml[m                                                   [90m│[m
 [90m│[m   mail       [37mmail[m[90m.flowy.test[m  port [37m8025[m[90m[m                                      [90m│[m
-[90m│[m                                                                              [90m│[m
-[90m│[m [x] link compose.dev.yaml  [90mDOCKER_HOST_IP=127.0.1.2[m                          [90m│[m
-[90m│[m [x] set 2 .env lines                                                         [90m│[m
-[90m│[m     [90mapps/api/.env:1  DATABASE_URL=postgres://***@flowy.test:5432/flowy[m       [90m│[m
-[90m│[m     [90mapps/api/.env:2  WEB_URL=http://web.flowy.test[m                           [90m│[m
-[90m│[m                                                                              [90m│[m
-[90m│[m [90mnote  docs.flowy.test: lodo can't tell its port; set it in lodo dev --edit[m   [90m│[m
+[90m│[m [90m↓ more[m                                                                       [90m│[m
 [90m│[m                                                                              [90m│[m
 [90m│[m[90m tab/shift+tab move  space toggle  enter save  esc cancel[m                     [90m│[m
 [90m│[m[90m[m                                                                              [90m│[m
 [90m╰──────────────────────────────────────────────────────────────────────────────╯[m
+                                                                                
+                                                                                
+                                                                                

@@ -142,6 +142,7 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.mode, m.err = modeSetup, nil
 		m.setup = NewSetup(m.ctx, m.backend, m.domains, m.origin)
 		m.setup.embedded = true
+		m.setup.width, m.setup.height = m.innerWidth(), m.logHeight()
 		return m, m.setup.Init() // so is opening the setup form, which scans the project
 	}
 	if !m.busy {

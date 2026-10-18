@@ -110,9 +110,8 @@ func (m Model) View() tea.View {
 	case modePreview:
 		body = m.previewView()
 	case modeSetup:
-		s := m.setup
-		s.width = m.innerWidth()
-		body = strings.Join(s.lines(), "\n")
+		lines, _ := m.setup.lines()
+		body = strings.Join(lines, "\n")
 	}
 	keys := strings.Split(m.keys(), "\n")
 	for i, line := range keys {
@@ -165,8 +164,9 @@ func (m Model) widths() (name, compose int) {
 	return name, compose
 }
 
-// layout sizes the table, the log and the preview to the box and redraws the
-// rows. It runs whenever the list changes, since the name column fits it.
+// layout sizes the table, the log, the preview and the setup form to the box
+// and redraws the rows. It runs whenever the list changes, since the name
+// column fits it.
 func (m *Model) layout() {
 	name, compose := m.widths()
 	m.table.SetColumns([]table.Column{
@@ -184,6 +184,7 @@ func (m *Model) layout() {
 	m.log.SetHeight(m.logHeight() - 1) // the log's title takes a line
 	m.preview.SetWidth(m.innerWidth())
 	m.preview.SetHeight(m.logHeight() - 2) // the preview's title and .env line take two
+	m.setup.width, m.setup.height = m.innerWidth(), m.logHeight()
 }
 
 // checkWidth fits the check cell: wider while a listed name has HTTPS on.

@@ -5,10 +5,12 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/exp/golden"
 	"github.com/charmbracelet/x/exp/teatest/v2"
@@ -240,6 +242,87 @@ func TestSetup_InlineError(t *testing.T) {
 	}
 }
 
+// shortWindow is a terminal too short for flowy's form, which then scrolls.
+var shortWindow = tea.WindowSizeMsg{Width: defaultWidth, Height: 12}
+
+func TestSetup_Scrolls(t *testing.T) {
+	t.Parallel()
+
+	s, _ := setupIn(inFlowyApps(), unlisted).update(shortWindow)
+	got := s.View().Content
+	if h := strings.Count(got, "\n") + 1; h != shortWindow.Height {
+		t.Errorf("the form is %d lines, want the terminal's %d", h, shortWindow.Height)
+	}
+	golden.RequireEqual(t, got)
+}
+
+func TestSetup_ScrollFollowsTheFocus(t *testing.T) {
+	t.Parallel()
+
+	s, _ := setupIn(inFlowyApps(), unlisted).update(shortWindow)
+	s = tabTo(s, rowStop(len(s.rows))) // the link toggle
+	golden.RequireEqual(t, s.View().Content)
+
+	s = send(s, "tab") // the .env lines' toggle, the last stop: the lines under it show
+	if got := ansi.Strip(s.View().Content); !strings.Contains(got, "note  docs.flowy.test") || strings.Contains(got, "↓ more") {
+		t.Errorf("the last stop doesn't show the end of the form:\n%s", got)
+	}
+	top := s.top
+	if s = send(s, "shift+tab"); s.top != top {
+		t.Errorf("top %d after shift+tab to a line in sight, want it kept at %d", s.top, top)
+	}
+}
+
+// TestSetup_ScrollsPastTheLastStop gives the .env lines' toggle more lines
+// than the terminal holds: tab at the last stop scrolls them into sight, and
+// only then moves the focus back to the name.
+func TestSetup_ScrollsPastTheLastStop(t *testing.T) {
+	t.Parallel()
+
+	b := inFlowyApps()
+	for line := 3; line <= 8; line++ {
+		key := "URL" + strconv.Itoa(line)
+		b.project.Env = append(b.project.Env, scan.EnvLine{File: "apps/api/.env", Line: line, Key: key, Text: key + "=http://localhost:3000"})
+	}
+	s, _ := setupIn(b, unlisted).update(shortWindow)
+	s = tabTo(s, s.stops()-1)
+	for tabs := 0; strings.Contains(ansi.Strip(s.View().Content), "↓ more"); tabs++ {
+		if tabs == 20 {
+			t.Fatalf("lines stay hidden under the last stop:\n%s", ansi.Strip(s.View().Content))
+		}
+		if s = send(s, "tab"); s.focus != s.stops()-1 {
+			t.Fatalf("focus %d with lines still hidden under the last stop %d", s.focus, s.stops()-1)
+		}
+	}
+	got := ansi.Strip(s.View().Content)
+	for _, want := range []string{"apps/api/.env:8", "note  docs.flowy.test"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the end of the form lacks %q:\n%s", want, got)
+		}
+	}
+	if s = send(s, "tab"); s.focus != stopName {
+		t.Errorf("focus %d after tab at the end, want the name", s.focus)
+	}
+}
+
+// TestSetup_FitsUnscrolled checks that a form that fits the terminal shows
+// whole, as the goldens drawn without a height show it.
+func TestSetup_FitsUnscrolled(t *testing.T) {
+	t.Parallel()
+
+	s := setupIn(inFlowyApps(), unlisted)
+	want := s.View().Content // TestSetup_FirstRun's golden
+	fits := strings.Count(want, "\n") + 1
+	for _, height := range []int{fits, defaultHeight, 60} {
+		if got, _ := s.update(tea.WindowSizeMsg{Width: defaultWidth, Height: height}); got.View().Content != want {
+			t.Errorf("at %d lines the form is\n%s\nwant\n%s", height, ansi.Strip(got.View().Content), ansi.Strip(want))
+		}
+	}
+	if short, _ := s.update(tea.WindowSizeMsg{Width: defaultWidth, Height: fits - 1}); !strings.Contains(ansi.Strip(short.View().Content), "↓ more") {
+		t.Errorf("a line short of the form, it doesn't scroll:\n%s", ansi.Strip(short.View().Content))
+	}
+}
+
 func TestSetup_Errors(t *testing.T) {
 	t.Parallel()
 
@@ -254,7 +337,8 @@ func TestSetup_Errors(t *testing.T) {
 		{name: "no project", stop: stopName, typed: "", want: "name needs a label before .test"},
 		{name: "a bad address", stop: stopAddress, typed: "10.0.0.1", at: stopAddress, want: "address must be an IPv4 address in 127.0.0.0/8, like 127.0.1.3"},
 		{name: "another project's address", stop: stopAddress, typed: "127.0.1.1", at: stopAddress, want: "127.0.1.1 belongs to crm.test"},
-		{name: "a name twice", stop: rowStop(1), typed: "web", at: rowStop(1), want: "web.flowy.test is already listed"},
+		{name: "a name twice", stop: rowStop(1), typed: "mail", at: rowStop(3), want: "mail.flowy.test is already listed"},
+		{name: "another app's folder", stop: rowStop(0), typed: "api", at: rowStop(0), want: "apps/api has api.flowy.test"},
 		{name: "not a port", stop: rowStop(0) + 1, typed: "web", at: rowStop(0) + 1, want: "port must be a number"},
 	}
 	for _, tt := range tests {
@@ -365,9 +449,34 @@ func TestSetup_TakeOver(t *testing.T) {
 	}
 }
 
+// TestSetup_TakeOverDropsTheOldName renames listed flowy to site, a listed
+// name with no folder: flowy.test and its names go, so a later scan names the
+// project site.test.
+func TestSetup_TakeOverDropsTheOldName(t *testing.T) {
+	t.Parallel()
+
+	b := inFlowyApps()
+	domains := append(slices.Clone(flowyListed), store.Domain{Name: "site.test", Address: "127.0.1.3", Enabled: true})
+	s := send(retype(setupIn(b, domains), "site"), "enter")
+	if !s.Saved() {
+		t.Fatalf("not saved: %q %v", s.errMsg, s.Err())
+	}
+	saved := lastSaved(t, b)
+	for _, name := range []string{"flowy.test", "web.flowy.test"} {
+		if _, ok := store.Find(saved, name); ok {
+			t.Errorf("saved %+v, want %s gone", saved, name)
+		}
+	}
+	if got := scan.Propose(b.project, saved, "", b.Gone).Name; got != "site.test" {
+		t.Errorf("a later scan names the project %s, want site.test", got)
+	}
+}
+
 // TestSetup_SameFolderName opens the form in ~/Work/flowy while flowy.test
-// belongs to ~/Projects/flowy, which is still there: the folder's name is
-// refused, and a new name leaves the other project's names alone.
+// belongs to ~/Projects/flowy, which is still there: the form offers
+// flowy-2.test on a free address with every app, refuses flowy.test typed in
+// without a scan and keeps its rows, and saves flowy-2.test leaving the other
+// project's names alone.
 func TestSetup_SameFolderName(t *testing.T) {
 	t.Parallel()
 
@@ -375,12 +484,21 @@ func TestSetup_SameFolderName(t *testing.T) {
 	b := inFlowyApps()
 	b.project.Root, b.project.Compose = other, []string{other + "/compose.dev.yaml"}
 	b.folders = map[string]bool{flowyRoot: true}
-	s := send(setupIn(b, flowyListed), "enter")
+	s := setupIn(b, flowyListed)
+	if s.name.Value() != "flowy-2" || s.address.Value() != "127.0.1.3" || len(s.rows) != 4 {
+		t.Fatalf("form at %q %q with %d rows; want flowy-2 on a free address with web, api, docs and mail",
+			s.name.Value(), s.address.Value(), len(s.rows))
+	}
+
+	s = send(send(retype(s, "flowy"), "tab"), "enter")
 	if want := "flowy.test belongs to ~/Projects/flowy: give this project another name"; s.errMsg != want || s.errAt != stopName || len(b.saved) != 0 {
 		t.Fatalf("error %q at %d, saved %v; want %q at the name and nothing saved", s.errMsg, s.errAt, b.saved, want)
 	}
+	if b.scans != 1 || len(s.rows) != 4 {
+		t.Fatalf("%d scans, %d rows; want no scan of flowy.test and the rows kept", b.scans, len(s.rows))
+	}
 
-	s = send(retype(tabTo(retype(s, "flowy2"), stopAddress), "127.0.1.3"), "enter")
+	s = send(retype(s, "flowy-2"), "enter")
 	if !s.Saved() {
 		t.Fatalf("not saved: %q %v", s.errMsg, s.Err())
 	}
@@ -390,8 +508,11 @@ func TestSetup_SameFolderName(t *testing.T) {
 			t.Errorf("saved %+v, want %+v unchanged", saved, want)
 		}
 	}
-	if d, _ := store.Find(saved, "flowy2.test"); d.Root != other || d.Address != "127.0.1.3" {
-		t.Errorf("flowy2.test = %+v, want it on 127.0.1.3 with %s as its folder", d, other)
+	if d, _ := store.Find(saved, "flowy-2.test"); d.Root != other || d.Address != "127.0.1.3" {
+		t.Errorf("flowy-2.test = %+v, want it on 127.0.1.3 with %s as its folder", d, other)
+	}
+	if d, _ := store.Find(saved, "web.flowy-2.test"); d.Port != 3000 || d.Address != "127.0.1.3" {
+		t.Errorf("web.flowy-2.test = %+v, want it on 127.0.1.3 port 3000", d)
 	}
 }
 
@@ -415,6 +536,30 @@ func TestSetup_OneBareName(t *testing.T) {
 	s = send(s, "enter")
 	if want := "only one app can be flowy.test alone: give this one a label"; s.errMsg != want || s.errAt != rowStop(1) || len(b.saved) != 0 {
 		t.Errorf("error %q at %d, saved %v; want %q at the second label", s.errMsg, s.errAt, b.saved, want)
+	}
+}
+
+// TestSetup_RootAppKeepsTheName gives flowy an app in its root: a later scan
+// ties that app to flowy.test, so the form refuses a label on its row and the
+// project's name alone on another.
+func TestSetup_RootAppKeepsTheName(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		row   int
+		label string
+	}{{row: 0, label: "site"}, {row: 1, label: ""}} {
+		b := inFlowyApps()
+		b.project.Apps = append([]scan.App{{Dir: ".", Port: 3001}}, b.project.Apps...)
+		s := setupIn(b, unlisted)
+		if s.rows[0].what != "." {
+			t.Fatalf("the first row is %q's, want the root's", s.rows[0].what)
+		}
+		s = send(retype(tabTo(s, rowStop(tt.row)), tt.label), "enter")
+		if want := "the root's app has flowy.test"; s.errMsg != want || s.errAt != rowStop(tt.row) || len(b.saved) != 0 {
+			t.Errorf("label %q on row %d: error %q at %d, saved %v; want %q there and nothing saved",
+				tt.label, tt.row, s.errMsg, s.errAt, b.saved, want)
+		}
 	}
 }
 
@@ -566,6 +711,22 @@ func TestDashboard_I(t *testing.T) {
 	}
 	if !strings.HasPrefix(m.note, "set 2 .env lines, restart the dev servers · linked flowy.test") {
 		t.Errorf("note = %q, want what the change did", m.note)
+	}
+}
+
+// TestDashboard_IScrollsInTheBox checks that the form takes the box's height:
+// at the default size it scrolls (TestDashboard_I's golden), and a taller
+// terminal shows it whole.
+func TestDashboard_IScrollsInTheBox(t *testing.T) {
+	t.Parallel()
+
+	m := send(readyIn(inFlowyApps(), unlisted, flowyOrigin), "i")
+	if got := ansi.Strip(m.View().Content); !strings.Contains(got, "↓ more") {
+		t.Fatalf("the form doesn't scroll in a %d-line terminal:\n%s", defaultHeight, got)
+	}
+	next, _ := m.Update(tea.WindowSizeMsg{Width: defaultWidth, Height: 40})
+	if got := ansi.Strip(next.(Model).View().Content); strings.Contains(got, "↓ more") || !strings.Contains(got, "note  docs.flowy.test") {
+		t.Errorf("the form doesn't show whole in a 40-line terminal:\n%s", got)
 	}
 }
 

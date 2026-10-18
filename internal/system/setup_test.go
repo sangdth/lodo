@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -177,6 +178,103 @@ func TestSetup_SecondRunKeepsFirstBackup(t *testing.T) {
 	assertFile(t, p.SystemConf, "# dnsmasq\n#port=5353\n\n"+system.ConfBlock(p))
 	assertFile(t, p.SystemCaddyfileBackup, "example.com {\n\trespond \"hi\"\n}\n")
 	assertFile(t, p.SystemCaddyfile, system.CaddyGlobalBlock+"\nexample.com {\n\trespond \"hi\"\n}\n\n"+system.CaddyBlock(p))
+}
+
+// TestSetup_RunsAreTheSame runs setup three times on a Mac with Caddy and an
+// HTTPS name: after the first run, which makes the backups, every run prints
+// the same lines, runs the same commands and leaves every file as it was.
+func TestSetup_RunsAreTheSame(t *testing.T) {
+	t.Parallel()
+
+	p, r := newMac(t, true)
+	writeFile(t, p.SystemCaddyfile, "example.com {\n\trespond \"hi\"\n}\n")
+	writeFile(t, p.CaddyRoot, rootPEM)
+	saveDomains(t, p, []store.Domain{{Name: "crm.test", Address: "127.0.1.1", Port: 3000, Enabled: true, HTTPS: true}})
+
+	type result struct {
+		out   string
+		calls []string
+		files map[string]string
+	}
+	var runs []result
+	for range 3 {
+		before := len(r.Calls())
+		var out strings.Builder
+		if err := system.Setup(context.Background(), p, r, &out); err != nil {
+			t.Fatalf("Setup: %v\n%s", err, out.String())
+		}
+		runs = append(runs, result{out.String(), r.Calls()[before:], snapshot(t, filepath.Dir(filepath.Dir(p.Home)))})
+	}
+
+	if want := strings.Replace(runs[0].out, "(backup in ", "(backup kept in ", 1); runs[1].out != want {
+		t.Errorf("second run prints\n%s\nwant the first run's lines with the backup kept:\n%s", runs[1].out, want)
+	}
+	for i, run := range runs[1:] {
+		if !slices.Equal(run.calls, runs[0].calls) {
+			t.Errorf("run %d commands differ from the first:\n%q\nwant\n%q", i+2, run.calls, runs[0].calls)
+		}
+		if !maps.Equal(run.files, runs[0].files) {
+			t.Errorf("run %d changed files: %v", i+2, changed(runs[0].files, run.files))
+		}
+	}
+	if runs[2].out != runs[1].out {
+		t.Errorf("third run prints\n%s\nwant the second run's:\n%s", runs[2].out, runs[1].out)
+	}
+}
+
+// TestSetup_RepairsABackupLodoHadChanged covers a backup made after lodo had
+// changed the file, as an early lodo did: it loses lodo's lines, and goes when
+// nothing else is left.
+func TestSetup_RepairsABackupLodoHadChanged(t *testing.T) {
+	t.Parallel()
+
+	p, r := newMac(t, true)
+	lodoOnly := system.Marker + "\nimport " + p.Caddyfile + "\n"
+	writeFile(t, p.SystemCaddyfile, lodoOnly)
+	writeFile(t, p.SystemCaddyfileBackup, lodoOnly)
+	writeFile(t, p.SystemConfBackup, "# dnsmasq\nport=5353\n"+system.Marker+"\nconf-file="+p.DnsmasqConf+"\n")
+	if err := system.Setup(context.Background(), p, r, &strings.Builder{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(p.SystemCaddyfileBackup); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("a backup with only lodo's lines is kept: %v", err)
+	}
+	assertFile(t, p.SystemConfBackup, "# dnsmasq\n")
+}
+
+// snapshot reads every regular file under root, by path.
+func snapshot(t *testing.T, root string) map[string]string {
+	t.Helper()
+	files := map[string]string{}
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || !d.Type().IsRegular() {
+			return err
+		}
+		data, err := os.ReadFile(path)
+		files[path] = string(data)
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return files
+}
+
+// changed lists the paths whose content differs between two snapshots.
+func changed(a, b map[string]string) []string {
+	var paths []string
+	for path := range maps.Keys(a) {
+		if a[path] != b[path] {
+			paths = append(paths, path)
+		}
+	}
+	for path := range maps.Keys(b) {
+		if _, ok := a[path]; !ok {
+			paths = append(paths, path)
+		}
+	}
+	slices.Sort(paths)
+	return paths
 }
 
 func TestSetup_StopsRootDnsmasq(t *testing.T) {

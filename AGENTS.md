@@ -51,15 +51,17 @@ stops the commit.
   (`Proposal.Env`, `ApplyEnv`) and the names Caddy serves per port (`ValuesFor`). Each app keeps its own port; a
   port taken on the project's address moves the app to the next free address, with a note, since `lodo dev` binds
   one app per port. Its notes point at `lodo dev --edit`. All dev server rules and the images lodo names
-  (`webImages`) live here. It reads files and never writes them.
+  (`webImages`) live here, and so does the rule for a listed name another project's folder still has (`Taken`,
+  `BelongsTo`). It reads files and never writes them.
 - `internal/dev`: what `lodo dev` needs: the package manager (`PackageManager`), the address per port (`Ports`),
   the embedded listen hook `bind.cjs`, the project's hook file (`Hook`, `WriteHooks`) and `NodeOptions`.
 - `internal/check`: the eight doctor checks and the per-domain probes: dnsmasq directly, macOS, and HTTP through
   Caddy. `Report` returns both from one probe; `Prerequisites` runs checks 1 to 5 without probing. Code names a
   check by its ID constant (`check.IDDnsmasq` … `check.IDCaddy`), never by a bare number.
 - `internal/tui`: the Bubble Tea v2 dashboard and the setup form (`Setup`), the only review UI: `lodo dev` runs it
-  inline, the dashboard's `i` in its box. It talks to the system only through its `Backend` interface; tests use a
-  fake backend, and snapshot `View().Content` with golden files.
+  inline, the dashboard's `i` in its box. The form scrolls to the height it gets: the terminal's, or the box's from
+  `layout`. It talks to the system only through its `Backend` interface; tests use a fake backend, and snapshot
+  `View().Content` with golden files.
 
 ## Rules
 
@@ -101,13 +103,17 @@ stops the commit.
   Everything else in a project stays read-only, and lodo reads project files only through `fsutil.ReadRegular`.
 - Everything lodo prints from a `.env` masks a URL's user info as `***@`: a `.env` `Fix` holds the masked line in
   `Old`/`New` and the real one in unexported fields only `scan.ApplyEnv` reads.
-- The user picks a project's name. The folder's name is only a suggestion: every flow that proposes a project
-  name (the setup form, `lodo scan --name`) lets the user change it before anything is added, and the subdomains
-  follow it (`<app>.<name>`). The chosen name keeps the project's folder as `Domain.Root`, so later scans use it
-  and never propose the folder's name next to it. A listed name typed in whose `Root` is unset or gone
-  (`Backend.Gone`) is taken over; one whose folder still exists is refused. The setup form also names each app:
-  `<label>.<project>`, or `<project>` alone for one app. A later scan keeps a listed name of the project on an
-  app's port and address as that app's name.
+- The user picks a project's name. The folder's name is only a suggestion: every flow that proposes a project name
+  (the setup form, `lodo scan --name`) lets the user change it before anything is added, and the subdomains follow
+  it (`<app>.<name>`). The chosen name keeps the project's folder as `Domain.Root`, so later scans use it and never
+  propose the folder's name next to it; paths compare with `scan.SameFolder`, since the same folder can come by
+  another case or symlink. A folder whose name another project's folder still has gets `<name>-2.test`, the first of
+  `-2`, `-3` … that no listed name uses. A listed name, typed in or picked by the scan, whose `Root` is unset or
+  gone is taken over (`Proposal.Claim`), and the project's old name goes with its names; one whose folder still
+  exists is refused with the `scan.BelongsTo` note, in the form and in `lodo scan --name` alike (`scan.Taken`, with
+  `Backend.Gone`). The setup form names each app itself: `<label>.<project>`, or `<project>` alone for one app, the
+  root's when there is one, and no label another app's folder gives; the scan takes only the project's name. A later
+  scan keeps a listed name of the project on an app's port and address as that app's name.
 - Names end in `.test`, from `store.TLD`. macOS sends a name with one label before `.local` to Bonjour only, so
   `.local` can't serve project names like `media.local`.
 - Golden files live in each package's `testdata/` and use `github.com/charmbracelet/x/exp/golden`.

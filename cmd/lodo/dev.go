@@ -36,11 +36,11 @@ func (a app) dev(ctx context.Context, dir string, edit bool) int {
 // ports to its address. It returns on an error, after a cancel, and in tests.
 func (a app) startDev(ctx context.Context, dir string, domains []store.Domain, edit bool) error {
 	backend := tui.NewBackend(a.paths, a.runner)
-	_, proposal, ok := backend.Scan(ctx, dir, "", nil, domains)
+	_, proposal, ok := backend.Scan(ctx, dir, "", domains)
 	if !ok {
 		return scan.ErrNoProject
 	}
-	listed := slices.ContainsFunc(domains, func(d store.Domain) bool { return d.Root == proposal.Root })
+	listed := slices.ContainsFunc(domains, func(d store.Domain) bool { return scan.SameFolder(d.Root, proposal.Root) })
 	if edit || !listed {
 		saved, err := a.form(ctx, domains, dir)
 		if !saved {
@@ -56,7 +56,7 @@ func (a app) startDev(ctx context.Context, dir string, domains []store.Domain, e
 		if domains, err = store.Load(a.paths.DomainsJSON); err != nil {
 			return err
 		}
-		_, proposal, _ = backend.Scan(ctx, dir, "", nil, domains)
+		_, proposal, _ = backend.Scan(ctx, dir, "", domains)
 	}
 	for _, d := range proposal.Add {
 		if app := proposal.Dirs[d.Name]; app != "" {

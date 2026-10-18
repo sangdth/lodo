@@ -9,6 +9,7 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"path"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -96,6 +97,8 @@ type Setup struct {
 	note       string // what the change did, such as what linking wrote
 	err        error
 	width      int
+	height     int // the lines the form may take; 0 for no limit
+	top        int // the middle's first line shown when it doesn't fit
 	styles     styles
 }
 
@@ -129,10 +132,16 @@ func (s Setup) Init() tea.Cmd { return s.scan("", s.domains) }
 func (s Setup) Update(msg tea.Msg) (tea.Model, tea.Cmd) { return s.update(msg) }
 
 func (s Setup) update(msg tea.Msg) (Setup, tea.Cmd) {
+	s, cmd := s.handle(msg)
+	_, s.top = s.lines() // the middle scrolls with the focus
+	return s, cmd
+}
+
+func (s Setup) handle(msg tea.Msg) (Setup, tea.Cmd) {
 	s.rows = slices.Clone(s.rows) // the fields change in place; an earlier model keeps its own
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		s.width = msg.Width
+		s.width, s.height = msg.Width, msg.Height
 	case setupScanMsg:
 		return s.setScan(msg)
 	case changedMsg: // on its own: the dashboard runs the change in the box
@@ -149,7 +158,7 @@ func (s Setup) update(msg tea.Msg) (Setup, tea.Cmd) {
 func (s Setup) scan(name string, domains []store.Domain) tea.Cmd {
 	ctx, b, dir, seq := s.ctx, s.backend, s.origin.Dir, s.seq
 	return func() tea.Msg {
-		project, proposal, ok := b.Scan(ctx, dir, name, nil, domains)
+		project, proposal, ok := b.Scan(ctx, dir, name, domains)
 		return setupScanMsg{seq: seq, project: project, proposal: proposal, ok: ok}
 	}
 }
@@ -209,7 +218,7 @@ func (s Setup) setScan(msg setupScanMsg) (Setup, tea.Cmd) {
 func (s *Setup) fill() {
 	p := s.proposal
 	d, listed := store.Find(s.domains, p.Name)
-	mine := !listed || d.Root == "" || d.Root == p.Root || s.backend.Gone(d.Root)
+	mine := !listed || !scan.Taken(d, p.Root, s.backend.Gone)
 	s.listed = store.Domain{}
 	if listed && mine {
 		s.listed = d
@@ -278,10 +287,13 @@ func (s Setup) projectName() string {
 // Enabled, HTTPS, Compose and Root, and a row's HTTPS follows it onto the
 // project's name or off it. The project's name gets the project's folder as
 // Root, the port of the app with an empty label, and with link the compose
-// file the scan offers. An app whose port lodo can't tell keeps the label the
-// scan gave it (scan.ErrUnknownPort). A listed project name typed in, whose
-// folder is unset or gone since it was renamed or moved, is taken over: it
-// and the names of it the rows give are edited, not refused as listed.
+// file the scan offers. A later scan must tie each name to its app again, so
+// an app whose port lodo can't tell keeps the label the scan gave it
+// (scan.ErrUnknownPort), the root's app keeps the project's name, and no app
+// takes the label another app's folder gives. A listed project name typed in,
+// whose folder is unset or gone since it was renamed or moved, is taken over:
+// it and the names of it the rows give are edited, not refused as listed, and
+// the name the project had goes with its names, so one name keeps the folder.
 func (s Setup) build(link bool) ([]store.Domain, store.Domain, int, error) {
 	project := s.projectName()
 	if err := store.ValidateProject(project); err != nil {
@@ -293,8 +305,8 @@ func (s Setup) build(link bool) ([]store.Domain, store.Domain, int, error) {
 	}
 	owner, claim := s.listed, false
 	if d, ok := store.Find(s.domains, project); ok && project != s.listed.Name {
-		if d.Root != "" && d.Root != s.proposal.Root && !s.backend.Gone(d.Root) {
-			return nil, store.Domain{}, stopName, errors.New(project + " belongs to " + s.shortPath(d.Root) + ": give this project another name")
+		if scan.Taken(d, s.proposal.Root, s.backend.Gone) {
+			return nil, store.Domain{}, stopName, scan.BelongsTo(project, s.shortPath(d.Root))
 		}
 		owner, claim = d, true
 	}
@@ -306,6 +318,7 @@ func (s Setup) build(link bool) ([]store.Domain, store.Domain, int, error) {
 		owner.Compose = s.proposal.Compose
 	}
 	bare := -1 // the row with the project's name alone
+	rootApp := slices.ContainsFunc(s.project.Apps, func(a scan.App) bool { return a.Dir == "." })
 	ports := make([]int, len(s.rows))
 	for i, r := range s.rows {
 		port, err := store.ParsePort(r.port.Value())
@@ -314,8 +327,18 @@ func (s Setup) build(link bool) ([]store.Domain, store.Domain, int, error) {
 		}
 		ports[i] = port
 		label := strings.TrimSpace(r.label.Value())
-		if label != r.start && !r.page && slices.ContainsFunc(s.project.Apps, func(a scan.App) bool { return a.Dir == r.what && a.Port == 0 }) {
-			return nil, owner, rowStop(i), scan.ErrUnknownPort
+		if label != r.start && !r.page { // a later scan ties the root's app to the project's name and each other app to its folder's
+			if slices.ContainsFunc(s.project.Apps, func(a scan.App) bool { return a.Dir == r.what && a.Port == 0 }) {
+				return nil, owner, rowStop(i), scan.ErrUnknownPort
+			}
+			if rootApp && (r.what == ".") != (label == "") {
+				return nil, owner, rowStop(i), errors.New("the root's app has " + project)
+			}
+			if j := slices.IndexFunc(s.project.Apps, func(a scan.App) bool {
+				return a.Dir != r.what && a.Dir != "." && scan.Label(path.Base(a.Dir)) == label
+			}); label != "" && j >= 0 {
+				return nil, owner, rowStop(i), errors.New(s.project.Apps[j].Dir + " has " + label + "." + project)
+			}
 		}
 		if label != "" {
 			continue
@@ -328,6 +351,14 @@ func (s Setup) build(link bool) ([]store.Domain, store.Domain, int, error) {
 	owner.HTTPS = owner.HTTPS && owner.Port > 0 // Caddy serves only names with a port
 
 	gone := map[string]bool{s.listed.Name: true, project: true}
+	for _, d := range s.domains { // the name the project had before it took another over goes, with its names
+		if d.Name != project && scan.SameFolder(d.Root, s.proposal.Root) {
+			gone[d.Name] = true
+			for _, u := range store.Under(s.domains, d.Name) {
+				gone[u.Name] = true
+			}
+		}
+	}
 	edits := make([]store.Domain, len(s.rows)) // the listed name each row edits
 	for i, r := range s.rows {
 		edits[i] = r.listed
@@ -472,8 +503,15 @@ func (s Setup) finish() (Setup, tea.Cmd) {
 	return s, tea.Quit
 }
 
-// move moves the focus by delta, and scans again when a field changed.
+// move moves the focus by delta, and scans again when a field changed. At the
+// last stop, down first scrolls the lines still hidden under it into sight.
 func (s Setup) move(delta int) (Setup, tea.Cmd) {
+	if next := s; delta > 0 && s.focus == s.stops()-1 {
+		next.top++
+		if _, top := next.lines(); top > s.top {
+			return next, nil
+		}
+	}
 	s.focusOn(s.focus + delta)
 	if !s.dirty {
 		return s, nil
@@ -539,7 +577,7 @@ func (s Setup) submit() (Setup, tea.Cmd) {
 // View draws the form and its keys. lodo dev draws it in the terminal, not on
 // the alternate screen, so it stays above what the apps print.
 func (s Setup) View() tea.View {
-	lines := s.lines()
+	lines, _ := s.lines()
 	if help := s.help(); help != "" {
 		lines = append(lines, "", s.styles.dim.Render(help))
 	}
@@ -566,44 +604,99 @@ func (s Setup) help() string {
 }
 
 // lines draws the form without its keys, each line cut to the width: the
-// title, the project, its apps and pages, the toggles, the notes, and what
-// failed or what the change did.
-func (s Setup) lines() []string {
+// title, the middle, and what failed or what the change did. A middle taller
+// than the height leaves shows only what fits, from line top on; lines returns
+// the top it used.
+func (s Setup) lines() ([]string, int) {
 	title := "lodo dev · "
 	if s.embedded {
 		title = "set up "
 	}
-	lines := []string{" " + s.styles.title.Render(title+s.shortPath(cmp.Or(s.proposal.Root, s.origin.Dir))), ""}
+	lines := []string{" " + s.styles.title.Render(title+s.shortPath(cmp.Or(s.proposal.Root, s.origin.Dir)))}
+	var status []string
+	switch {
+	case s.err != nil:
+		status = []string{" " + s.styles.bad.Render("✗ "+oneLine(s.err.Error()))}
+	case s.note != "":
+		status = []string{" " + s.styles.ok.Render(s.note)}
+	}
+	rows := s.height - len(lines) - len(status)
+	if !s.embedded && s.help() != "" {
+		rows -= 2 // View adds the keys under a blank line
+	}
+	middle, top := s.scroll(rows)
+	lines = append(append(lines, middle...), status...)
+	for i, line := range lines {
+		lines[i] = ansi.Truncate(line, s.width, "…")
+	}
+	return lines, top
+}
+
+// scroll returns the middle cut to rows lines when it is taller, and the
+// middle's first line shown. It starts at s.top and moves only to keep the
+// focus in sight, between the top that shows its first line and the one that
+// shows its last, and a dim mark covers its first line when lines are hidden
+// above and its last when lines are hidden below.
+func (s Setup) scroll(rows int) ([]string, int) {
+	lines, first, last := s.middle()
+	// shortcut: under 6 lines (7 with a status line) on its own, or in the
+	// dashboard's box at its 3-line minimum, the form is taller than the height
+	// it gets and loses its top lines, or the box its bottom border; drop the
+	// title and keys first if terminals that small matter.
+	rows = max(rows, 3) // a mark, a line, a mark
+	if s.height == 0 || len(lines) <= rows {
+		return lines, 0
+	}
+	end := len(lines) - rows // the last top
+	top := min(s.top, end)
+	if first >= 0 {
+		lo, hi := max(first-1, 0), min(last-rows+2, end) // the last top that shows first, the first that shows last
+		top = min(max(top, min(lo, hi)), max(lo, hi))
+	}
+	shown := slices.Clone(lines[top : top+rows])
+	if top > 0 {
+		shown[0] = " " + s.styles.dim.Render("↑ more")
+	}
+	if top < end {
+		shown[rows-1] = " " + s.styles.dim.Render("↓ more")
+	}
+	return shown, top
+}
+
+// middle draws what scrolls: the project, its apps and pages, the toggles and
+// the notes, or what the scan found instead. first and last are the lines the
+// focus keeps in sight, or -1: the focused field's line with its error, or
+// from the last stop down to the end, so every line can be reached: down at
+// the last stop scrolls the end into sight (move).
+func (s Setup) middle() ([]string, int, int) {
+	lines := []string{""}
+	first, last := -1, -1
 	switch {
 	case !s.scanned:
 		lines = append(lines, " "+s.styles.dim.Render("scanning…"))
 	case s.found:
-		lines = append(lines, s.formLines()...)
+		form, from, to := s.formLines()
+		first, last = len(lines)+from, len(lines)+to
+		lines = append(lines, form...)
 	case s.err == nil:
 		lines = append(lines, " scan found no dev server or compose file in "+s.shortPath(s.proposal.Root))
 	}
 	for _, n := range s.proposal.Notes {
 		lines = append(lines, " "+s.styles.dim.Render("note  "+n))
 	}
-	switch {
-	case s.err != nil:
-		lines = append(lines, " "+s.styles.bad.Render("✗ "+oneLine(s.err.Error())))
-	case s.note != "":
-		lines = append(lines, " "+s.styles.ok.Render(s.note))
+	if first >= 0 && s.focus == s.stops()-1 {
+		last = len(lines) - 1
 	}
-	for i, line := range lines {
-		lines[i] = ansi.Truncate(line, s.width, "…")
-	}
-	return lines
+	return lines, first, last
 }
 
-// formLines draws the fields and the toggles, each error under its field.
-// shortcut: no scrolling, so a form taller than the terminal loses its last
-// lines; add a viewport when a project needs one.
-func (s Setup) formLines() []string {
+// formLines draws the fields and the toggles, each error under its field,
+// and returns the first and last line of the focused field and its error.
+func (s Setup) formLines() ([]string, int, int) {
 	project := s.projectName()
 	lines := []string{" Project   " + s.styles.suffixed(s.name, store.Suffix) + "   address " + s.styles.suffixed(s.address, "")}
 	lines = append(lines, s.errLine(11, stopName, stopAddress)...)
+	first, last := 0, len(lines)-1 // the name and the address's, unless a row or toggle has the focus
 
 	whatWidth, nameWidth := 0, 0
 	names := make([]string, len(s.rows))
@@ -631,8 +724,12 @@ func (s Setup) formLines() []string {
 				lines = append(lines, "", header)
 				header = ""
 			}
+			at := len(lines)
 			lines = append(lines, "   "+pad(r.what, whatWidth)+"  "+pad(names[i], nameWidth)+"  port "+s.styles.suffixed(r.port, ""))
 			lines = append(lines, s.errLine(3+whatWidth+2, rowStop(i), rowStop(i)+1)...)
+			if s.focus == rowStop(i) || s.focus == rowStop(i)+1 {
+				first, last = at, len(lines)-1
+			}
 		}
 	}
 
@@ -646,6 +743,7 @@ func (s Setup) formLines() []string {
 		}
 		if s.focus == rowStop(len(s.rows))+j {
 			box = s.styles.table.Selected.Render(box)
+			first, last = len(lines), len(lines)
 		}
 		if t == toggleLink {
 			rel, err := filepath.Rel(s.proposal.Root, s.proposal.Compose)
@@ -664,7 +762,7 @@ func (s Setup) formLines() []string {
 	if len(s.proposal.Notes) > 0 {
 		lines = append(lines, "")
 	}
-	return lines
+	return lines, first, last
 }
 
 // errLine returns the line for the error under a line whose fields are the
