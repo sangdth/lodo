@@ -51,17 +51,21 @@ off doesn't count.
 In a project, `lodo dev`:
 
 1. opens the setup form when no name in the list belongs to the project, or with `--edit`. `esc` saves nothing
-   and exits;
+   and exits. With `-y` or `--auto` the form saves what it proposes with no key pressed, and stays open only when
+   that breaks a rule;
 2. warns about each app the scan found that has no name: `warn  apps/api has no name: lodo dev --edit adds
    api.shop.test`;
 3. picks the package manager: `packageManager` in the project's `package.json`, else the lock file
    (`pnpm-lock.yaml`, `yarn.lock`, `bun.lock` or `bun.lockb`, `package-lock.json`), else npm. It refuses a
    project whose `package.json` has no `dev` script;
-4. prints each name and the address its app listens on, then hands the terminal to `<pm> run dev`, so `ctrl+c`
-   goes straight to the package manager:
+4. prints each name and the address its app listens on, the [variables it sets](#the-variables-lodo-dev-sets)
+   and the scan's notes, then hands the terminal to `<pm> run dev`, so `ctrl+c` goes straight to the package
+   manager:
 
 ```text
 web.shop.test  https://web.shop.test  -> 127.0.1.1:3001
+env   DOCKER_HOST_IP=127.0.1.1
+env   DATABASE_URL=postgres://***@shop.test:5432/shop
 starting: pnpm run dev
 ```
 
@@ -72,10 +76,42 @@ A server that listens on one of the project's ports with no host, `localhost`, `
 `::` then listens on the project's address instead; other ports stay as they are. The hook also adds `.shop.test`
 to `__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS`, so Vite accepts the project's names with no `allowedHosts`. No project
 file changes. Only Node apps get it: start any other dev server on its address yourself, and run
-`docker compose up` yourself. The hook tells apps apart only by port, so `lodo dev` refuses a project with two
-names on one port and two addresses.
+`docker compose up` yourself, from the dev script or with `lodo exec`. The hook tells apps apart only by port, so
+`lodo dev` refuses a project with two names on one port and two addresses.
 
 Outside a project, `lodo dev` exits 1.
+
+### The variables lodo dev sets
+
+lodo never edits a `.env`. `lodo dev` and `lodo exec` export the project's values instead, and an exported
+variable beats a `.env` file in dotenv, Next, Node's `--env-file` and `process.loadEnvFile`, and `docker compose
+--env-file`. A `.env` copied from another checkout works as it is, and is read fresh on every start:
+
+- `DOCKER_HOST_IP` is the project's address, for the compose ports that bind `${DOCKER_HOST_IP:-127.0.0.1}`.
+- In a git worktree, `COMPOSE_PROJECT_NAME` is the project's label, such as `hugger12`. It beats `name:` in the
+  compose file, so each worktree gets its own containers and volumes, and starts with an empty database. A fixed
+  `container_name:` still clashes between worktrees: leave it out. The main checkout keeps the file's name.
+- In each app's `.env`, a host that is a name of another checkout of the same git repository becomes this
+  checkout's: in a worktree named `hugger9.test` whose main checkout is `hugger.test`'s folder,
+  `postgresql://…@hugger.test:5432` becomes `postgresql://…@hugger9.test:5432`, `SMTP_HOST=hugger.test`
+  becomes `SMTP_HOST=hugger9.test` and `http://mail.hugger.test` becomes `http://mail.hugger9.test`. A name this
+  checkout lacks stays, with a note.
+- An http or ws URL on `localhost` or `127.0.0.1` on a port a name serves becomes that name, https when HTTPS is
+  on: `API_URL=http://localhost:3001` becomes `API_URL=http://web.media.test`. Any URL on a port the compose file
+  binds to `DOCKER_HOST_IP` becomes `<project>.test:<port>`, such as `postgres://…@media.test:5432`. Another http
+  or ws port gets a note, and the rest stays: `localhost` still reaches it.
+
+Every app of the project gets one environment, so a key two apps' `.env` files set to values that come out
+different gets a note and stays as each file has it. A value over more lines, or with a `\` or a `$`, which
+loaders read differently, stays too, with a note. Only each app's `.env` is read; `.env.local` and
+`.env.development` keep their values, except for a key lodo sets. An exported value also reaches `${…}` in a
+compose file, and a container can't resolve a `.test` name: give a container its own value in `environment`.
+lodo prints a URL's user and password as `***`. Restart the dev servers after editing a `.env`, since an
+exported variable keeps its value until then.
+
+`lodo exec <command>` runs a command in the current folder with the same variables, without the listen hook, for
+what runs outside the dev script: `lodo exec pnpm db:migrate`, `lodo exec docker compose up -d`. It needs the
+project's names from a first `lodo dev`, and prints the variables on stderr, so the command's output stays its own.
 
 ### The setup form
 
@@ -91,10 +127,7 @@ Apps
 Services  compose.dev.yaml
   mail      mail.flowy.test  port 8025
 
-[x] link compose.dev.yaml  DOCKER_HOST_IP=127.0.1.2
-[x] set 2 .env lines
-    apps/api/.env:1  DATABASE_URL=postgres://***@flowy.test:5432/flowy
-    apps/api/.env:2  WEB_URL=http://web.flowy.test
+[x] link compose.dev.yaml  lodo dev sets DOCKER_HOST_IP=127.0.1.2
 
 tab/shift+tab move  space toggle  enter save + start  esc cancel
 ```
@@ -103,18 +136,23 @@ The form shows what [the scan](#what-the-scan-reads) found: the project's name a
 per web page in its compose file, with a label and a port. The rows hold the project's listed names first, then the
 ones the scan proposes. Each label gets `.<project>.test`; an empty label gives the app the project's name alone,
 such as `flowy.test`, and only one row may have it: the root's app, when the project has one. No label may be
-another app's folder name, since a later scan ties each app to its folder's name. The two toggles link the compose
-file and set the `.env` lines shown, masked; the scan's notes follow them. `tab` and `shift+tab` move, `space` turns
-a toggle on or off, `enter` saves everything in one change, and `esc` cancels. A field that breaks a rule says why
-under it when you press `enter`. From `lodo dev`, `enter` saves and then starts the apps; from the dashboard's `i`,
-it saves and goes back to the list. A form taller than the terminal, or than the dashboard's box, scrolls: the
+another app's folder name, since a later scan ties each app to its folder's name. The toggle links the compose
+file; the scan's notes follow it. `tab` and `shift+tab` move, `space` turns the toggle on or off, `enter` saves
+everything in one change, and `esc` cancels. A field that breaks a rule says why under it when you press `enter`.
+From `lodo dev`, `enter` saves and then starts the apps; from the dashboard's `i`, it saves and goes back to the
+list. A form taller than the terminal, or than the dashboard's box, scrolls: the
 title, the status line and the keys stay put, a dim `↑ more` or `↓ more` stands for the hidden lines, and the field
-with the focus stays in view. At the last toggle, `tab` scrolls the lines under it into view before it goes back to
+with the focus stays in view. At the last stop, `tab` scrolls the lines under it into view before it goes back to
 the top.
 
 The project's name is yours: the form suggests the folder's, such as `flowy.test`, and the subdomains follow what
-you type. When that name belongs to another folder that is still there, such as a second clone of the repo, it
-suggests the first of `flowy-2.test`, `flowy-3.test` … that no listed name uses, with an address of its own. Once
+you type. In a git worktree whose main checkout has a name, it suggests that name with the number of the address
+the worktree gets: `hugger12.test` on `127.0.1.12` for a worktree of `hugger.test`, at the lowest free address,
+or at one that holds only a deleted worktree's `hugger<n>.test`, which the new worktree takes over with its
+settings and its compose containers and data. Each name gets the HTTPS its main checkout's name with the same
+label has. `lodo dev -y` in a new worktree saves all of this without the form. When the suggested name belongs to
+another folder that is still there, such as a second clone of the repo, it suggests the first of `flowy-2.test`,
+`flowy-3.test` … that no listed name uses, with an address of its own. Once
 saved, the name keeps the project's folder as `root` in `domains.json`, so later scans know the project by it, even
 when you reach the folder by another path, such as with other capital letters. A name already listed that links a
 compose file in the project counts too, unless its project's folder is another one that is still there. A link to a
@@ -122,8 +160,7 @@ compose file that is gone, after you rename the project's folder or move the fil
 offers the project's file again. Typing a listed name that has no folder, or whose folder is gone, takes that name
 over: it keeps its settings and gets this folder, and the project's old name goes with its names. A listed name
 whose folder is still there is refused: `flow.test belongs to ~/Projects/flow: give this project another name`. A
-later scan keeps a listed name of the project on an app's port and address as that app's. A `.env` line is set with
-`l`'s guards below, and only while it still reads as the scan read it.
+later scan keeps a listed name of the project on an app's port and address as that app's.
 
 ### The dashboard
 
@@ -163,7 +200,7 @@ The status line at the bottom, above the key help, says what failed, or why the 
 | `d`         | delete it and its subdomains; `y` confirms         |
 | `space`     | turn it on or off                                  |
 | `s`         | turn HTTPS on or off; the name needs a port        |
-| `l`         | link it to the project's compose file and `.env`   |
+| `l`         | link it to the project's compose file              |
 | `p`         | preview the compose file, as lodo would change it  |
 | `i`         | open the setup form for where `lodo ps` started    |
 | `g`         | show dnsmasq's query log; `g` or `esc` goes back   |
@@ -198,22 +235,18 @@ scan reads, and never writes:
   its inbox, port 8025 in the container, is published on.
 - the address: a listed name's in the project, else `DOCKER_HOST_IP` from the root's `.env` or `.env.example`
   when no other project has it, else the lowest free one.
-- each app's `.env`, never `.env.example` and never one git tracks: its lines with a URL on `localhost` or
-  `127.0.0.1`. The root's `.env` counts only when the root is the app; in a workspace it feeds compose.
+- each app's `.env`, never `.env.example`: its `KEY=value` lines, for [the variables lodo dev
+  sets](#the-variables-lodo-dev-sets). The root's `.env` counts only when the root is the app; in a workspace it
+  feeds compose.
+- the git repository's main checkout, from the root's `.git`: the root itself, or for a worktree the folder its
+  `.git` file points into.
 
 It proposes the project's name, a subdomain per app, such as `admin.media.test` with its port, `mail.media.test`
-for Mailpit's inbox, the compose file to link and the `.env` lines to set. All of a project's apps share its
+for Mailpit's inbox, the compose file to link and the variables `lodo dev` sets. All of a project's apps share its
 address, and so does the inbox. Every app keeps its own port; when another name already has that port on the
 address, the app gets the next free address and a note to give one of them another port, since `lodo dev` binds
 one app per port. The inbox is skipped when a listed name has its port there, or when
 the project runs another compose file than the one the scan read, or none.
-
-In an app's `.env`, an http or ws URL on a port a name serves becomes that name, https when HTTPS is on:
-`API_URL=http://localhost:3001` becomes `API_URL=http://web.media.test`. Any URL on a port the compose file binds
-to `DOCKER_HOST_IP`, while the `.env` compose runs with sets the project's address, becomes
-`<project>.test:<port>`, such as `postgres://…@media.test:5432`. Another http or ws port gets a note, and the rest
-stays: `localhost` still reaches it. lodo prints a URL's user and password as `***`, in the setup form and in
-`lodo scan`. Restart the dev servers after the form sets a line, since they read `.env` when they start.
 
 ### Compose files
 
@@ -229,11 +262,8 @@ started, or `none`.
 - Healthchecks, commands and comments keep `localhost`: inside a container it is the container itself.
 
 `l` links the selected name: the compose file of the project lodo started in, or outside one the name's own,
-becomes the name's, and `DOCKER_HOST_IP=<address>` goes into the `.env` that file runs with. That is the file a
-`package.json` script passes with `--env-file`, else the project root's `.env`. lodo leaves a `.env` that git
-tracks alone: this Mac's address doesn't belong in a shared file. It also refuses a `.env` outside the project,
-directly or through a symlink. The setup form's link toggle, `l` in the preview, and a form save that changes a
-linked name's compose file or address do the same.
+becomes the name's. The setup form's link toggle and `l` in the preview do the same. The file's ports get the
+project's address from the `DOCKER_HOST_IP` that `lodo dev` and `lodo exec` set.
 
 ### HTTPS
 
@@ -296,13 +326,15 @@ and `.test` never is. Only `localhost` is exempt. For Google sign-in, either:
 - **Apps listen on their project's address.** `lodo dev` puts Node apps there; start anything else with its own
   host flag, such as `--host 127.0.1.3`.
 - **Docker:** publish ports as `"${DOCKER_HOST_IP:-127.0.0.1}:5432:5432"`, which `p` shows on the project's
-  compose file, and `l` writes `DOCKER_HOST_IP=127.0.1.3` into the project's `.env`, so each project's Postgres
-  gets port 5432 on its own address.
+  compose file, and run compose under `lodo dev` or `lodo exec`, which set `DOCKER_HOST_IP=127.0.1.3`, so each
+  project's Postgres gets port 5432 on its own address.
 
 ## Commands
 
 `lodo dev` starts the project in the current folder on its names, and opens the setup form first when the
-project has no name yet; `--edit` opens it every time. See [lodo dev](#lodo-dev). `lodo ps` opens the dashboard.
+project has no name yet; `--edit` opens it every time. See [lodo dev](#lodo-dev). `lodo exec <command>` runs a
+command with the variables `lodo dev` sets; see [The variables lodo dev sets](#the-variables-lodo-dev-sets).
+`lodo ps` opens the dashboard.
 `lodo` alone, or `lodo help`, prints the usage.
 
 `lodo apply` writes lodo's files from `domains.json`, restarts dnsmasq, runs the resolver script, restarts Caddy
@@ -338,7 +370,7 @@ fails. The dashboard and the setup form do the same after every change. A name w
    `caddy validate`, and holds port 80.
 
 `lodo scan` prints what the project in the current folder lacks from the list, as the setup form shows it, and
-changes nothing; only `git ls-files` runs, to skip the `.env` files git tracks. `--json` prints it for scripts,
+the variables `lodo dev` sets, and changes nothing. `--json` prints it for scripts,
 with the same `***` in URLs, and `--name hugger` proposes it under `hugger.test`. A listed `hugger.test` with no
 folder, or a gone one, becomes this folder's (`save  this folder as hugger.test's project`); one whose folder is
 still there gets only the note `hugger.test belongs to <folder>: give this project another name`. It exits 1

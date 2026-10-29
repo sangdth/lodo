@@ -98,7 +98,7 @@ func TestFind_Apps(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			p, ok := Find(project(t, "shop", tt.files), nil)
+			p, ok := Find(project(t, "shop", tt.files))
 			if !ok {
 				t.Fatal("Find: not a project")
 			}
@@ -126,7 +126,7 @@ func TestFind_EnvAddress(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			p, _ := Find(project(t, "shop", tt.files), nil)
+			p, _ := Find(project(t, "shop", tt.files))
 			if p.EnvAddress != tt.want {
 				t.Errorf("EnvAddress = %q, want %q", p.EnvAddress, tt.want)
 			}
@@ -160,7 +160,7 @@ func TestFind_Pages(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			p, _ := Find(project(t, "shop", tt.files), nil)
+			p, _ := Find(project(t, "shop", tt.files))
 			if !slices.Equal(p.Pages, tt.want) {
 				t.Errorf("Pages = %+v, want %+v", p.Pages, tt.want)
 			}
@@ -177,7 +177,7 @@ func composeFile(image string, ports ...string) string {
 func TestFind_NotAProject(t *testing.T) {
 	t.Parallel()
 
-	if p, ok := Find(t.TempDir(), nil); ok {
+	if p, ok := Find(t.TempDir()); ok {
 		t.Errorf("Find outside a project = %+v, true", p)
 	}
 }
@@ -621,7 +621,7 @@ func TestPropose_AnotherPath(t *testing.T) {
 	if _, err := os.Stat(upper); err != nil {
 		t.Skip("this file system tells case apart")
 	}
-	p, ok := Find(upper, nil)
+	p, ok := Find(upper)
 	if !ok {
 		t.Fatal("Find: not a project")
 	}

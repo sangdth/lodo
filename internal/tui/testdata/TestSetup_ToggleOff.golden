@@ -10,10 +10,7 @@
  Services  [90mcompose.dev.yaml[m
    mail       [37mmail[m[90m.flowy.test[m  port [37m8025[m[90m[m
 
- [1;38;5;212m[ ][m link compose.dev.yaml  [90mDOCKER_HOST_IP=127.0.1.2[m
- [x] set 2 .env lines
-     [90mapps/api/.env:1  DATABASE_URL=postgres://***@flowy.test:5432/flowy[m
-     [90mapps/api/.env:2  WEB_URL=http://web.flowy.test[m
+ [1;38;5;212m[ ][m link compose.dev.yaml  [90mlodo dev sets DOCKER_HOST_IP=127.0.1.2[m
 
  [90mnote  docs.flowy.test: lodo can't tell its port; set it in lodo dev --edit[m
 

@@ -27,10 +27,11 @@ type app struct {
 	stdout io.Writer
 	stderr io.Writer
 
-	// form runs the setup form for the project dir is in on the terminal;
+	// form runs the setup form for the project dir is in on the terminal,
+	// saving what the scan proposes with no key pressed when auto is set;
 	// saved reports whether domains.json holds the project's names. Tests
 	// replace it, and lookPath, which finds a command on PATH.
-	form     func(ctx context.Context, domains []store.Domain, dir string) (saved bool, err error)
+	form     func(ctx context.Context, domains []store.Domain, dir string, auto bool) (saved bool, err error)
 	lookPath func(file string) (string, error)
 }
 
@@ -59,10 +60,13 @@ func (a app) command(ctx context.Context, command string, o options) int {
 		a.fail(fmt.Errorf("find the current folder: %w", err))
 		return 1
 	}
-	if command == "scan" {
+	switch command {
+	case "scan":
 		return a.scan(ctx, dir, o)
+	case "exec":
+		return a.exec(ctx, dir, o.args)
 	}
-	return a.dev(ctx, dir, o.edit)
+	return a.dev(ctx, dir, o)
 }
 
 // ready loads domains.json and refuses while checks 1 to 5 fail: those need

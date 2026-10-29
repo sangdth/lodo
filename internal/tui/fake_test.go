@@ -4,9 +4,7 @@ import (
 	"context"
 	"errors"
 	"io/fs"
-	"path/filepath"
 	"slices"
-	"strconv"
 	"sync"
 	"time"
 
@@ -34,14 +32,10 @@ type fakeBackend struct {
 	composeFiles  map[string]string // ReadCompose's files, by path
 	off           map[string]bool   // services turned off
 	setServices   []string          // each SetService call, such as "caddy off"
-	linkErr       error
-	log           string // dnsmasq's log
+	log           string            // dnsmasq's log
 	tailErr       error
 	saved         [][]store.Domain
 	applied       [][]store.Domain
-	linked        []string // each LinkEnv, as "<compose file> <address>"
-	envFixed      []string // each .env fix FixEnv got, as "<root> <file>:<line>"
-	envErr        error
 	reports       int
 	folders       map[string]bool // the folders on disk, for Gone
 }
@@ -104,24 +98,6 @@ func (f *fakeBackend) appendLog(s string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.log += s
-}
-
-// LinkEnv records the link and names the .env next to the compose file.
-func (f *fakeBackend) LinkEnv(_ context.Context, composePath, address string) (string, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.linked = append(f.linked, composePath+" "+address)
-	return filepath.Join(filepath.Dir(composePath), ".env"), f.linkErr
-}
-
-// FixEnv records each fix and writes nothing.
-func (f *fakeBackend) FixEnv(_ context.Context, root string, fixes []scan.Fix) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	for _, fx := range fixes {
-		f.envFixed = append(f.envFixed, root+" "+fx.File+":"+strconv.Itoa(fx.Line))
-	}
-	return f.envErr
 }
 
 func (f *fakeBackend) Load() ([]store.Domain, error) {

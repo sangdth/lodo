@@ -144,21 +144,14 @@ func TestApp_Scan(t *testing.T) {
 		}
 	}
 	p := paths.ForTest(t.TempDir())
-	realWeb, err := filepath.EvalSymlinks(filepath.Join(root, "apps", "web"))
-	if err != nil {
-		t.Fatal(err)
-	}
 	r := run.NewFake()
-	r.Fail(run.Line(p.Git, "--literal-pathspecs", "-c", "safe.bareRepository=explicit", "-c", "core.fsmonitor=false",
-		"-C", realWeb, "ls-files", "--error-unmatch", "--", ".env"), "") // untracked; Fake says tracked otherwise
-
 	var stdout, stderr strings.Builder
 	a := newApp(p, r, &stdout, &stderr)
 	if code := a.scan(t.Context(), filepath.Join(root, "apps", "web"), options{}); code != 0 {
 		t.Fatalf("exit code = %d, stderr %q", code, stderr.String())
 	}
 	got := strings.ReplaceAll(stdout.String(), root, "<root>")
-	for _, want := range []string{"set   apps/web/.env:1", "+ API_URL=http://web.shop.test\n", "+ DATABASE_URL=postgres://***@shop.test:5432/shop\n"} {
+	for _, want := range []string{"env   DOCKER_HOST_IP=127.0.1.1\n", "env   API_URL=http://web.shop.test\n", "env   DATABASE_URL=postgres://***@shop.test:5432/shop\n"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("scan lacks %q:\n%s", want, got)
 		}
@@ -177,7 +170,7 @@ func TestApp_Scan(t *testing.T) {
 	}
 	var proposal scan.Proposal
 	if err := json.Unmarshal([]byte(stdout.String()), &proposal); err != nil || len(proposal.Add) != 3 || len(proposal.Env) != 2 {
-		t.Errorf("--json gave %+v, %v; want 3 names to add and 2 .env lines to set", proposal, err)
+		t.Errorf("--json gave %+v, %v; want 3 names to add and 2 variables", proposal, err)
 	}
 	if _, err := os.Stat(p.DomainsJSON); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("scan wrote domains.json: %v", err)
@@ -199,18 +192,6 @@ func TestApp_Scan(t *testing.T) {
 	if code := a.scan(t.Context(), tmp, options{}); code != 1 || !strings.Contains(stderr.String(), "not in a project") {
 		t.Errorf("outside a project: exit code %d, stderr %q", code, stderr.String())
 	}
-
-	t.Run("tracked", func(t *testing.T) {
-		var stdout, stderr strings.Builder
-		a := newApp(p, run.NewFake(), &stdout, &stderr) // Fake's ls-files succeeds: git tracks apps/web/.env
-		if code := a.scan(t.Context(), root, options{}); code != 0 {
-			t.Fatalf("exit code = %d, stderr %q", code, stderr.String())
-		}
-		got := stdout.String()
-		if strings.Contains(got, "set   ") || !strings.Contains(got, "note  apps/web/.env: git tracks it") {
-			t.Errorf("a tracked .env gave:\n%s\nwant no set lines and its note", got)
-		}
-	})
 }
 
 // TestApp_ScanNameTaken scans shop under --name shop while shop.test is

@@ -182,12 +182,3 @@ func rank(variant string) int {
 func skipDir(name string) bool {
 	return strings.HasPrefix(name, ".") || name == "node_modules" || name == "vendor" || name == "testdata"
 }
-
-// ProjectDir returns the project the file at path belongs to (ProjectRoot), or
-// the file's folder outside one.
-func ProjectDir(path string) string {
-	if root, ok := ProjectRoot(filepath.Dir(path)); ok {
-		return root
-	}
-	return filepath.Dir(path)
-}

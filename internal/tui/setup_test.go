@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"slices"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -25,8 +24,9 @@ var unlisted = slices.DeleteFunc(slices.Clone(sample), func(d store.Domain) bool
 // inFlowyApps is a backend for flowy as in the plan: a Next app in apps/web
 // on 3000, a NestJS app in apps/api on 4000, an app in apps/docs whose port
 // the scan can't tell, Mailpit's inbox on 8025 from compose.dev.yaml, and two
-// lines in apps/api/.env the scan sets: Postgres on a port the compose file
-// binds to DOCKER_HOST_IP, with a password, and a URL on the web app's port.
+// lines in apps/api/.env lodo dev sets variables for: Postgres on a port the
+// compose file binds to DOCKER_HOST_IP, with a password, and a URL on the web
+// app's port.
 func inFlowyApps() *fakeBackend {
 	b := inFlowy()
 	b.project.Apps = []scan.App{{Dir: "apps/web", Port: 3000}, {Dir: "apps/api", Port: 4000}, {Dir: "apps/docs"}}
@@ -35,7 +35,7 @@ func inFlowyApps() *fakeBackend {
 		{File: "apps/api/.env", Line: 1, Key: "DATABASE_URL", Text: "DATABASE_URL=postgres://u:hunter2@localhost:5432/flowy"},
 		{File: "apps/api/.env", Line: 2, Key: "WEB_URL", Text: "WEB_URL=http://localhost:3000"},
 	}
-	b.project.Bound, b.project.ComposeAddress = map[int]bool{5432: true}, "127.0.1.2"
+	b.project.Bound = map[int]bool{5432: true}
 	return b
 }
 
@@ -110,13 +110,7 @@ func TestSetup_FirstRun(t *testing.T) {
 		t.Errorf("saved %d times, applied %d times, %d doctor runs; want one save and apply and no doctor run: lodo dev starts the apps",
 			len(b.saved), len(b.applied), b.reports)
 	}
-	if want := []string{flowyDev + " 127.0.1.2"}; !slices.Equal(b.linked, want) {
-		t.Errorf("linked %q, want %q", b.linked, want)
-	}
-	if want := []string{flowyRoot + " apps/api/.env:1", flowyRoot + " apps/api/.env:2"}; !slices.Equal(b.envFixed, want) {
-		t.Errorf("set %q, want %q", b.envFixed, want)
-	}
-	if got := ansi.Strip(s.View().Content); !strings.Contains(got, "set 2 .env lines, restart the dev servers · linked flowy.test") {
+	if got := ansi.Strip(s.View().Content); !strings.Contains(got, "linked flowy.test to ~/Projects/flowy/compose.dev.yaml") {
 		t.Errorf("the last view lacks what the change did:\n%s", got)
 	}
 }
@@ -140,11 +134,8 @@ func TestSetup_Edit(t *testing.T) {
 	if _, ok := store.Find(saved, "web.flowy.test"); ok {
 		t.Errorf("saved %+v, want web.flowy.test gone", saved)
 	}
-	if len(b.linked) != 0 {
-		t.Errorf("linked %q; flowy.test links its compose file already", b.linked)
-	}
-	if want := []string{flowyRoot + " apps/api/.env:1", flowyRoot + " apps/api/.env:2"}; !slices.Equal(b.envFixed, want) {
-		t.Errorf("set %q, want %q", b.envFixed, want)
+	if d, _ := store.Find(saved, "flowy.test"); d.Compose != flowyDev {
+		t.Errorf("flowy.test's compose = %q, want %q kept", d.Compose, flowyDev)
 	}
 }
 
@@ -217,9 +208,8 @@ func TestSetup_ToggleOff(t *testing.T) {
 	s = send(tabTo(s, rowStop(len(s.rows))), "space") // the link toggle
 	golden.RequireEqual(t, s.View().Content)
 
-	s = send(send(send(s, "tab"), "space"), "enter") // and the .env lines
-	if !s.Saved() || len(b.linked) != 0 || len(b.envFixed) != 0 {
-		t.Errorf("saved %v, linked %q, set %q; want saved with neither", s.Saved(), b.linked, b.envFixed)
+	if s = send(s, "enter"); !s.Saved() {
+		t.Errorf("not saved: %v", s.Err())
 	}
 	if d, _ := store.Find(lastSaved(t, b), "flowy.test"); d.Compose != "" {
 		t.Errorf("flowy.test's compose = %q, want none: the link was off", d.Compose)
@@ -260,10 +250,9 @@ func TestSetup_ScrollFollowsTheFocus(t *testing.T) {
 	t.Parallel()
 
 	s, _ := setupIn(inFlowyApps(), unlisted).update(shortWindow)
-	s = tabTo(s, rowStop(len(s.rows))) // the link toggle
+	s = tabTo(s, rowStop(len(s.rows))) // the link toggle, the last stop: the lines under it show
 	golden.RequireEqual(t, s.View().Content)
 
-	s = send(s, "tab") // the .env lines' toggle, the last stop: the lines under it show
 	if got := ansi.Strip(s.View().Content); !strings.Contains(got, "note  docs.flowy.test") || strings.Contains(got, "↓ more") {
 		t.Errorf("the last stop doesn't show the end of the form:\n%s", got)
 	}
@@ -273,40 +262,6 @@ func TestSetup_ScrollFollowsTheFocus(t *testing.T) {
 	}
 }
 
-// TestSetup_ScrollsPastTheLastStop gives the .env lines' toggle more lines
-// than the terminal holds: tab at the last stop scrolls them into sight, and
-// only then moves the focus back to the name.
-func TestSetup_ScrollsPastTheLastStop(t *testing.T) {
-	t.Parallel()
-
-	b := inFlowyApps()
-	for line := 3; line <= 8; line++ {
-		key := "URL" + strconv.Itoa(line)
-		b.project.Env = append(b.project.Env, scan.EnvLine{File: "apps/api/.env", Line: line, Key: key, Text: key + "=http://localhost:3000"})
-	}
-	s, _ := setupIn(b, unlisted).update(shortWindow)
-	s = tabTo(s, s.stops()-1)
-	for tabs := 0; strings.Contains(ansi.Strip(s.View().Content), "↓ more"); tabs++ {
-		if tabs == 20 {
-			t.Fatalf("lines stay hidden under the last stop:\n%s", ansi.Strip(s.View().Content))
-		}
-		if s = send(s, "tab"); s.focus != s.stops()-1 {
-			t.Fatalf("focus %d with lines still hidden under the last stop %d", s.focus, s.stops()-1)
-		}
-	}
-	got := ansi.Strip(s.View().Content)
-	for _, want := range []string{"apps/api/.env:8", "note  docs.flowy.test"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("the end of the form lacks %q:\n%s", want, got)
-		}
-	}
-	if s = send(s, "tab"); s.focus != stopName {
-		t.Errorf("focus %d after tab at the end, want the name", s.focus)
-	}
-}
-
-// TestSetup_FitsUnscrolled checks that a form that fits the terminal shows
-// whole, as the goldens drawn without a height show it.
 func TestSetup_FitsUnscrolled(t *testing.T) {
 	t.Parallel()
 
@@ -442,9 +397,6 @@ func TestSetup_TakeOver(t *testing.T) {
 			if _, ok := store.Find(saved, "flowy.test"); ok {
 				t.Errorf("saved %+v, want no flowy.test", saved)
 			}
-			if want := []string{flowyDev + " 127.0.1.2"}; !slices.Equal(b.linked, want) {
-				t.Errorf("linked %q, want %q: DOCKER_HOST_IP keeps flow.test's address", b.linked, want)
-			}
 		})
 	}
 }
@@ -572,11 +524,15 @@ func TestSetup_RenameScansAgain(t *testing.T) {
 	if b.scans != 2 {
 		t.Fatalf("%d scans, want a second one once the name changed", b.scans)
 	}
-	got := ansi.Strip(s.View().Content)
-	for _, want := range []string{"WEB_URL=http://web.shop.test", "api.shop.test", "DATABASE_URL=postgres://***@shop.test:5432/flowy"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("the form lacks %q after the rename:\n%s", want, got)
-		}
+	if got := ansi.Strip(s.View().Content); !strings.Contains(got, "api.shop.test") {
+		t.Errorf("the form lacks api.shop.test after the rename:\n%s", got)
+	}
+	var vars []string
+	for _, v := range s.proposal.Env {
+		vars = append(vars, v.Key+"="+v.Value)
+	}
+	if want := []string{"DATABASE_URL=postgres://***@shop.test:5432/flowy", "WEB_URL=http://web.shop.test"}; !slices.Equal(vars, want) {
+		t.Errorf("variables %q after the rename, want %q", vars, want)
 	}
 	if send(s, "tab"); b.scans != 2 {
 		t.Errorf("%d scans after a tab with nothing changed, want 2", b.scans)
@@ -595,13 +551,13 @@ func TestSetup_EnterScansFirst(t *testing.T) {
 	if _, ok := store.Find(lastSaved(t, b), "site.flowy.test"); !ok {
 		t.Errorf("saved %+v, want site.flowy.test", lastSaved(t, b))
 	}
-	if !slices.Contains(b.envFixed, flowyRoot+" apps/api/.env:2") {
-		t.Errorf("set %q, want WEB_URL set for site.flowy.test", b.envFixed)
+	if got := s.proposal.Env; len(got) != 2 || got[1].Env() != "WEB_URL=http://site.flowy.test" {
+		t.Errorf("variables %+v, want WEB_URL on site.flowy.test", got)
 	}
 }
 
 // TestSetup_EnterWaitsForTheScan presses enter while the scan of a renamed
-// project still runs: the save waits for it, so the .env lines follow the new
+// project still runs: the save waits for it, so the variables follow the new
 // names.
 func TestSetup_EnterWaitsForTheScan(t *testing.T) {
 	t.Parallel()
@@ -609,17 +565,17 @@ func TestSetup_EnterWaitsForTheScan(t *testing.T) {
 	b := inFlowyApps()
 	next, rescan := retype(setupIn(b, unlisted), "shop").Update(press("tab"))
 	s := send(next.(Setup), "enter")
-	if len(b.saved) != 0 || len(b.envFixed) != 0 {
-		t.Fatalf("saved %v, set %q before the scan of shop came back; want nothing yet", b.saved, b.envFixed)
+	if len(b.saved) != 0 {
+		t.Fatalf("saved %v before the scan of shop came back; want nothing yet", b.saved)
 	}
 	if s = settle(s, rescan); !s.Saved() {
 		t.Fatalf("not saved once the scan came back: %q %v", s.errMsg, s.Err())
 	}
-	if _, ok := store.Find(lastSaved(t, b), "web.shop.test"); !ok || len(b.envFixed) != 2 {
-		t.Errorf("saved %+v, set %q; want web.shop.test and both .env lines", lastSaved(t, b), b.envFixed)
+	if _, ok := store.Find(lastSaved(t, b), "web.shop.test"); !ok {
+		t.Errorf("saved %+v; want web.shop.test", lastSaved(t, b))
 	}
-	if got := s.proposal.Env; len(got) != 2 || !strings.Contains(got[1].New, "web.shop.test") {
-		t.Errorf(".env lines %+v, want them on shop's names", got)
+	if got := s.proposal.Env; len(got) != 2 || !strings.Contains(got[1].Value, "web.shop.test") {
+		t.Errorf("variables %+v, want them on shop's names", got)
 	}
 }
 
@@ -628,7 +584,7 @@ func TestSetup_EscSavesNothing(t *testing.T) {
 
 	b := inFlowyApps()
 	s := send(retype(setupIn(b, unlisted), "shop"), "esc")
-	if !s.done || s.Saved() || s.Err() != nil || len(b.saved) != 0 || len(b.linked) != 0 || len(b.envFixed) != 0 {
+	if !s.done || s.Saved() || s.Err() != nil || len(b.saved) != 0 {
 		t.Errorf("done %v, saved %v, err %v, saved %v; want canceled with no change", s.done, s.Saved(), s.Err(), b.saved)
 	}
 }
@@ -641,6 +597,33 @@ func TestSetup_PortNeedsCaddy(t *testing.T) {
 	s := send(setupIn(b, unlisted), "enter")
 	if s.Saved() || s.done || len(b.saved) != 0 {
 		t.Errorf("saved %v, done %v, saved %v; want the form kept and nothing saved", s.Saved(), s.done, b.saved)
+	}
+	if got := ansi.Strip(s.View().Content); !strings.Contains(got, "✗ caddy is not installed") {
+		t.Errorf("the form lacks why:\n%s", got)
+	}
+}
+
+// TestSetup_Auto saves the first scan's proposal with no key pressed, as
+// lodo dev -y does, and stays open with the reason when the save can't run.
+func TestSetup_Auto(t *testing.T) {
+	t.Parallel()
+
+	auto := flowyOrigin
+	auto.Auto = true
+	b := inFlowyApps()
+	s := NewSetup(context.Background(), b, unlisted, auto)
+	if s = settle(s, s.Init()); !s.Saved() || s.Err() != nil {
+		t.Fatalf("saved %v, err %v with Auto; want saved with no key", s.Saved(), s.Err())
+	}
+	if d, ok := store.Find(lastSaved(t, b), "flowy.test"); !ok || d.Compose != flowyDev {
+		t.Errorf("flowy.test = %+v, %v; want it saved with its compose file", d, ok)
+	}
+
+	b = inFlowyApps()
+	b.portsErr = errors.New("caddy is not installed: brew install caddy, then lodo setup")
+	s = NewSetup(context.Background(), b, unlisted, auto)
+	if s = settle(s, s.Init()); s.Saved() || s.done || len(b.saved) != 0 {
+		t.Errorf("saved %v, done %v, saved %v; want the form kept open and nothing saved", s.Saved(), s.done, b.saved)
 	}
 	if got := ansi.Strip(s.View().Content); !strings.Contains(got, "✗ caddy is not installed") {
 		t.Errorf("the form lacks why:\n%s", got)
@@ -709,7 +692,7 @@ func TestDashboard_I(t *testing.T) {
 	if got := m.cursorName(); got != "flowy.test" {
 		t.Errorf("cursor on %q, want the project's name", got)
 	}
-	if !strings.HasPrefix(m.note, "set 2 .env lines, restart the dev servers · linked flowy.test") {
+	if !strings.HasPrefix(m.note, "linked flowy.test") {
 		t.Errorf("note = %q, want what the change did", m.note)
 	}
 }

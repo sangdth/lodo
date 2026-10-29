@@ -18,6 +18,7 @@ import (
 	"github.com/sangdth/lodo/internal/run"
 	"github.com/sangdth/lodo/internal/scan"
 	"github.com/sangdth/lodo/internal/store"
+	"github.com/sangdth/lodo/internal/tui"
 )
 
 // shopTree is a pnpm project with two apps: web's dev server takes port 3001,
@@ -49,7 +50,7 @@ func newDevApp(t *testing.T) (a app, p paths.Paths, r *run.Fake, out *strings.Bu
 	p, r, out = paths.ForTest(t.TempDir()), run.NewFake(), &strings.Builder{}
 	a = newApp(p, r, out, out)
 	a.lookPath = func(file string) (string, error) { return "/opt/bin/" + file, nil }
-	a.form = func(context.Context, []store.Domain, string) (bool, error) {
+	a.form = func(context.Context, []store.Domain, string, bool) (bool, error) {
 		t.Error("the setup form opened")
 		return false, nil
 	}
@@ -120,7 +121,7 @@ func TestApp_StartDev(t *testing.T) {
 
 	root := writeTree(t, shopTree)
 	a, p, r, out := newDevApp(t)
-	if err := a.startDev(t.Context(), filepath.Join(root, "apps", "web"), listedShop(root), false); err != nil {
+	if err := a.startDev(t.Context(), filepath.Join(root, "apps", "web"), listedShop(root), options{}); err != nil {
 		t.Fatal(err)
 	}
 	golden.RequireEqual(t, out.String())
@@ -134,6 +135,139 @@ func TestApp_StartDev(t *testing.T) {
 		t.Errorf("listen hook: %v", err)
 	}
 	checkStarted(t, r, root, hook)
+	_, env := r.Replaced()
+	if !slices.Contains(env, "DOCKER_HOST_IP=127.0.1.1") {
+		t.Errorf("env lacks DOCKER_HOST_IP=127.0.1.1, shop.test's address: %q", env)
+	}
+	if slices.ContainsFunc(env, func(kv string) bool { return strings.HasPrefix(kv, "COMPOSE_PROJECT_NAME=") }) {
+		t.Errorf("env sets COMPOSE_PROJECT_NAME outside a worktree: %q", env)
+	}
+}
+
+func TestApp_StartDevAuto(t *testing.T) {
+	t.Parallel()
+
+	for _, auto := range []bool{false, true} {
+		root := writeTree(t, shopTree)
+		a, p, _, _ := newDevApp(t)
+		got := !auto
+		a.form = func(_ context.Context, _ []store.Domain, _ string, a bool) (bool, error) {
+			got = a
+			return true, store.Save(p.DomainsJSON, listedShop(root))
+		}
+		if err := a.startDev(t.Context(), root, nil, options{auto: auto}); err != nil {
+			t.Fatal(err)
+		}
+		if got != auto {
+			t.Errorf("auto %v: the form got auto %v", auto, got)
+		}
+	}
+}
+
+// TestApp_StartDevWorktree starts a git worktree of shop whose .env, copied
+// from the main checkout, names the main checkout's names: the dev script
+// gets the worktree's, and the .env stays as it is.
+func TestApp_StartDevWorktree(t *testing.T) {
+	t.Parallel()
+
+	main := writeTree(t, shopTree)
+	tree := maps.Clone(shopTree)
+	delete(tree, ".git/HEAD")
+	tree[".git"] = "gitdir: " + filepath.Join(main, ".git", "worktrees", "wt") + "\n"
+	const dotenv = "DATABASE_URL=postgres://u:hunter2@shop.test:5432/shop\nAPI_URL=http://web.shop.test\nSECRET=abc\n"
+	tree["apps/web/.env"] = dotenv
+	worktree := writeTree(t, tree)
+	domains := append(listedShop(main),
+		store.Domain{Name: "shop2.test", Address: "127.0.1.3", Enabled: true, Root: worktree},
+		store.Domain{Name: "web.shop2.test", Address: "127.0.1.3", Port: 3001, Enabled: true},
+	)
+
+	a, _, r, out := newDevApp(t)
+	if err := a.startDev(t.Context(), worktree, domains, options{}); err != nil {
+		t.Fatal(err)
+	}
+	_, env := r.Replaced()
+	for _, want := range []string{
+		"DOCKER_HOST_IP=127.0.1.3",
+		"COMPOSE_PROJECT_NAME=shop2",
+		"DATABASE_URL=postgres://u:hunter2@shop2.test:5432/shop",
+		"API_URL=http://web.shop2.test",
+	} {
+		if !slices.Contains(env, want) {
+			t.Errorf("env lacks %q", want)
+		}
+	}
+	if strings.Contains(out.String(), "hunter2") {
+		t.Errorf("lodo dev printed the password:\n%s", out.String())
+	}
+	if data, err := os.ReadFile(filepath.Join(worktree, "apps", "web", ".env")); err != nil || string(data) != dotenv {
+		t.Errorf(".env = %q, %v; want it as it was", data, err)
+	}
+}
+
+func TestProjectEnv(t *testing.T) {
+	t.Parallel()
+
+	root := writeTree(t, map[string]string{
+		".git/HEAD":    "ref: refs/heads/master\n",
+		"package.json": `{"scripts": {"dev": "next dev"}}`,
+		".env":         "API_URL=http://localhost:3000\n",
+	})
+	domains := []store.Domain{{Name: "shop.test", Address: "127.0.1.1", Port: 3000, Enabled: true, Root: root}}
+	a, _, _, _ := newDevApp(t)
+	_, proposal, ok := tui.NewBackend(a.paths, a.runner).Scan(t.Context(), root, "", domains)
+	if !ok {
+		t.Fatal("no project")
+	}
+	env := []string{"PATH=/bin", "DOCKER_HOST_IP=127.0.0.9", "API_URL=http://old"}
+	got := projectEnv(env, proposal)
+	if want := []string{"PATH=/bin", "DOCKER_HOST_IP=127.0.1.1", "API_URL=http://shop.test"}; !slices.Equal(got, want) {
+		t.Errorf("projectEnv = %q, want %q", got, want)
+	}
+	if env[1] != "DOCKER_HOST_IP=127.0.0.9" {
+		t.Errorf("projectEnv changed its input: %q", env)
+	}
+}
+
+func TestApp_StartExec(t *testing.T) {
+	t.Parallel()
+
+	root := writeTree(t, shopTree)
+	web := filepath.Join(root, "apps", "web")
+	tests := []struct {
+		name    string
+		domains []store.Domain
+		err     string
+	}{
+		{name: "listed", domains: listedShop(root)},
+		{name: "no names yet", err: "has no names yet: run lodo dev there first"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			a, _, r, _ := newDevApp(t)
+			err := a.startExec(t.Context(), web, tt.domains, []string{"pnpm", "db:migrate"})
+			dir, env := r.Replaced()
+			if tt.err != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.err) || dir != "" {
+					t.Errorf("err %v, Replace in %q; want %q and nothing run", err, dir, tt.err)
+				}
+				return
+			}
+			if err != nil || dir != web || !slices.Contains(r.Calls(), run.Line("/opt/bin/pnpm", "db:migrate")) {
+				t.Errorf("err %v, Replace in %q, calls %q; want pnpm db:migrate in %s", err, dir, r.Calls(), web)
+			}
+			if !slices.Contains(env, "DOCKER_HOST_IP=127.0.1.1") {
+				t.Errorf("env lacks DOCKER_HOST_IP=127.0.1.1: %q", env)
+			}
+			hooked := func(kv string) bool {
+				return strings.HasPrefix(kv, "NODE_OPTIONS=") && strings.Contains(kv, "shop.test.cjs")
+			}
+			if slices.ContainsFunc(env, hooked) {
+				t.Errorf("lodo exec loaded the listen hook: %q", env)
+			}
+		})
+	}
 }
 
 func TestApp_StartDevForm(t *testing.T) {
@@ -171,7 +305,7 @@ func TestApp_StartDevForm(t *testing.T) {
 				domains = listedShop(writeTree(t, shopTree))
 			}
 			opened := 0
-			a.form = func(_ context.Context, got []store.Domain, dir string) (bool, error) {
+			a.form = func(_ context.Context, got []store.Domain, dir string, _ bool) (bool, error) {
 				opened++
 				if len(got) != len(domains) || dir != root {
 					t.Errorf("form got %d names in %s, want %d in %s", len(got), dir, len(domains), root)
@@ -183,7 +317,7 @@ func TestApp_StartDevForm(t *testing.T) {
 				}
 				return tt.saved, tt.formErr
 			}
-			err := a.startDev(t.Context(), root, domains, tt.edit)
+			err := a.startDev(t.Context(), root, domains, options{edit: tt.edit})
 			if !errors.Is(err, tt.wantErr) {
 				t.Errorf("err = %v, want %v", err, tt.wantErr)
 			}
@@ -230,7 +364,7 @@ func TestApp_StartDevNodeOptions(t *testing.T) {
 			root := writeTree(t, tt.files)
 			a, p, r, _ := newDevApp(t)
 			r.Set(run.Line("/opt/bin/"+tt.pm, tt.flag, root, "config", "get", "node-options"), tt.setting)
-			if err := a.startDev(t.Context(), root, listedShop(root), false); err != nil {
+			if err := a.startDev(t.Context(), root, listedShop(root), options{}); err != nil {
 				t.Fatal(err)
 			}
 			_, env := r.Replaced()
@@ -257,7 +391,7 @@ func TestApp_StartDevNodeOptionsError(t *testing.T) {
 	root := writeTree(t, shopTree)
 	a, _, r, _ := newDevApp(t)
 	r.Fail(run.Line("/opt/bin/pnpm", "--dir", root, "config", "get", "node-options"), "ERR_PNPM_BAD_CONFIG")
-	err := a.startDev(t.Context(), root, listedShop(root), false)
+	err := a.startDev(t.Context(), root, listedShop(root), options{})
 	if err == nil || !strings.Contains(err.Error(), "read pnpm's node-options: ") {
 		t.Errorf("err = %v, want why pnpm's node-options can't be read", err)
 	}
@@ -292,7 +426,7 @@ func TestApp_StartDevErrors(t *testing.T) {
 			if tt.notFound {
 				a.lookPath = func(string) (string, error) { return "", exec.ErrNotFound }
 			}
-			err := a.startDev(t.Context(), root, listedShop(root), false)
+			err := a.startDev(t.Context(), root, listedShop(root), options{})
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Errorf("err = %v, want it to contain %q", err, tt.want)
 			}

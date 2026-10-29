@@ -13,18 +13,6 @@ import (
 	"github.com/sangdth/lodo/internal/fsutil"
 )
 
-// Fix is a .env line of a project and what it becomes, which lodo writes on
-// y (ApplyEnv): Old and New hold it with user info masked, and before and
-// after hold the real text.
-type Fix struct {
-	File string `json:"file"` // from the project's root, as apps/web/.env
-	Line int    `json:"line"` // 1-based
-	Old  string `json:"old"`  // the line before, without its line end
-	New  string `json:"new"`  // the line after
-
-	before, after string
-}
-
 // tool is a dev server lodo knows: the command that starts it and the port it
 // takes without one.
 type tool struct {
