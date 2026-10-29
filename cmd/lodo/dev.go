@@ -10,6 +10,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/sangdth/lodo/internal/compose"
 	"github.com/sangdth/lodo/internal/dev"
 	"github.com/sangdth/lodo/internal/scan"
 	"github.com/sangdth/lodo/internal/store"
@@ -18,12 +19,12 @@ import (
 
 // dev starts the Node apps of the project dir is in on the project's
 // addresses, once ready.
-func (a app) dev(ctx context.Context, dir string, edit bool) int {
+func (a app) dev(ctx context.Context, dir string, o options) int {
 	domains, ok := a.ready(ctx, "lodo dev starts")
 	if !ok {
 		return 1
 	}
-	if err := a.startDev(ctx, dir, domains, edit); err != nil {
+	if err := a.startDev(ctx, dir, domains, o); err != nil {
 		a.fail(err)
 		return 1
 	}
@@ -31,18 +32,21 @@ func (a app) dev(ctx context.Context, dir string, edit bool) int {
 }
 
 // startDev opens the setup form when no listed name has the project's folder
-// as its Root, or with edit, then replaces lodo with the project's `<pm> run
+// as its Root, or with o.edit, then replaces lodo with the project's `<pm> run
 // dev`, whose NODE_OPTIONS load the hook that binds each of the project's
-// ports to its address. It returns on an error, after a cancel, and in tests.
-func (a app) startDev(ctx context.Context, dir string, domains []store.Domain, edit bool) error {
+// ports to its address, with the project's variables (projectEnv). It returns
+// on an error, after a cancel, and in tests.
+// With o.auto the form saves what the scan proposes with no key pressed: a
+// new worktree of a listed project gets <main><n>.test on 127.0.1.<n>.
+func (a app) startDev(ctx context.Context, dir string, domains []store.Domain, o options) error {
 	backend := tui.NewBackend(a.paths, a.runner)
 	_, proposal, ok := backend.Scan(ctx, dir, "", domains)
 	if !ok {
 		return scan.ErrNoProject
 	}
 	listed := slices.ContainsFunc(domains, func(d store.Domain) bool { return scan.SameFolder(d.Root, proposal.Root) })
-	if edit || !listed {
-		saved, err := a.form(ctx, domains, dir)
+	if o.edit || !listed {
+		saved, err := a.form(ctx, domains, dir, o.auto)
 		if !saved {
 			if err != nil {
 				return err
@@ -85,8 +89,97 @@ func (a app) startDev(ctx context.Context, dir string, domains []store.Domain, e
 		return err
 	}
 	fmt.Fprint(a.stdout, formatSites(domains, proposal.Name))
+	fmt.Fprint(a.stdout, formatVars(proposal))
 	fmt.Fprintf(a.stdout, "starting: %s run dev\n", pm)
-	return a.runner.Replace(proposal.Root, pmPath, []string{"run", "dev"}, env)
+	return a.runner.Replace(proposal.Root, pmPath, []string{"run", "dev"}, projectEnv(env, proposal))
+}
+
+// exec runs args in dir with the variables lodo dev sets for the project dir
+// is in, once ready (startExec).
+func (a app) exec(ctx context.Context, dir string, args []string) int {
+	domains, ok := a.ready(ctx, "lodo exec runs")
+	if !ok {
+		return 1
+	}
+	if err := a.startExec(ctx, dir, domains, args); err != nil {
+		a.fail(err)
+		return 1
+	}
+	return 0
+}
+
+// startExec replaces lodo with args, run in dir with the variables lodo dev
+// sets for the project dir is in (projectEnv): a migration, a compose command
+// or a test run then reaches the project's containers outside lodo dev. The
+// project needs its names, from a first lodo dev. It returns on an error, and
+// in tests.
+func (a app) startExec(ctx context.Context, dir string, domains []store.Domain, args []string) error {
+	_, proposal, ok := tui.NewBackend(a.paths, a.runner).Scan(ctx, dir, "", domains)
+	switch {
+	case !ok:
+		return scan.ErrNoProject
+	case !proposal.Listed:
+		return fmt.Errorf("%s has no names yet: run lodo dev there first", proposal.Root)
+	}
+	path, err := a.lookPath(args[0])
+	if err != nil {
+		return fmt.Errorf("find %s: %w", args[0], err)
+	}
+	fmt.Fprint(a.stderr, formatVars(proposal)) // stdout stays the command's
+	return a.runner.Replace(dir, path, args[1:], projectEnv(os.Environ(), proposal))
+}
+
+// projectEnv returns env with the project's variables in place of any it
+// held: DOCKER_HOST_IP set to the project's address, for its compose file's
+// ports; in a git worktree, COMPOSE_PROJECT_NAME set to the project's label,
+// which beats the compose file's name:, so each worktree gets its own
+// containers and volumes; and the .env values the scan points at the
+// project's names (scan.Var). An exported variable beats a .env file, so the files stay as
+// they are, and a .env copied from another checkout works as it is.
+func projectEnv(env []string, proposal scan.Proposal) []string {
+	vars := composeVars(proposal)
+	for _, v := range proposal.Env {
+		vars = append(vars, v.Env())
+	}
+	keys := map[string]bool{}
+	for _, kv := range vars {
+		key, _, _ := strings.Cut(kv, "=")
+		keys[key] = true
+	}
+	env = slices.DeleteFunc(slices.Clone(env), func(kv string) bool {
+		key, _, _ := strings.Cut(kv, "=")
+		return keys[key]
+	})
+	return append(env, vars...)
+}
+
+// composeVars returns the variables projectEnv sets for compose, as
+// KEY=value.
+func composeVars(proposal scan.Proposal) []string {
+	var vars []string
+	if proposal.Address != "" {
+		vars = append(vars, compose.EnvVar+"="+proposal.Address)
+	}
+	if proposal.Worktree && proposal.Name != "" {
+		vars = append(vars, compose.ProjectVar+"="+strings.TrimSuffix(proposal.Name, store.Suffix))
+	}
+	return vars
+}
+
+// formatVars renders a line per variable projectEnv sets, user info masked,
+// and the scan's notes, which say what it leaves.
+func formatVars(proposal scan.Proposal) string {
+	var b strings.Builder
+	for _, kv := range composeVars(proposal) {
+		b.WriteString("env   " + kv + "\n")
+	}
+	for _, v := range proposal.Env {
+		fmt.Fprintf(&b, "env   %s=%s\n", v.Key, v.Value)
+	}
+	for _, n := range proposal.Notes {
+		b.WriteString("note  " + n + "\n")
+	}
+	return b.String()
 }
 
 // nodeConfig is, for npm and pnpm, the flag that points their config at a
@@ -125,8 +218,8 @@ func (a app) devEnv(ctx context.Context, pm, pmPath, root, hook string) ([]strin
 }
 
 // setupForm is app.form: it runs the setup form inline on the terminal.
-func (a app) setupForm(ctx context.Context, domains []store.Domain, dir string) (bool, error) {
-	s := tui.NewSetup(ctx, tui.NewBackend(a.paths, a.runner), domains, tui.Start{Dir: dir, Home: a.paths.Home})
+func (a app) setupForm(ctx context.Context, domains []store.Domain, dir string, auto bool) (bool, error) {
+	s := tui.NewSetup(ctx, tui.NewBackend(a.paths, a.runner), domains, tui.Start{Dir: dir, Home: a.paths.Home, Auto: auto})
 	final, err := tea.NewProgram(s, tea.WithContext(ctx)).Run()
 	if err != nil {
 		return false, fmt.Errorf("run the setup form: %w", err)

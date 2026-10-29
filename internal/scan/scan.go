@@ -31,10 +31,9 @@ type Project struct {
 	Pages      []Page
 	EnvAddress string // DOCKER_HOST_IP from the root's .env or .env.example, when it is an own address
 
-	Env            []EnvLine    // the lines of each app's .env that mention localhost or 127.0.0.1, none from a file git tracks
-	Shared         []string     // the app .env files git tracks that hold one, from the root
-	Bound          map[int]bool // the ports on this Mac the best compose file binds to DOCKER_HOST_IP
-	ComposeAddress string       // DOCKER_HOST_IP in the .env that file runs with (compose.EnvFile), when it is an own address
+	Env   []EnvLine    // the KEY=value lines of each app's .env
+	Bound map[int]bool // the ports on this Mac the best compose file binds to DOCKER_HOST_IP
+	Repo  string       // the main checkout of the git repository Root is the root of (repoRoot); empty outside one
 }
 
 // ErrNoProject is what lodo reports when Find finds no project.
@@ -46,20 +45,17 @@ var ErrUnknownPort = errors.New("lodo can't tell its port, so the name wouldn't 
 
 // Find reads the project dir is in. ok is false outside one
 // (compose.ProjectRoot). A file it can't read counts as missing: the scan is
-// only an offer. tracked reports whether git tracks a file; nil means nothing
-// is tracked.
-func Find(dir string, tracked func(path string) bool) (Project, bool) {
+// only an offer.
+func Find(dir string) (Project, bool) {
 	root, ok := compose.ProjectRoot(dir)
 	if !ok {
 		return Project{}, false
 	}
 	files, _ := compose.Find(root)
 	apps := findApps(root)
-	p := Project{Root: root, Name: Name(root), Compose: files, Apps: apps, EnvAddress: envAddress(root)}
-	p.Env, p.Shared = findEnv(root, apps, tracked)
+	p := Project{Root: root, Name: Name(root), Compose: files, Apps: apps, EnvAddress: envAddress(root), Env: findEnv(root, apps), Repo: repoRoot(root)}
 	if len(files) > 0 {
 		p.Pages, p.Bound = readCompose(files[0])
-		p.ComposeAddress = envMatch(hostIPRE, store.IsOwn, compose.EnvFile(files[0]))
 	}
 	return p, true
 }
@@ -134,25 +130,29 @@ type Proposal struct {
 	Claim   bool           `json:"claim,omitempty"`   // the listed name Name gets Root as its project folder
 	Add     []store.Domain `json:"add"`               // names to add, the project's first
 	Compose string         `json:"compose,omitempty"` // the compose file to link to Name; empty when there is none or one is linked
-	Env     []Fix          `json:"env"`               // .env lines lodo sets on y, masked (ApplyEnv)
+	Env     []Var          `json:"env"`               // the variables lodo dev and lodo exec set in place of .env values, masked
 	Notes   []string       `json:"notes"`             // what lodo couldn't decide
+
+	Worktree bool   `json:"worktree,omitempty"` // Root is a git worktree, which gets its own compose project
+	Main     string `json:"main,omitempty"`     // the main checkout's project name, for a worktree of a listed one
 
 	Dirs map[string]string `json:"-"` // each app's name, in Add or listed, to the app's folder
 }
 
 // CanAccept reports whether y has something to apply: names to add, a compose
-// file to link, a folder to save as the project's or .env lines to set.
+// file to link or a folder to save as the project's. Env needs nothing saved.
 func (p Proposal) CanAccept() bool {
-	return len(p.Add) > 0 || p.Compose != "" || p.Claim || len(p.Env) > 0
+	return len(p.Add) > 0 || p.Compose != "" || p.Claim
 }
 
 // projectName returns the project's name: the listed name whose Root is the
 // project's folder, else the project of the listed name that links a compose
 // file in it, whatever its folder is called (hugger.test for
 // huggerhustle/platform-v2), unless that project is another's (Taken), else
-// what the folder suggests. When that name is another project's, such as a
-// second clone's, it is the first of <label>-2.test, <label>-3.test … that no
-// listed name has, so the project gets its own names and address.
+// a worktree's of a listed main checkout's (worktreeSlot), else what the folder
+// suggests. When that name is another project's, such as a second clone's, it
+// is the first of <label>-2.test, <label>-3.test … that no listed name has, so
+// the project gets its own names and address.
 func projectName(p Project, domains []store.Domain, gone func(path string) bool) string {
 	if i := slices.IndexFunc(domains, func(d store.Domain) bool { return SameFolder(d.Root, p.Root) }); i >= 0 {
 		return domains[i].Name
@@ -162,6 +162,11 @@ func projectName(p Project, domains []store.Domain, gone func(path string) bool)
 		return linksInside(d, p.Root) && (!ok || !Taken(owner, p.Root, gone))
 	}); i >= 0 {
 		return store.Project(domains[i].Name)
+	}
+	if main, ok := mainProject(p, domains); ok {
+		if name, _, ok := worktreeSlot(p, domains, main, gone); ok {
+			return name
+		}
 	}
 	if d, ok := store.Find(domains, p.Name); !ok || !Taken(d, p.Root, gone) {
 		return p.Name
@@ -218,10 +223,10 @@ func BelongsTo(name, folder string) error {
 // no name of the project links one that is still there (linked). A project
 // with no app and no compose file gets nothing. An app whose folder's name
 // isn't listed keeps a listed name of the project on its port (aliasOf). The
-// apps' .env lines that point at this Mac's own host get the names
-// (envFixes).
+// apps' .env values that point at this Mac's own host, or at another checkout
+// of the project's repository, give the variables lodo dev sets (envVars).
 func Propose(p Project, domains []store.Domain, name string, gone func(path string) bool) Proposal {
-	prop := Proposal{Root: p.Root, Add: []store.Domain{}, Env: []Fix{}, Notes: []string{}, Dirs: map[string]string{}}
+	prop := Proposal{Root: p.Root, Add: []store.Domain{}, Env: []Var{}, Notes: []string{}, Dirs: map[string]string{}}
 	if name != "" {
 		if err := store.ValidateProject(name); err != nil {
 			prop.Notes = append(prop.Notes, name+": "+err.Error())
@@ -231,7 +236,9 @@ func Propose(p Project, domains []store.Domain, name string, gone func(path stri
 	} else {
 		p.Name = projectName(p, domains, gone)
 	}
-	prop.Name = p.Name
+	prop.Name, prop.Worktree = p.Name, p.Worktree()
+	main, _ := mainProject(p, domains)
+	prop.Main = main.Name
 	if p.Name == "" || (len(p.Apps) == 0 && len(p.Compose) == 0) {
 		return prop
 	}
@@ -239,12 +246,19 @@ func Propose(p Project, domains []store.Domain, name string, gone func(path stri
 		switch {
 		case !Taken(d, p.Root, gone):
 			prop.Claim = true // a listed name whose folder is unset or gone becomes the project's
+			if p.Worktree() && len(p.Compose) > 0 {
+				prop.Notes = append(prop.Notes, fmt.Sprintf("%s takes over a gone folder's name, with its compose containers and data: lodo exec docker compose down -v gives it fresh ones",
+					p.Name))
+			}
 		case name != "":
 			prop.Notes = append(prop.Notes, BelongsTo(p.Name, d.Root).Error())
 			return prop
 		}
 	}
 	prop.Address, prop.Listed = projectAddress(p, domains)
+	if name, address, ok := worktreeSlot(p, domains, main, gone); main.Name != "" && !prop.Listed && ok && name == p.Name {
+		prop.Address = address // the number in the name names the address
+	}
 	if prop.Address == "" {
 		prop.Notes = append(prop.Notes, store.ErrBlockFull.Error()+": free one, then scan again")
 		return prop
@@ -267,7 +281,7 @@ func Propose(p Project, domains []store.Domain, name string, gone func(path stri
 			}
 			continue
 		}
-		d := store.Domain{Name: e.name, Address: prop.Address, Port: e.app.Port, Enabled: true}
+		d := fromMain(store.Domain{Name: e.name, Address: prop.Address, Port: e.app.Port, Enabled: true}, p.Name, main, domains)
 		if e.name == p.Name {
 			d.Root = p.Root
 		}
@@ -311,7 +325,7 @@ func Propose(p Project, domains []store.Domain, name string, gone func(path stri
 		}
 		if used == p.Compose[0] { // the file Find read the pages from
 			for _, pg := range p.Pages {
-				d := store.Domain{Name: pg.Label + "." + p.Name, Address: owner.Address, Port: pg.Port, Enabled: true}
+				d := fromMain(store.Domain{Name: pg.Label + "." + p.Name, Address: owner.Address, Port: pg.Port, Enabled: true}, p.Name, main, domains)
 				if _, listed := store.Find(list, d.Name); listed || onPort(list, d.Address, d.Port) != "" {
 					continue // a listed name stays as it is, and the name on the port serves the page
 				}
@@ -326,11 +340,11 @@ func Propose(p Project, domains []store.Domain, name string, gone func(path stri
 		}
 	}
 	if ok {
-		var bound map[int]bool // only while compose runs that file with the project's address
-		if len(p.Compose) > 0 && used == p.Compose[0] && p.ComposeAddress == owner.Address {
+		var bound map[int]bool // only while compose runs the file Find read the ports from
+		if len(p.Compose) > 0 && used == p.Compose[0] {
 			bound = p.Bound
 		}
-		env, notes := envFixes(p, ValuesFor(list, owner), bound)
+		env, notes := envVars(p, ValuesFor(list, owner), bound, siblingNames(p, list, p.Name))
 		prop.Env, prop.Notes = append(prop.Env, env...), append(prop.Notes, notes...)
 	}
 	return prop

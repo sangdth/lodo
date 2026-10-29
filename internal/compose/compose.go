@@ -3,10 +3,15 @@
 // its .test name. It reads files and never writes them.
 package compose
 
-// EnvVar is the variable a rewritten port binds to. Linking a name writes it,
-// set to the name's address, into the project's .env.
+// EnvVar is the variable a rewritten port binds to. lodo dev and lodo exec
+// set it to the project's address.
 const EnvVar = "DOCKER_HOST_IP"
 
+// ProjectVar names the compose project, and beats the file's name:. lodo dev
+// and lodo exec set it in a git worktree, so each worktree gets its own
+// containers and volumes.
+const ProjectVar = "COMPOSE_PROJECT_NAME"
+
 // HostIP is the host address Rewrite gives a port: the project's address
-// from .env, or 127.0.0.1 without one.
+// under lodo dev, or 127.0.0.1 without it.
 const HostIP = "${" + EnvVar + ":-127.0.0.1}"

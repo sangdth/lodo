@@ -53,7 +53,7 @@ func (m Model) composeOwner(d store.Domain) (store.Domain, bool) {
 }
 
 // showPreview fills the preview: changed lines marked in green, and the
-// .env line when the file's ports bind EnvVar.
+// variable lodo dev sets when the file's ports bind EnvVar.
 func (m *Model) showPreview(msg previewMsg) {
 	changed := make(map[int]bool, len(msg.changes))
 	for _, c := range msg.changes {
@@ -136,8 +136,8 @@ func (m Model) linkProject(d store.Domain, files []string) (Model, tea.Cmd) {
 	return m.linkTo(d, path)
 }
 
-// linkTo saves path as d's compose file and writes d's address into the .env
-// that file runs with. Nothing is applied: neither changes a generated file.
+// linkTo saves path as d's compose file. Nothing is applied: it changes no
+// generated file.
 func (m Model) linkTo(d store.Domain, path string) (Model, tea.Cmd) {
 	d.Compose = path
 	next, err := store.Update(m.domains, d.Name, d)
@@ -204,12 +204,12 @@ func (d deps) shortPath(path string) string {
 	return ShortPath(path, d.origin.Home)
 }
 
-// previewView draws the rewritten compose file under its title and the .env
-// line its ports need.
+// previewView draws the rewritten compose file under its title and the
+// variable lodo dev sets for its ports.
 func (m Model) previewView() string {
-	env := "no port binds " + compose.EnvVar + ", so the project's .env needs nothing from lodo"
+	env := "no port binds " + compose.EnvVar + ", so lodo dev gives compose nothing"
 	if m.previewEnv != "" {
-		env = "the ports need " + m.previewEnv + " in the project's .env: l writes it"
+		env = "lodo dev and lodo exec set " + m.previewEnv + " for the ports · l links the file"
 	}
 	title := " " + m.styles.title.Render(m.previewTitle)
 	return title + "\n " + ansi.Truncate(m.styles.dim.Render(env), m.innerWidth()-1, "…") + "\n" + m.preview.View()

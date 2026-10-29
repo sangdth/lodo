@@ -36,16 +36,19 @@ safe. Run it again after you install Caddy, turn on the first HTTPS name, or whe
 cd ~/Projects/shop
 lodo dev          # first run opens the setup form; later runs start the apps on their names
 lodo dev --edit   # open the setup form again
+lodo dev -y       # save what lodo proposes with no form: a new worktree gets hugger12.test on 127.0.1.12
+lodo exec pnpm db:migrate  # run a command with the variables lodo dev sets
 lodo ps           # the dashboard: every name with its checks
 ```
 
-The setup form proposes the project's name, a name per app, the compose file to link and the `.env` lines to
-set. `enter` saves, `esc` cancels. `lodo dev` then runs `<pm> run dev` with a Node hook that moves each app onto
-the project's address; no project file changes. Only Node apps get the hook: start other dev servers with their
-own host flag, and run `docker compose up` yourself.
+The setup form proposes the project's name, a name per app and the compose file to link. `enter` saves, `esc`
+cancels. `lodo dev` then runs `<pm> run dev` with a Node hook that moves each app onto the project's address, and
+exports `DOCKER_HOST_IP` and the project's `.env` values pointed at its names; no project file changes, so a
+`.env` copied from another worktree works as it is. Only Node apps get the hook: start other dev servers with
+their own host flag. `lodo exec pnpm db:migrate` runs a command with the same variables.
+[The variables lodo dev sets](docs/reference.md#the-variables-lodo-dev-sets).
 
-For Docker, publish ports as `"${DOCKER_HOST_IP:-127.0.0.1}:5432:5432"`; lodo writes `DOCKER_HOST_IP` into the
-project's `.env`.
+For Docker, publish ports as `"${DOCKER_HOST_IP:-127.0.0.1}:5432:5432"`.
 
 ### Dashboard keys
 
@@ -57,7 +60,7 @@ project's `.env`.
 | `d`         | delete it and its subdomains; `y` confirms        |
 | `space`     | turn it on or off                                 |
 | `s`         | turn HTTPS on or off; the name needs a port       |
-| `l`         | link it to the project's compose file and `.env`  |
+| `l`         | link it to the project's compose file             |
 | `p`         | preview the compose file, as lodo would change it |
 | `i`         | open the setup form for where `lodo ps` started   |
 | `g`         | show dnsmasq's query log; `g` or `esc` goes back  |

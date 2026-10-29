@@ -327,9 +327,6 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 	if m.form.editing != "" && d.Name == o.Name && d.Address == o.Address && d.Port == o.Port {
 		cmd = m.save(next) // only the compose file changed, which nothing applies
 	}
-	if store.HasCompose(d.Compose) && (d.Compose != o.Compose || d.Address != o.Address) {
-		cmd = m.thenLink(cmd, d) // the .env follows the file and the address
-	}
 	return m.start(cmp.Or(m.form.editing, d.Name), cmd)
 }
 

@@ -59,7 +59,6 @@ func rowStop(i int) int { return stopRows + 2*i }
 // The setup form's toggles.
 const (
 	toggleLink = iota // link the compose file
-	toggleEnv         // set the .env lines
 )
 
 // Setup is the setup form for the project lodo started in. Build it with
@@ -204,6 +203,9 @@ func (s Setup) setScan(msg setupScanMsg) (Setup, tea.Cmd) {
 		s.fill()
 	}
 	s.focusOn(min(s.focus, s.stops()-1)) // the toggles shown may have changed
+	if first && s.found && s.origin.Auto {
+		return s.submit() // a field that breaks a rule leaves the form open, as enter would
+	}
 	if s.submitting {
 		s.submitting = false
 		return s.submit()
@@ -408,16 +410,12 @@ func stopFor(err error, at, row int) int {
 }
 
 // toggles are the toggles the form shows: the link when the scan offers a
-// compose file, the .env lines when it has some to set.
+// compose file.
 func (s Setup) toggles() []int {
-	var t []int
 	if s.proposal.Compose != "" {
-		t = append(t, toggleLink)
+		return []int{toggleLink}
 	}
-	if len(s.proposal.Env) > 0 {
-		t = append(t, toggleEnv)
-	}
-	return t
+	return nil
 }
 
 // stops counts the focus stops: the fields, then the toggles shown.
@@ -543,13 +541,13 @@ func (s Setup) fail(at int, err error) Setup {
 	return s
 }
 
-// submit saves the list, links the compose file and sets the .env lines when
-// their toggles are on, and applies the list, in one change. A new port needs
+// submit saves the list, links the compose file when its toggle is on, and
+// applies the list, in one change. A new port needs
 // Caddy ready, as in the add form. In the dashboard, the form is done and
 // hands the change over; on its own, it runs the change and quits once the
 // change is done.
 func (s Setup) submit() (Setup, tea.Cmd) {
-	link, env := !s.off[toggleLink] && s.proposal.Compose != "", !s.off[toggleEnv] && len(s.proposal.Env) > 0
+	link := !s.off[toggleLink] && s.proposal.Compose != ""
 	next, owner, at, err := s.build(link)
 	if err != nil {
 		return s.fail(at, err), nil
@@ -566,9 +564,6 @@ func (s Setup) submit() (Setup, tea.Cmd) {
 	cmd := s.change(next, s.embedded) // on its own, lodo dev starts the apps next: no doctor run
 	if link {
 		cmd = s.thenLink(cmd, owner)
-	}
-	if env {
-		cmd = s.thenFixEnv(cmd, s.proposal.Root, s.proposal.Env)
 	}
 	s.done, s.saving = s.embedded, !s.embedded
 	return s, cmd
@@ -745,19 +740,12 @@ func (s Setup) formLines() ([]string, int, int) {
 			box = s.styles.table.Selected.Render(box)
 			first, last = len(lines), len(lines)
 		}
-		if t == toggleLink {
-			rel, err := filepath.Rel(s.proposal.Root, s.proposal.Compose)
-			if err != nil {
-				rel = s.proposal.Compose
-			}
-			env := compose.EnvVar + "=" + strings.TrimSpace(s.address.Value())
-			lines = append(lines, " "+box+" link "+filepath.ToSlash(rel)+"  "+s.styles.dim.Render(env))
-			continue
+		rel, err := filepath.Rel(s.proposal.Root, s.proposal.Compose)
+		if err != nil {
+			rel = s.proposal.Compose
 		}
-		lines = append(lines, " "+box+" set "+plural(len(s.proposal.Env), ".env line"))
-		for _, f := range s.proposal.Env { // New shows a URL's user info as ***@
-			lines = append(lines, "     "+s.styles.dim.Render(f.File+":"+strconv.Itoa(f.Line)+"  "+strings.TrimSpace(f.New)))
-		}
+		env := "lodo dev sets " + compose.EnvVar + "=" + strings.TrimSpace(s.address.Value())
+		lines = append(lines, " "+box+" link "+filepath.ToSlash(rel)+"  "+s.styles.dim.Render(env))
 	}
 	if len(s.proposal.Notes) > 0 {
 		lines = append(lines, "")
@@ -777,11 +765,4 @@ func (s Setup) errLine(indent, from, to int) []string {
 // pad fills s with spaces to width columns.
 func pad(s string, width int) string {
 	return s + strings.Repeat(" ", max(width-ansi.StringWidth(s), 0))
-}
-
-func plural(n int, word string) string {
-	if n == 1 {
-		return "1 " + word
-	}
-	return strconv.Itoa(n) + " " + word + "s"
 }

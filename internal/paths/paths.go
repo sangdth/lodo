@@ -70,7 +70,6 @@ type Paths struct {
 	Rmdir       string
 	Dscacheutil string
 	Lsof        string
-	Git         string
 	Security    string
 
 	// Leftovers are LocalDNS files that setup reports and leaves alone.
@@ -145,7 +144,6 @@ func build(root, home, user string, uid int) Paths {
 		Rmdir:       sys("/bin/rmdir"),
 		Dscacheutil: sys("/usr/bin/dscacheutil"),
 		Lsof:        sys("/usr/sbin/lsof"),
-		Git:         sys("/usr/bin/git"),
 		Security:    sys("/usr/bin/security"),
 
 		Leftovers: []string{

@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -22,7 +23,10 @@ const usage = `lodo manages .test names on macOS through dnsmasq.
 
 Usage:
   lodo dev        start the project in this folder on its names; the first run sets
-                  them up, --edit changes them
+                  them up, --edit changes them, -y or --auto saves what lodo proposes
+                  without the form: a new worktree gets <main><n>.test on 127.0.1.<n>
+  lodo exec CMD   run CMD here with the variables lodo dev sets, such as
+                  lodo exec pnpm db:migrate
   lodo ps         open the dashboard: the list of names, their checks, and keys to
                   change them
   lodo setup      one-time system setup; asks for your password
@@ -66,6 +70,16 @@ func dispatch(args []string, stdout, stderr io.Writer) int {
 			return 2
 		}
 		return runApp(command, o, stdout, stderr)
+	case "exec":
+		args = args[1:]
+		if len(args) > 0 && args[0] == "--" {
+			args = args[1:]
+		}
+		if len(args) == 0 {
+			fmt.Fprintf(stderr, "lodo: exec needs a command to run\n\n%s", usage)
+			return 2
+		}
+		return runApp(command, options{args: args}, stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "lodo: unknown command %q\n\n%s", args[0], usage)
 		return 2
@@ -73,11 +87,14 @@ func dispatch(args []string, stdout, stderr io.Writer) int {
 }
 
 // options are the commands' flags: scan's JSON output and the project's name
-// the user chose, with or without .test, and dev's --edit.
+// the user chose, with or without .test, dev's --edit and -y or --auto, and
+// the command exec runs.
 type options struct {
 	json bool
 	name string
 	edit bool
+	auto bool
+	args []string
 }
 
 // parseFlags reads the flags of command, scan or dev.
@@ -90,9 +107,14 @@ func parseFlags(command string, args []string) (options, error) {
 		fs.StringVar(&o.name, "name", "", "")
 	} else {
 		fs.BoolVar(&o.edit, "edit", false, "")
+		fs.BoolVar(&o.auto, "y", false, "")
+		fs.BoolVar(&o.auto, "auto", false, "")
 	}
 	if err := fs.Parse(args); err != nil {
 		return o, err
+	}
+	if o.edit && o.auto {
+		return o, errors.New("--edit opens the form and -y skips it: pick one")
 	}
 	if fs.NArg() > 0 {
 		return o, fmt.Errorf("unexpected argument %q", fs.Arg(0))

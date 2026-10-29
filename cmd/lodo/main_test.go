@@ -25,6 +25,9 @@ func TestDispatch(t *testing.T) {
 		{name: "ps with an argument", args: []string{"ps", "now"}, wantCode: 2, wantStderr: "lodo: ps takes no arguments"},
 		{name: "dev with scan's flag", args: []string{"dev", "--json"}, wantCode: 2, wantStderr: "lodo: dev: flag provided but not defined: -json"},
 		{name: "dev with a command", args: []string{"dev", "--", "next", "dev"}, wantCode: 2, wantStderr: `lodo: dev: unexpected argument "next"`},
+		{name: "dev --edit -y", args: []string{"dev", "--edit", "-y"}, wantCode: 2, wantStderr: "lodo: dev: --edit opens the form and -y skips it: pick one"},
+		{name: "exec without a command", args: []string{"exec"}, wantCode: 2, wantStderr: "lodo: exec needs a command to run"},
+		{name: "exec with only --", args: []string{"exec", "--"}, wantCode: 2, wantStderr: "lodo: exec needs a command to run"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

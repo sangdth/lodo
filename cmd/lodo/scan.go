@@ -8,7 +8,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/sangdth/lodo/internal/compose"
 	"github.com/sangdth/lodo/internal/scan"
 	"github.com/sangdth/lodo/internal/store"
 	"github.com/sangdth/lodo/internal/tui"
@@ -16,8 +15,8 @@ import (
 
 // scan prints what the project dir is in lacks from the list, under the name
 // o gives when it gives one: as text, or as JSON for scripts and agents. It
-// changes nothing; lodo dev's setup form applies it. Only git runs, to tell
-// which .env files it tracks.
+// changes nothing; lodo dev's setup form applies it, and lodo dev and lodo
+// exec set its variables.
 func (a app) scan(ctx context.Context, dir string, o options) int {
 	name := ""
 	if o.name != "" {
@@ -51,8 +50,7 @@ func (a app) scan(ctx context.Context, dir string, o options) int {
 }
 
 // formatProposal renders a scan: a line per name to add, the compose file to
-// link, each .env line lodo sets with its old and new text, and the notes. The
-// .env lines come masked.
+// link, each variable lodo dev sets, masked, and the notes.
 func formatProposal(p scan.Proposal, home string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "scan of %s\n", tui.ShortPath(p.Root, home))
@@ -63,9 +61,8 @@ func formatProposal(p scan.Proposal, home string) string {
 	case !p.CanAccept() && len(p.Notes) == 0 && !p.Listed:
 		b.WriteString("found no dev server or compose file\n")
 		return b.String()
-	case !p.CanAccept() && len(p.Notes) == 0:
-		b.WriteString(p.Name + " is set up: nothing to add, link or change\n")
-		return b.String()
+	case !p.CanAccept():
+		b.WriteString(p.Name + " is set up: nothing to add or link\n")
 	}
 	width := 0
 	for _, d := range p.Add {
@@ -86,16 +83,14 @@ func formatProposal(p scan.Proposal, home string) string {
 		if err != nil {
 			rel = p.Compose
 		}
-		fmt.Fprintf(&b, "link  ./%s · %s=%s in its .env\n", filepath.ToSlash(rel), compose.EnvVar, p.Address)
+		fmt.Fprintf(&b, "link  ./%s\n", filepath.ToSlash(rel))
 	}
-	for _, f := range p.Env {
-		fmt.Fprintf(&b, "set   %s:%d\n      - %s\n      + %s\n", f.File, f.Line, strings.TrimSpace(f.Old), strings.TrimSpace(f.New))
-	}
-	for _, n := range p.Notes {
-		b.WriteString("note  " + n + "\n")
-	}
+	b.WriteString(formatVars(p)) // the notes come last
 	if p.CanAccept() {
-		b.WriteString("\nrun lodo dev --edit here to add, link and set these\n")
+		b.WriteString("\nrun lodo dev --edit here to add and link these\n")
+	}
+	if p.Address != "" {
+		b.WriteString("\nlodo dev and lodo exec set the env lines; the .env files stay as they are\n")
 	}
 	return b.String()
 }

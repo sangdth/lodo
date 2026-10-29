@@ -2,7 +2,6 @@ package tui
 
 import (
 	"context"
-	"errors"
 	"slices"
 	"strings"
 	"time"
@@ -15,7 +14,6 @@ import (
 
 	"github.com/sangdth/lodo/internal/check"
 	"github.com/sangdth/lodo/internal/compose"
-	"github.com/sangdth/lodo/internal/scan"
 	"github.com/sangdth/lodo/internal/store"
 )
 
@@ -48,6 +46,7 @@ const (
 type Start struct {
 	Dir  string
 	Home string
+	Auto bool // the setup form saves what its first scan proposes without waiting for enter: lodo dev -y
 }
 
 // deps is what the dashboard and the setup form run backend calls with: the
@@ -236,40 +235,16 @@ func (m Model) reload() tea.Cmd {
 	}
 }
 
-// thenLink runs cmd, then, once it saved the list, writes owner's address
-// into the .env that owner's compose file runs with.
+// thenLink runs cmd, then, once it saved the list, notes owner's link and
+// the address lodo dev gives its compose file.
 func (d deps) thenLink(cmd tea.Cmd, owner store.Domain) tea.Cmd {
-	ctx, b, home := d.ctx, d.backend, d.origin.Home
+	home := d.origin.Home
 	return func() tea.Msg {
 		msg, ok := cmd().(changedMsg)
 		if !ok || !msg.stored {
 			return msg
 		}
-		env, err := b.LinkEnv(ctx, owner.Compose, owner.Address)
-		if err != nil {
-			msg.err = errors.Join(msg.err, err)
-			return msg
-		}
-		msg.note = "linked " + owner.Name + " · " + compose.EnvVar + "=" + owner.Address + " in " + ShortPath(env, home)
-		return msg
-	}
-}
-
-// thenFixEnv runs cmd, then, once it saved the list, sets the scan's .env
-// lines in the project at root.
-func (d deps) thenFixEnv(cmd tea.Cmd, root string, fixes []scan.Fix) tea.Cmd {
-	ctx, b := d.ctx, d.backend
-	return func() tea.Msg {
-		msg, ok := cmd().(changedMsg)
-		if !ok || !msg.stored {
-			return msg
-		}
-		if err := b.FixEnv(ctx, root, fixes); err != nil {
-			msg.err = errors.Join(msg.err, err)
-			return msg
-		}
-		// What to restart goes first: a narrow status line cuts the end.
-		msg.note = strings.TrimSuffix("set "+plural(len(fixes), ".env line")+", restart the dev servers · "+msg.note, " · ")
+		msg.note = "linked " + owner.Name + " to " + ShortPath(owner.Compose, home) + " · lodo dev sets " + compose.EnvVar + "=" + owner.Address
 		return msg
 	}
 }
