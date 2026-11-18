@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/sangdth/lodo/internal/brew"
@@ -71,6 +72,11 @@ func TestInfo(t *testing.T) {
 			name: "a root plist", plist: "Library/LaunchDaemons/sh.brew.dnsmasq.plist",
 			label: "sh.brew.dnsmasq", want: brew.Status{User: "root", Registered: true},
 		},
+		{
+			name: "a running root plist", plist: "Library/LaunchDaemons/sh.brew.dnsmasq.plist",
+			print: "print-running.txt", label: "sh.brew.dnsmasq",
+			want: brew.Status{Running: true, User: "root", PID: 63372, Registered: true},
+		},
 		{name: "turned off", label: "sh.brew.dnsmasq", want: brew.Status{}},
 	}
 	for _, tt := range tests {
@@ -82,7 +88,11 @@ func TestInfo(t *testing.T) {
 			if tt.plist != "" {
 				writeFile(t, filepath.Join(root, tt.plist))
 			}
-			line := run.Line(p.Launchctl, "print", "gui/501/"+tt.label)
+			domain := "gui/501/"
+			if strings.HasPrefix(tt.plist, "Library/LaunchDaemons/") {
+				domain = "system/"
+			}
+			line := run.Line(p.Launchctl, "print", domain+tt.label)
 			f := run.NewFake()
 			if tt.print != "" {
 				f.Set(line, readTestdata(t, tt.print))

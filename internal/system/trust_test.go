@@ -180,6 +180,59 @@ func TestSetup_TrustFails(t *testing.T) {
 	}
 }
 
+// TestSetup_TrustRotatedAndAlreadyTrusted checks that setup skips
+// add-trusted-cert when the copy already matches and verifies, re-trusts if
+// verify-cert fails, and untrusts the old root before trusting a rotated CA.
+func TestSetup_TrustRotatedAndAlreadyTrusted(t *testing.T) {
+	t.Parallel()
+
+	t.Run("already trusted", func(t *testing.T) {
+		t.Parallel()
+		p, r := newMac(t, true)
+		saveDomains(t, p, []store.Domain{secure})
+		writeFile(t, p.CaddyRoot, rootPEM)
+		writeFile(t, p.TrustedCA, rootPEM)
+		if err := system.Setup(context.Background(), p, r, &strings.Builder{}); err != nil {
+			t.Fatal(err)
+		}
+		if slices.Contains(r.Calls(), trustCall(p)) {
+			t.Errorf("ran add-trusted-cert when already trusted: %q", r.Calls())
+		}
+	})
+	t.Run("same cert, untrusted in keychain", func(t *testing.T) {
+		t.Parallel()
+		p, r := newMac(t, true)
+		saveDomains(t, p, []store.Domain{secure})
+		writeFile(t, p.CaddyRoot, rootPEM)
+		writeFile(t, p.TrustedCA, rootPEM)
+		r.Fail(run.Line(p.Security, "verify-cert", "-c", p.TrustedCA), "CSSMERR_TP_NOT_TRUSTED")
+		if err := system.Setup(context.Background(), p, r, &strings.Builder{}); err != nil {
+			t.Fatal(err)
+		}
+		if !slices.Contains(r.Calls(), trustCall(p)) {
+			t.Errorf("did not re-trust after verify-cert failed: %q", r.Calls())
+		}
+	})
+	t.Run("caddy rotated its CA", func(t *testing.T) {
+		t.Parallel()
+		p, r := newMac(t, true)
+		saveDomains(t, p, []store.Domain{secure})
+		const newPEM = "-----BEGIN CERTIFICATE-----\nnew-ca\n-----END CERTIFICATE-----\n"
+		writeFile(t, p.TrustedCA, rootPEM)
+		writeFile(t, p.CaddyRoot, newPEM)
+		if err := system.Setup(context.Background(), p, r, &strings.Builder{}); err != nil {
+			t.Fatal(err)
+		}
+		calls := r.Calls()
+		untrustIdx := slices.Index(calls, untrustCall(p))
+		trustIdx := slices.Index(calls, trustCall(p))
+		if untrustIdx < 0 || trustIdx < untrustIdx {
+			t.Fatalf("expected untrust before trust; calls = %q", calls)
+		}
+		assertFile(t, p.TrustedCA, newPEM)
+	})
+}
+
 // TestUninstall_Untrust checks uninstall untrusts the copy setup trusted and
 // removes it, and when security fails, warns, keeps the copy and goes on.
 func TestUninstall_Untrust(t *testing.T) {

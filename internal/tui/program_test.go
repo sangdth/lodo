@@ -2,6 +2,7 @@ package tui
 
 import (
 	"bytes"
+	"slices"
 	"testing"
 	"time"
 
@@ -14,7 +15,7 @@ import (
 func TestProgram(t *testing.T) {
 	t.Parallel()
 
-	b := &fakeBackend{}
+	b := &fakeBackend{onDisk: slices.Clone(sample)}
 	tm := teatest.NewTestModel(t, New(t.Context(), b, sample, Start{}), teatest.WithInitialTermSize(80, 24))
 	teatest.WaitFor(t, tm.Output(), func(out []byte) bool {
 		return bytes.Contains(out, []byte("crm.test")) && bytes.Contains(out, []byte("dns ✓"))

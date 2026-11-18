@@ -9,6 +9,7 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"fmt"
 	"path"
 	"path/filepath"
 	"slices"
@@ -56,11 +57,6 @@ const (
 
 func rowStop(i int) int { return stopRows + 2*i }
 
-// The setup form's toggles.
-const (
-	toggleLink = iota // link the compose file
-)
-
 // Setup is the setup form for the project lodo started in. Build it with
 // NewSetup. On its own, it quits once it saved or was canceled; Saved and
 // Err tell which.
@@ -83,10 +79,10 @@ type Setup struct {
 	name    textinput.Model // the project's label, before .test
 	address textinput.Model
 	rows    []setupRow
-	off     [2]bool // each toggle switched off
-	focus   int     // the focus stop the keys act on
-	dirty   bool    // a field changed since the last scan
-	errAt   int     // the focus stop errMsg is about; -1 for none
+	unlink  bool // the compose link toggle switched off
+	focus   int  // the focus stop the keys act on
+	dirty   bool // a field changed since the last scan
+	errAt   int  // the focus stop errMsg is about; -1 for none
 	errMsg  string
 
 	submitting bool   // enter waits for the scan of the fields as typed
@@ -234,7 +230,7 @@ func (s *Setup) fill() {
 	s.address.SetValue(p.Address)
 
 	var rows []setupRow
-	if s.listed.Port > 0 {
+	if s.listed.Port > 0 || p.Dirs[s.listed.Name] != "" {
 		rows = append(rows, s.row(s.listed, false)) // the project's name serves an app
 	}
 	if mine {
@@ -322,6 +318,7 @@ func (s Setup) build(link bool) ([]store.Domain, store.Domain, int, error) {
 	bare := -1 // the row with the project's name alone
 	rootApp := slices.ContainsFunc(s.project.Apps, func(a scan.App) bool { return a.Dir == "." })
 	ports := make([]int, len(s.rows))
+	usedPorts := map[int]string{}
 	for i, r := range s.rows {
 		port, err := store.ParsePort(r.port.Value())
 		if err != nil {
@@ -329,6 +326,17 @@ func (s Setup) build(link bool) ([]store.Domain, store.Domain, int, error) {
 		}
 		ports[i] = port
 		label := strings.TrimSpace(r.label.Value())
+		rowName := project
+		if label != "" {
+			rowName = label + "." + project
+		}
+		rowEnabled := r.listed.Name == "" || r.listed.Enabled
+		if port > 0 && rowEnabled {
+			if prev, dup := usedPorts[port]; dup {
+				return nil, owner, rowStop(i) + 1, fmt.Errorf("port %d is already used by %s", port, prev)
+			}
+			usedPorts[port] = rowName
+		}
 		if label != r.start && !r.page { // a later scan ties the root's app to the project's name and each other app to its folder's
 			if slices.ContainsFunc(s.project.Apps, func(a scan.App) bool { return a.Dir == r.what && a.Port == 0 }) {
 				return nil, owner, rowStop(i), scan.ErrUnknownPort
@@ -409,17 +417,17 @@ func stopFor(err error, at, row int) int {
 	return at
 }
 
-// toggles are the toggles the form shows: the link when the scan offers a
-// compose file.
-func (s Setup) toggles() []int {
-	if s.proposal.Compose != "" {
-		return []int{toggleLink}
-	}
-	return nil
-}
+// hasComposeToggle reports whether the form shows the compose link toggle.
+func (s Setup) hasComposeToggle() bool { return s.proposal.Compose != "" }
 
-// stops counts the focus stops: the fields, then the toggles shown.
-func (s Setup) stops() int { return rowStop(len(s.rows)) + len(s.toggles()) }
+// stops counts the focus stops: the fields, then the compose toggle when shown.
+func (s Setup) stops() int {
+	n := rowStop(len(s.rows))
+	if s.hasComposeToggle() {
+		n++
+	}
+	return n
+}
 
 // input returns the field at focus stop i, or nil at a toggle.
 func (s *Setup) input(i int) *textinput.Model {
@@ -476,8 +484,7 @@ func (s Setup) key(msg tea.KeyPressMsg) (Setup, tea.Cmd) {
 	in := s.input(s.focus)
 	if in == nil {
 		if k == "space" {
-			t := s.toggles()[s.focus-rowStop(len(s.rows))]
-			s.off[t] = !s.off[t]
+			s.unlink = !s.unlink
 		}
 		return s, nil
 	}
@@ -542,31 +549,90 @@ func (s Setup) fail(at int, err error) Setup {
 }
 
 // submit saves the list, links the compose file when its toggle is on, and
-// applies the list, in one change. A new port needs
+// applies the list, in one change under the domains lock. A new port needs
 // Caddy ready, as in the add form. In the dashboard, the form is done and
 // hands the change over; on its own, it runs the change and quits once the
 // change is done.
 func (s Setup) submit() (Setup, tea.Cmd) {
-	link := !s.off[toggleLink] && s.proposal.Compose != ""
+	link := !s.unlink && s.proposal.Compose != ""
 	next, owner, at, err := s.build(link)
 	if err != nil {
 		return s.fail(at, err), nil
 	}
-	if slices.ContainsFunc(next, func(d store.Domain) bool {
-		old, ok := store.Find(s.domains, d.Name)
-		return d.Port > 0 && (!ok || old.Port != d.Port)
-	}) {
-		if err := s.backend.PortsReady(); err != nil {
-			s.err = err
-			return s, nil
-		}
+	if err := s.checkPortsReady(s.domains, next); err != nil {
+		s.err = err
+		return s, nil
 	}
-	cmd := s.change(next, s.embedded) // on its own, lodo dev starts the apps next: no doctor run
-	if link {
-		cmd = s.thenLink(cmd, owner)
-	}
+	cmd := s.saveSetup(next, owner, link)
 	s.done, s.saving = s.embedded, !s.embedded
 	return s, cmd
+}
+
+func (s Setup) checkPortsReady(before, after []store.Domain) error {
+	if slices.ContainsFunc(after, func(d store.Domain) bool {
+		old, ok := store.Find(before, d.Name)
+		return d.Port > 0 && (!ok || old.Port != d.Port)
+	}) {
+		return s.backend.PortsReady()
+	}
+	return nil
+}
+
+// saveSetup locks domains.json and writes the setup form's result. If another
+// process changed domains.json since the scan, Auto re-scans against the fresh
+// list so parallel lodo dev -y runs pick distinct slots, and an interactive
+// submit rebuilds against the fresh list before saving.
+func (s Setup) saveSetup(next []store.Domain, owner store.Domain, link bool) tea.Cmd {
+	ctx, b := s.ctx, s.backend
+	return func() tea.Msg {
+		var msg changedMsg
+		if err := b.WithLock(func() error {
+			fresh, err := b.Load()
+			if err != nil {
+				msg.err = err
+				return nil
+			}
+			if !slices.Equal(fresh, s.domains) {
+				cur := s
+				cur.domains = fresh
+				if cur.origin.Auto {
+					proj, prop, ok := b.Scan(ctx, cur.origin.Dir, "", fresh)
+					if !ok {
+						msg.err = scan.ErrNoProject
+						return nil
+					}
+					cur.project, cur.proposal = proj, prop
+					cur.fill()
+					link = !cur.unlink && cur.proposal.Compose != ""
+				}
+				built, builtOwner, _, err := cur.build(link)
+				if err != nil {
+					msg.err = err
+					return nil
+				}
+				if err := cur.checkPortsReady(fresh, built); err != nil {
+					msg.err = err
+					return nil
+				}
+				next, owner = built, builtOwner
+			}
+			if err := b.Save(next); err != nil {
+				msg.err = err
+				return nil
+			}
+			msg = changedMsg{domains: next, stored: true, err: b.Apply(ctx, next)}
+			if link {
+				msg.note = linkNote(owner, s.origin.Home)
+			}
+			return nil
+		}); err != nil {
+			return changedMsg{err: err}
+		}
+		if msg.stored && s.embedded {
+			msg.checks, msg.results = b.Report(ctx, msg.domains)
+		}
+		return msg
+	}
 }
 
 // View draws the form and its keys. lodo dev draws it in the terminal, not on
@@ -728,15 +794,13 @@ func (s Setup) formLines() ([]string, int, int) {
 		}
 	}
 
-	if len(s.toggles()) > 0 {
+	if s.hasComposeToggle() {
 		lines = append(lines, "")
-	}
-	for j, t := range s.toggles() {
 		box := "[x]"
-		if s.off[t] {
+		if s.unlink {
 			box = "[ ]"
 		}
-		if s.focus == rowStop(len(s.rows))+j {
+		if s.focus == rowStop(len(s.rows)) {
 			box = s.styles.table.Selected.Render(box)
 			first, last = len(lines), len(lines)
 		}

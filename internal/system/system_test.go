@@ -80,6 +80,9 @@ func TestRewriteSystemCaddyfile(t *testing.T) {
 	global := system.CaddyGlobalBlock
 	site := "example.com {\n\trespond \"hi\"\n}\n"
 	userGlobal := "# mine\n{\n\temail me@example.com\n}\n\n" + site
+	userGlobalDisabled := "# mine\n{\n\tadmin off # lodo\n\temail me@example.com\n}\n\n" + site
+	userGlobalOwnOff := "# mine\n{\n\tadmin off\n\temail me@example.com\n}\n\n" + site
+	userGlobalOpenAdmin := "# mine\n{\n\tadmin localhost:2019\n\temail me@example.com\n}\n\n" + site
 	tests := []struct {
 		name string
 		old  string
@@ -90,8 +93,10 @@ func TestRewriteSystemCaddyfile(t *testing.T) {
 		{name: "already lodo's", old: global + "\n" + site + "\n" + caddyBlock, want: global + "\n" + site + "\n" + caddyBlock},
 		{name: "moves the import to the end", old: caddyBlock + "\n" + site, want: global + "\n" + site + "\n" + caddyBlock},
 		{name: "moves the global block to the top", old: site + "\n" + global, want: global + "\n" + site + "\n" + caddyBlock},
-		{name: "keeps the user's global block", old: userGlobal, want: userGlobal + "\n" + caddyBlock},
-		{name: "user's global block after lodo's", old: global + "\n" + userGlobal, want: userGlobal + "\n" + caddyBlock},
+		{name: "adds admin off to the user's global block", old: userGlobal, want: userGlobalDisabled + "\n" + caddyBlock},
+		{name: "keeps the user's own admin off", old: userGlobalOwnOff, want: userGlobalOwnOff + "\n" + caddyBlock},
+		{name: "replaces open admin in the user's global block", old: userGlobalOpenAdmin, want: userGlobalDisabled + "\n" + caddyBlock},
+		{name: "user's global block after lodo's", old: global + "\n" + userGlobal, want: userGlobalDisabled + "\n" + caddyBlock},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -111,18 +116,21 @@ func TestStripSystemCaddyfile(t *testing.T) {
 	t.Parallel()
 
 	caddyBlock := system.CaddyBlock(fake)
+	unquotedImport := system.Marker + "\nimport " + fake.Caddyfile + "\n"
 	global := system.CaddyGlobalBlock
 	site := "example.com {\n\trespond \"hi\"\n}\n"
 	userGlobal := "{\n\temail me@example.com\n}\n"
+	userGlobalWithAdmin := "{\n\tadmin off # lodo\n\temail me@example.com\n}\n"
 	tests := []struct {
 		name string
 		old  string
 		want string
 	}{
 		{name: "import block", old: site + "\n" + caddyBlock, want: site},
+		{name: "unquoted legacy import block", old: site + "\n" + unquotedImport, want: site},
 		{name: "lodo's blocks alone", old: global + "\n" + caddyBlock, want: ""},
 		{name: "both blocks around a site", old: global + "\n" + site + "\n" + caddyBlock, want: site},
-		{name: "keeps the user's global block", old: userGlobal + "\n" + site + "\n" + caddyBlock, want: userGlobal + "\n" + site},
+		{name: "strips injected admin off from user global block", old: userGlobalWithAdmin + "\n" + site + "\n" + caddyBlock, want: userGlobal + "\n" + site},
 		{name: "marker before a site keeps the site", old: "# lodo\n" + site, want: site},
 		{name: "unclosed block after a marker stays", old: "# lodo\n{\n\tadmin off\n", want: "{\n\tadmin off\n"},
 	}
@@ -136,9 +144,37 @@ func TestStripSystemCaddyfile(t *testing.T) {
 	}
 }
 
+func TestCaddyAdminDisabled(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		content string
+		want    bool
+	}{
+		{name: "lodo global block", content: system.CaddyGlobalBlock + "\n" + system.CaddyBlock(fake), want: true},
+		{name: "user global block rewritten", content: system.RewriteSystemCaddyfile("{\n\temail me@example.com\n}\n", fake), want: true},
+		{name: "no global block", content: "example.com {\n\trespond \"hi\"\n}\n", want: false},
+		{name: "user global block without admin off", content: "{\n\temail me@example.com\n}\n", want: false},
+		{name: "user global block with open admin", content: "{\n\tadmin :2019\n}\n", want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			p := paths.ForTest(t.TempDir())
+			writeFile(t, p.SystemCaddyfile, tt.content)
+			if got := system.CaddyAdminDisabled(p); got != tt.want {
+				t.Errorf("CaddyAdminDisabled = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 // TestSystemCaddyfile_CaddyAccepts runs caddy adapt on rewritten Caddyfiles,
-// which checks lodo's global block parses and comes first. HOME and the XDG
-// directories point at a temp dir, so caddy writes nothing real.
+// which checks lodo's global block parses and comes first, and that admin is
+// always off—even when the user's Caddyfile already had a global block or spaces
+// in its path. HOME and the XDG directories point at a temp dir, so caddy
+// writes nothing real.
 func TestSystemCaddyfile_CaddyAccepts(t *testing.T) {
 	t.Parallel()
 
@@ -146,8 +182,8 @@ func TestSystemCaddyfile_CaddyAccepts(t *testing.T) {
 	if _, err := exec.LookPath(caddyBin); err != nil {
 		t.Skipf("caddy is not installed: %v", err)
 	}
-	for _, old := range []string{"", "example.com {\n\trespond \"hi\"\n}\n", "{\n\temail me@example.com\n}\n"} {
-		dir := t.TempDir()
+	for _, old := range []string{"", "example.com {\n\trespond \"hi\"\n}\n", "{\n\temail me@example.com\n}\n", "{\n\tadmin localhost:2019\n}\n"} {
+		dir := filepath.Join(t.TempDir(), "with spaces")
 		p := paths.ForTest(dir)
 		writeFile(t, p.Caddyfile, "")
 		writeFile(t, p.SystemCaddyfile, system.RewriteSystemCaddyfile(old, p))
@@ -157,8 +193,8 @@ func TestSystemCaddyfile_CaddyAccepts(t *testing.T) {
 		if err != nil {
 			t.Errorf("caddy adapt of %q: %v\n%s", old, err, out)
 		}
-		if old == "" && !strings.Contains(string(out), `"admin":{"disabled":true}`) {
-			t.Errorf("caddy adapt of lodo's Caddyfile does not turn admin off:\n%s", out)
+		if !strings.Contains(string(out), `"admin":{"disabled":true}`) {
+			t.Errorf("caddy adapt of %q does not turn admin off:\n%s", old, out)
 		}
 	}
 }

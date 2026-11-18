@@ -2,11 +2,17 @@ package caddy_test
 
 import (
 	"cmp"
+	"context"
 	"errors"
+	"fmt"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -93,6 +99,94 @@ func TestConfig_CaddyAccepts(t *testing.T) {
 				t.Fatalf("caddy rejects the config: %v\n%s\nconfig:\n%s", err, out, config)
 			}
 		})
+	}
+}
+
+// TestConfig_OriginRewrite runs a real Caddy process with caddy.Config and
+// checks that only the site's own Origin on Next dev paths becomes
+// http://localhost:<port>, while an attacker's Origin and Host stay unchanged.
+func TestConfig_OriginRewrite(t *testing.T) {
+	t.Parallel()
+
+	if _, err := exec.LookPath(caddyBin); err != nil {
+		t.Skipf("caddy is not installed: %v", err)
+	}
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Got-Host", r.Host)
+		w.Header().Set("X-Got-Origin", r.Header.Get("Origin"))
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(upstream.Close)
+	upPort := upstream.Listener.Addr().(*net.TCPAddr).Port
+
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	caddyPort := l.Addr().(*net.TCPAddr).Port
+	_ = l.Close()
+
+	dir := t.TempDir()
+	sites := filepath.Join(dir, "lodo.Caddyfile")
+	if err := os.WriteFile(sites, []byte(caddy.Config([]store.Domain{
+		{Name: "dashboard.crm.test", Address: "127.0.0.1", Port: upPort, Enabled: true},
+	})), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	mainCF := filepath.Join(dir, "Caddyfile")
+	if err := os.WriteFile(mainCF, fmt.Appendf(nil, "{\n\tadmin off\n\thttp_port %d\n}\nimport %s\n", caddyPort, strconv.Quote(sites)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	cmd := exec.CommandContext(ctx, caddyBin, "run", "--config", mainCF, "--adapter", "caddyfile")
+	cmd.Env = append(os.Environ(), "HOME="+dir, "XDG_DATA_HOME="+dir, "XDG_CONFIG_HOME="+dir)
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { cancel(); _ = cmd.Wait() })
+
+	client := &http.Client{Timeout: 2 * time.Second}
+	addr := net.JoinHostPort("127.0.0.1", strconv.Itoa(caddyPort))
+	sendReq := func(path, origin string) (*http.Response, error) {
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://"+addr+path, nil)
+		if err != nil {
+			return nil, err
+		}
+		req.Host = "dashboard.crm.test"
+		if origin != "" {
+			req.Header.Set("Origin", origin)
+		}
+		return client.Do(req)
+	}
+	var ready *http.Response
+	for range 30 {
+		resp, err := sendReq("/_next/webpack-hmr", "http://dashboard.crm.test")
+		if err == nil {
+			ready = resp
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if ready == nil {
+		t.Fatal("caddy did not start listening")
+	}
+	_ = ready.Body.Close()
+	if got, want := ready.Header.Get("X-Got-Origin"), "http://localhost:"+strconv.Itoa(upPort); got != want {
+		t.Errorf("own origin on /_next = %q, want %q", got, want)
+	}
+	if got := ready.Header.Get("X-Got-Host"); got != "dashboard.crm.test" {
+		t.Errorf("host = %q, want dashboard.crm.test", got)
+	}
+
+	evil, err := sendReq("/_next/webpack-hmr", "https://evil.example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = evil.Body.Close()
+	if got := evil.Header.Get("X-Got-Origin"); got != "https://evil.example" {
+		t.Errorf("evil origin on /_next = %q, want https://evil.example", got)
 	}
 }
 

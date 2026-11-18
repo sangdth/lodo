@@ -51,8 +51,8 @@ stops the commit.
   (`Proposal.Env`, `scan.Var`). It also reads `PORT=` from an app's `.env` (NestJS, Create React App, unknown
   commands), the `KEY=value` lines of each app's `.env`, the git repository's main checkout (`repoRoot`), so a
   worktree's variables swap another checkout's or an unlisted `.test` project's names for its own (`siblingNames`),
-  and the names Caddy serves per port (`ValuesFor`). Each app keeps its own port; a
-  port taken on the project's address moves the app to the next free address, with a note, since `lodo dev` binds
+  and the names Caddy serves per port (`ValuesFor`). Every app keeps its own port on the project's address; when
+  two apps share a port, the scan adds a note and the setup form requires distinct ports, since `lodo dev` binds
   one app per port. Its notes point at `lodo dev --edit`. All dev server rules and the images lodo names
   (`webImages`) live here, and so does the rule for a listed name another project's folder still has (`Taken`,
   `BelongsTo`). It reads files and never writes them.
@@ -93,9 +93,10 @@ stops the commit.
   matching `store.NamePattern`, with fixed content, and only deletes files that start with lodo's marker line.
   Changes to it keep those three properties.
 - Setup trusts Caddy's local CA only when a name has HTTPS on: it copies the root file Caddy wrote to
-  `~/.config/lodo/caddy-root.crt` and runs `security add-trusted-cert` on that copy; uninstall untrusts the copy.
-  A trusted root signs certificates for any site. Nothing uses Caddy's admin API; lodo's block in Homebrew's
-  Caddyfile turns it off.
+  `~/.config/lodo/caddy-root.crt` and runs `security add-trusted-cert` on that copy (untrusting an older copy if
+  Caddy rotated its CA, and skipping the prompt when already trusted); uninstall untrusts the copy.
+  A trusted root signs certificates for any site. Nothing uses Caddy's admin API; lodo ensures `admin off` in
+  Homebrew's Caddyfile (inside any existing global block too).
 - Every generated site passes `Host` through as the `.test` name, and turns `Origin` into
   `http://localhost:<port>` only on Next's dev paths and only when it is the site's own origin: a `Host` rewrite
   makes Mailpit's websocket answer 403, and a wider `Origin` rewrite breaks Server Actions and lets any web page

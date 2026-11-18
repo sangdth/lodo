@@ -19,6 +19,7 @@ import (
 // fakeBackend records what the TUI asks of it. Every check passes and every
 // enabled name resolves unless failing or failingChecks says otherwise.
 type fakeBackend struct {
+	lockMu        sync.Mutex
 	mu            sync.Mutex
 	onDisk        []store.Domain
 	saveErr       error
@@ -38,6 +39,12 @@ type fakeBackend struct {
 	applied       [][]store.Domain
 	reports       int
 	folders       map[string]bool // the folders on disk, for Gone
+}
+
+func (f *fakeBackend) WithLock(fn func() error) error {
+	f.lockMu.Lock()
+	defer f.lockMu.Unlock()
+	return fn()
 }
 
 func (f *fakeBackend) PortsReady() error { return f.portsErr }
@@ -98,6 +105,14 @@ func (f *fakeBackend) appendLog(s string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.log += s
+}
+
+func (f *fakeBackend) seed(domains []store.Domain) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.onDisk == nil {
+		f.onDisk = slices.Clone(domains)
+	}
 }
 
 func (f *fakeBackend) Load() ([]store.Domain, error) {
@@ -216,6 +231,7 @@ func ready(b *fakeBackend, domains []store.Domain) Model {
 
 // readyIn is ready for an lodo started in start's folder.
 func readyIn(b *fakeBackend, domains []store.Domain, start Start) Model {
+	b.seed(domains)
 	m := New(context.Background(), b, domains, start)
 	m.logEvery = time.Millisecond
 	return settle(m, m.Init())

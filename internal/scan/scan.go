@@ -302,12 +302,6 @@ func Propose(p Project, domains []store.Domain, name string, gone func(path stri
 			d.Root = p.Root
 		}
 		if other := onPort(list, d.Address, d.Port); d.Port > 0 && other != "" {
-			free, err := store.NextFree(list)
-			if err != nil {
-				prop.Notes = append(prop.Notes, fmt.Sprintf("%s: port %d is taken on %s and %v", e.name, d.Port, d.Address, err))
-				continue
-			}
-			d.Address = free
 			prop.Notes = append(prop.Notes, fmt.Sprintf(
 				"%s and %s both take port %d; lodo dev binds one app per port: give one of them another port", other, e.name, d.Port))
 		}
@@ -339,7 +333,7 @@ func Propose(p Project, domains []store.Domain, name string, gone func(path stri
 				prop.Compose = used
 			}
 		}
-		if used == p.Compose[0] { // the file Find read the pages from
+		if SameFolder(used, p.Compose[0]) { // the file Find read the pages from
 			for _, pg := range p.Pages {
 				d := fromMain(store.Domain{Name: pg.Label + "." + p.Name, Address: owner.Address, Port: pg.Port, Enabled: true}, p.Name, main, domains)
 				if _, listed := store.Find(list, d.Name); listed || onPort(list, d.Address, d.Port) != "" {
@@ -357,7 +351,7 @@ func Propose(p Project, domains []store.Domain, name string, gone func(path stri
 	}
 	if ok {
 		var bound map[int]bool // only while compose runs the file Find read the ports from
-		if len(p.Compose) > 0 && used == p.Compose[0] {
+		if len(p.Compose) > 0 && SameFolder(used, p.Compose[0]) {
 			bound = p.Bound
 		}
 		env, notes := envVars(p, ValuesFor(list, owner), bound, siblingNames(p, list, p.Name))
@@ -464,10 +458,18 @@ func onPort(domains []store.Domain, address string, port int) string {
 	return ""
 }
 
-// linksInside reports whether d links a compose file inside root. It compares
-// the paths as written, unlike SameFolder.
+// linksInside reports whether d links a compose file inside root, resolving
+// symlinks and case differences on disk when both exist.
 func linksInside(d store.Domain, root string) bool {
-	return strings.HasPrefix(d.Compose, root+string(filepath.Separator))
+	if strings.HasPrefix(d.Compose, root+string(filepath.Separator)) {
+		return true
+	}
+	if !store.HasCompose(d.Compose) || root == "" {
+		return false
+	}
+	rc, errC := filepath.EvalSymlinks(d.Compose)
+	rr, errR := filepath.EvalSymlinks(root)
+	return errC == nil && errR == nil && strings.HasPrefix(rc, rr+string(filepath.Separator))
 }
 
 // linked reports whether d links no compose file on purpose, or one that is

@@ -49,7 +49,7 @@ func Uninstall(ctx context.Context, p paths.Paths, r run.Runner, out io.Writer) 
 // removeResolverFiles runs the script with no names, so it deletes every file
 // it wrote and flushes the cache.
 func removeResolverFiles(ctx context.Context, p paths.Paths, r run.Runner) error {
-	if !exists(p.Script) {
+	if !fsutil.Exists(p.Script) {
 		return nil
 	}
 	_, err := r.RunInput(ctx, "", p.Sudo, "-n", p.Script)
@@ -57,7 +57,7 @@ func removeResolverFiles(ctx context.Context, p paths.Paths, r run.Runner) error
 }
 
 func restoreSystemConf(p paths.Paths) (string, error) {
-	if exists(p.SystemConfBackup) {
+	if fsutil.Exists(p.SystemConfBackup) {
 		if err := os.Rename(p.SystemConfBackup, p.SystemConf); err != nil {
 			return "", fmt.Errorf("restore %s: %w", p.SystemConf, err)
 		}
@@ -80,7 +80,7 @@ func restoreSystemConf(p paths.Paths) (string, error) {
 // the copy that records it. A failure warns and keeps the copy, so the rest of
 // uninstall still runs and the hand fix still names a file.
 func untrustCaddy(ctx context.Context, p paths.Paths, r run.Runner) error {
-	if !exists(p.TrustedCA) {
+	if !fsutil.Exists(p.TrustedCA) {
 		return skipped("lodo never trusted a CA")
 	}
 	if err := r.RunTTY(ctx, p.Sudo, p.Security, "remove-trusted-cert", "-d", p.TrustedCA); err != nil {
@@ -99,7 +99,7 @@ func restoreCaddy(ctx context.Context, p paths.Paths, r run.Runner) (string, err
 	if err := brew.Stop(ctx, r, p, "caddy"); err != nil {
 		return "", err
 	}
-	if exists(p.SystemCaddyfileBackup) {
+	if fsutil.Exists(p.SystemCaddyfileBackup) {
 		if err := os.Rename(p.SystemCaddyfileBackup, p.SystemCaddyfile); err != nil {
 			return "", fmt.Errorf("restore %s: %w", p.SystemCaddyfile, err)
 		}
@@ -122,15 +122,28 @@ func restoreCaddy(ctx context.Context, p paths.Paths, r run.Runner) (string, err
 	return "stopped Caddy, removed lodo's import", nil
 }
 
-// removeLoopback unloads the job and takes the own block off lo0. Missing
-// pieces are fine: ifconfig fails for an address that isn't there.
+// removeLoopback unloads the job and takes the own block off lo0. Only the
+// own-block addresses present on lo0 are removed.
 func removeLoopback(ctx context.Context, p paths.Paths, r run.Runner) error {
 	_, _ = r.Run(ctx, p.Sudo, "-n", p.Launchctl, "bootout", "system/"+LoopbackLabel)
 	if _, err := r.Run(ctx, p.Sudo, "-n", p.Rm, "-f", p.LoopbackPlist); err != nil {
 		return err
 	}
+	out, ifErr := r.Run(ctx, p.Ifconfig, "lo0")
+	on := map[string]bool{}
+	if ifErr == nil {
+		for line := range strings.Lines(out) {
+			if f := strings.Fields(line); len(f) >= 2 && f[0] == "inet" {
+				on[f[1]] = true
+			}
+		}
+	}
 	for i := store.OwnFirst; i <= store.OwnLast; i++ {
-		_, _ = r.Run(ctx, p.Sudo, "-n", p.Ifconfig, "lo0", "-alias", store.OwnAddress(i))
+		addr := store.OwnAddress(i)
+		if ifErr == nil && !on[addr] {
+			continue
+		}
+		_, _ = r.Run(ctx, p.Sudo, "-n", p.Ifconfig, "lo0", "-alias", addr)
 	}
 	return nil
 }

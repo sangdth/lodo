@@ -47,15 +47,12 @@ func (a app) startDev(ctx context.Context, dir string, domains []store.Domain, o
 	listed := slices.ContainsFunc(domains, func(d store.Domain) bool { return scan.SameFolder(d.Root, proposal.Root) })
 	if o.edit || !listed {
 		saved, err := a.form(ctx, domains, dir, o.auto)
+		if err != nil {
+			return err
+		}
 		if !saved {
-			if err != nil {
-				return err
-			}
 			fmt.Fprintln(a.stdout, "nothing saved")
 			return nil
-		}
-		if err != nil {
-			a.fail(err) // the names are saved; only linking or a .env line failed
 		}
 		if domains, err = store.Load(a.paths.DomainsJSON); err != nil {
 			return err
@@ -220,7 +217,8 @@ func (a app) devEnv(ctx context.Context, pm, pmPath, root, hook string) ([]strin
 // setupForm is app.form: it runs the setup form inline on the terminal.
 func (a app) setupForm(ctx context.Context, domains []store.Domain, dir string, auto bool) (bool, error) {
 	s := tui.NewSetup(ctx, tui.NewBackend(a.paths, a.runner), domains, tui.Start{Dir: dir, Home: a.paths.Home, Auto: auto})
-	final, err := tea.NewProgram(s, tea.WithContext(ctx)).Run()
+	opts := append([]tea.ProgramOption{tea.WithContext(ctx)}, a.teaOpts...)
+	final, err := tea.NewProgram(s, opts...).Run()
 	if err != nil {
 		return false, fmt.Errorf("run the setup form: %w", err)
 	}

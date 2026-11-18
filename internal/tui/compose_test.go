@@ -103,12 +103,8 @@ func TestPreview(t *testing.T) {
 	}
 	golden.RequireEqual(t, m.View().Content)
 
-	m = send(m, "l")
-	if got := composeOf(t, b, "flowy.test"); got != flowyDev {
-		t.Errorf("flowy.test's compose = %q, want %q", got, flowyDev)
-	}
-	if m.mode != modePreview {
-		t.Errorf("mode = %v after l, want the preview still open", m.mode)
+	if m = send(m, "l"); m.mode != modePreview || len(b.saved) != 0 {
+		t.Errorf("mode = %v, saved %v after l in preview; want preview still open and nothing saved", m.mode, b.saved)
 	}
 	if m = send(m, "esc"); m.mode != modeList {
 		t.Errorf("mode = %v after esc, want the list", m.mode)
@@ -248,8 +244,8 @@ func TestLink(t *testing.T) {
 			wantCompose: flowyDev, wantNote: "linked flowy.test to ~/Projects/flowy/compose.dev.yaml · lodo dev sets DOCKER_HOST_IP=127.0.1.3",
 		},
 		{
-			name: "outside a project: its own file", backend: &fakeBackend{}, domains: withFile, origin: Start{Home: home},
-			wantCompose: flowyProd, wantNote: "linked flowy.test to ~/Projects/flowy/compose.prod.yaml · lodo dev sets DOCKER_HOST_IP=127.0.1.3",
+			name: "outside a project", backend: &fakeBackend{}, domains: withFile, origin: Start{Home: home},
+			wantErr: "no compose file to link: start lodo ps in the project, or e to set one",
 		},
 		{
 			name: "no file at all", backend: &fakeBackend{}, domains: sample, origin: Start{Home: home},

@@ -13,7 +13,6 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/sangdth/lodo/internal/check"
-	"github.com/sangdth/lodo/internal/compose"
 	"github.com/sangdth/lodo/internal/store"
 )
 
@@ -84,7 +83,6 @@ type Model struct {
 	preview      viewport.Model
 	previewTitle string // the file, its name and how many changes, such as compose.dev.yaml for flowy.test · 3 changes
 	previewEnv   string // the .env line the file's ports need, such as DOCKER_HOST_IP=127.0.1.3; empty when none binds it
-	previewOwner string // the name whose compose file the preview shows
 
 	table   table.Model
 	spinner spinner.Model
@@ -193,31 +191,51 @@ func (m Model) setService(service string, on bool) tea.Cmd {
 	}
 }
 
-// change saves domains, applies them and, with report, checks the result, in
-// that order. An apply failure still keeps the saved list: r applies it again.
-func (d deps) change(domains []store.Domain, report bool) tea.Cmd {
-	ctx, b := d.ctx, d.backend
-	return func() tea.Msg {
-		if err := b.Save(domains); err != nil {
-			return changedMsg{err: err}
-		}
-		msg := changedMsg{domains: domains, stored: true, err: b.Apply(ctx, domains)}
-		if report {
-			msg.checks, msg.results = b.Report(ctx, domains)
-		}
-		return msg
-	}
+// change locks domains.json, reloads it, applies mutate, saves and applies
+// the result, and with report checks every name. An apply failure keeps the
+// saved list so r can apply it again.
+func (d deps) change(mutate func([]store.Domain) ([]store.Domain, error), report bool) tea.Cmd {
+	return d.commit(mutate, true, report)
 }
 
-// save writes domains without applying them: a compose path changes no
+// save writes the mutated list without applying it: a compose path changes no
 // generated file, so nothing needs a restart or a check.
-func (d deps) save(domains []store.Domain) tea.Cmd {
-	b := d.backend
+func (d deps) save(mutate func([]store.Domain) ([]store.Domain, error)) tea.Cmd {
+	return d.commit(mutate, false, false)
+}
+
+func (d deps) commit(mutate func([]store.Domain) ([]store.Domain, error), apply, report bool) tea.Cmd {
+	ctx, b := d.ctx, d.backend
 	return func() tea.Msg {
-		if err := b.Save(domains); err != nil {
+		var msg changedMsg
+		if err := b.WithLock(func() error {
+			fresh, err := b.Load()
+			if err != nil {
+				msg.err = err
+				return nil
+			}
+			domains, err := mutate(fresh)
+			if err != nil {
+				msg.err = err
+				return nil
+			}
+			if err := b.Save(domains); err != nil {
+				msg.err = err
+				return nil
+			}
+			var applyErr error
+			if apply {
+				applyErr = b.Apply(ctx, domains)
+			}
+			msg = changedMsg{domains: domains, stored: true, err: applyErr}
+			return nil
+		}); err != nil {
 			return changedMsg{err: err}
 		}
-		return changedMsg{domains: domains, stored: true}
+		if msg.stored && report {
+			msg.checks, msg.results = b.Report(ctx, msg.domains)
+		}
+		return msg
 	}
 }
 
@@ -225,26 +243,21 @@ func (d deps) save(domains []store.Domain) tea.Cmd {
 func (m Model) reload() tea.Cmd {
 	ctx, b := m.ctx, m.backend
 	return func() tea.Msg {
-		domains, err := b.Load()
-		if err != nil {
+		var msg changedMsg
+		if err := b.WithLock(func() error {
+			domains, err := b.Load()
+			if err != nil {
+				msg.err = err
+				return nil
+			}
+			msg = changedMsg{domains: domains, stored: true, err: b.Apply(ctx, domains)}
+			return nil
+		}); err != nil {
 			return changedMsg{err: err}
 		}
-		err = b.Apply(ctx, domains)
-		checks, results := b.Report(ctx, domains)
-		return changedMsg{domains: domains, stored: true, err: err, checks: checks, results: results}
-	}
-}
-
-// thenLink runs cmd, then, once it saved the list, notes owner's link and
-// the address lodo dev gives its compose file.
-func (d deps) thenLink(cmd tea.Cmd, owner store.Domain) tea.Cmd {
-	home := d.origin.Home
-	return func() tea.Msg {
-		msg, ok := cmd().(changedMsg)
-		if !ok || !msg.stored {
-			return msg
+		if msg.stored {
+			msg.checks, msg.results = b.Report(ctx, msg.domains)
 		}
-		msg.note = "linked " + owner.Name + " to " + ShortPath(owner.Compose, home) + " · lodo dev sets " + compose.EnvVar + "=" + owner.Address
 		return msg
 	}
 }

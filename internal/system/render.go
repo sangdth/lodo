@@ -4,6 +4,7 @@ import (
 	"embed"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 	"text/template"
 
@@ -90,7 +91,7 @@ func ConfBlock(p paths.Paths) string {
 
 // CaddyBlock is lodo's import block at the end of Homebrew's Caddyfile.
 func CaddyBlock(p paths.Paths) string {
-	return Marker + "\nimport " + p.Caddyfile + "\n"
+	return Marker + "\nimport " + strconv.Quote(p.Caddyfile) + "\n"
 }
 
 // CaddyGlobalBlock is lodo's global options block at the top of Homebrew's

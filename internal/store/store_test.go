@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/sangdth/lodo/internal/store"
@@ -631,6 +632,49 @@ func TestSave(t *testing.T) {
 			t.Errorf("file exists after a failed Save: %v", statErr)
 		}
 	})
+}
+
+func TestWithLock_SerializesConcurrentUpdates(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "domains.json")
+	const workers = 8
+	var wg sync.WaitGroup
+	for i := range workers {
+		wg.Go(func() {
+			err := store.WithLock(path, func() error {
+				domains, err := store.Load(path)
+				if err != nil {
+					return err
+				}
+				addr, err := store.NextFree(domains)
+				if err != nil {
+					return err
+				}
+				next, err := store.Add(domains, store.Domain{
+					Name:    fmt.Sprintf("p%d.test", i),
+					Address: addr,
+					Enabled: true,
+				})
+				if err != nil {
+					return err
+				}
+				return store.Save(path, next)
+			})
+			if err != nil {
+				t.Errorf("worker %d: %v", i, err)
+			}
+		})
+	}
+	wg.Wait()
+
+	got, err := store.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != workers {
+		t.Fatalf("got %d domains, want all %d saved without clobbering: %+v", len(got), workers, got)
+	}
 }
 
 // assertFieldErr checks err is a *store.FieldError for field with msg, or nil

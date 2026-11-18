@@ -109,7 +109,7 @@ func (t *tool) accepts(line string, m []int) bool {
 }
 
 // portRE matches a port option. The group is its value.
-var portRE = regexp.MustCompile(`(?:^|[ \t])(?:-p|--port)(?:=|[ \t]+)([^ \t]*)`)
+var portRE = regexp.MustCompile(`(?:^|[ \t])(?:-p|--port)(?:=|[ \t]+)([^ \t"']*)`)
 
 // envPortRE matches PORT=3100 before a command. The group is the port.
 var envPortRE = regexp.MustCompile(`(?:^|[\s"'])PORT=(\d+)\b`)
@@ -117,6 +117,13 @@ var envPortRE = regexp.MustCompile(`(?:^|[\s"'])PORT=(\d+)\b`)
 // configPortRE matches a port set in a config file. The group is the port,
 // empty when the file computes it.
 var configPortRE = regexp.MustCompile(`\bport\s*:\s*(\d+\b)?`)
+
+// previewBlockRE matches a Vite `preview: { ... }` block so its port is not
+// mistaken for the dev server's.
+var previewBlockRE = regexp.MustCompile(`\bpreview\s*:\s*\{[^}]*\}`)
+
+// tsNumberRE matches a TypeScript `number` type annotation after `port:`.
+var tsNumberRE = regexp.MustCompile(`^\s*number(?:\b|$)`)
 
 // server is the dev server an app's dev script starts.
 type server struct {
@@ -165,12 +172,18 @@ func configPort(dir string, t *tool) int {
 		if err != nil {
 			continue
 		}
-		m := configPortRE.FindSubmatch(data)
-		if m == nil {
-			return t.port
+		clean := previewBlockRE.ReplaceAllString(stripJSComments(string(data)), "")
+		for _, m := range configPortRE.FindAllStringSubmatchIndex(clean, -1) {
+			if m[2] >= 0 {
+				port, _ := strconv.Atoi(clean[m[2]:m[3]])
+				return port
+			}
+			if tsNumberRE.MatchString(clean[m[1]:]) {
+				continue
+			}
+			return 0
 		}
-		port, _ := strconv.Atoi(string(m[1]))
-		return port
+		return t.port
 	}
 	if t.dotenv {
 		if port := envPort(dir); port > 0 {
@@ -178,6 +191,42 @@ func configPort(dir string, t *tool) int {
 		}
 	}
 	return t.port
+}
+
+// stripJSComments removes // line comments and /* ... */ block comments while
+// leaving quoted strings intact so URLs like "http://..." are kept.
+func stripJSComments(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		switch c := s[i]; {
+		case c == '\'' || c == '"' || c == '`':
+			b.WriteByte(c)
+			for i++; i < len(s); i++ {
+				b.WriteByte(s[i])
+				if s[i] == '\\' && i+1 < len(s) {
+					i++
+					b.WriteByte(s[i])
+				} else if s[i] == c {
+					break
+				}
+			}
+		case c == '/' && i+1 < len(s) && s[i+1] == '/':
+			for i += 2; i < len(s) && s[i] != '\n'; i++ {
+			}
+			if i < len(s) {
+				b.WriteByte('\n')
+			}
+		case c == '/' && i+1 < len(s) && s[i+1] == '*':
+			for i += 2; i+1 < len(s) && (s[i] != '*' || s[i+1] != '/'); i++ {
+			}
+			i++
+			b.WriteByte(' ')
+		default:
+			b.WriteByte(c)
+		}
+	}
+	return b.String()
 }
 
 // packageJSON is what lodo reads from a package.json.
@@ -252,7 +301,8 @@ func devServer(dir string) (srv server, known, hasDev bool) {
 	}
 	if m := portRE.FindStringSubmatch(dev); m != nil {
 		srv.port, _ = strconv.Atoi(m[1])
-	} else {
+	}
+	if srv.port == 0 {
 		srv.port = envPort(dir)
 	}
 	return srv, false, true

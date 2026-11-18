@@ -22,6 +22,8 @@ import (
 // Backend is what the TUI reads, changes and checks. NewBackend returns the
 // one that works on this Mac; tests use a fake.
 type Backend interface {
+	// WithLock runs fn while holding an exclusive lock on domains.json.
+	WithLock(fn func() error) error
 	// Load reads domains.json.
 	Load() ([]store.Domain, error)
 	// Save writes domains.json.
@@ -56,6 +58,8 @@ type backend struct {
 func NewBackend(p paths.Paths, r run.Runner) Backend {
 	return backend{paths: p, runner: r, env: check.NewEnv(p, r)}
 }
+
+func (b backend) WithLock(fn func() error) error { return store.WithLock(b.paths.DomainsJSON, fn) }
 
 func (b backend) Load() ([]store.Domain, error) { return store.Load(b.paths.DomainsJSON) }
 

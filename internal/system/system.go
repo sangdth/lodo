@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/sangdth/lodo/internal/caddy"
@@ -38,21 +39,90 @@ func StripSystemConf(old string) string {
 
 // RewriteSystemCaddyfile returns Homebrew's Caddyfile with lodo's global block
 // at the top and lodo's import line moved to a block at the end. Caddy allows
-// one global block, and only first, so a file with its own keeps it and gets
-// just the import. It is idempotent.
+// one global block, and only first, so a file with its own keeps it, gains
+// `admin off` if missing or not off, and gets the import. It is idempotent.
 func RewriteSystemCaddyfile(old string, p paths.Paths) string {
 	rest := StripSystemCaddyfile(old, p)
 	if hasGlobalBlock(rest) {
-		return appendBlock(rest, CaddyBlock(p))
+		return appendBlock(ensureAdminOff(rest), CaddyBlock(p))
 	}
 	return CaddyGlobalBlock + "\n" + appendBlock(rest, CaddyBlock(p))
 }
 
 // StripSystemCaddyfile returns Homebrew's Caddyfile without lodo's marker,
-// global block and import line.
+// global block, injected admin off line, and import line.
 func StripSystemCaddyfile(old string, p paths.Paths) string {
-	importLine := "import " + p.Caddyfile
-	return strip(old, func(line string) bool { return line == importLine })
+	importPlain := "import " + p.Caddyfile
+	importQuoted := "import " + strconv.Quote(p.Caddyfile)
+	adminLine := strings.TrimSpace(adminOffMarker)
+	return strip(old, func(line string) bool {
+		return line == importPlain || line == importQuoted || line == adminLine
+	})
+}
+
+const adminOffMarker = "\tadmin off " + Marker
+
+func globalBlockBounds(content string) (lines []string, start, end int) {
+	for line := range strings.Lines(content) {
+		lines = append(lines, strings.TrimRight(line, "\r\n"))
+	}
+	start = -1
+	for i, line := range lines {
+		t := strings.TrimSpace(line)
+		if t == "" || strings.HasPrefix(t, "#") {
+			continue
+		}
+		if t == "{" {
+			start = i
+		}
+		break
+	}
+	if start < 0 {
+		return lines, -1, -1
+	}
+	return lines, start, blockEnd(lines, start)
+}
+
+func isAdminOffLine(line string) bool {
+	f := strings.Fields(line)
+	return len(f) >= 2 && f[0] == "admin" && f[1] == "off" && (len(f) == 2 || strings.HasPrefix(f[2], "#"))
+}
+
+// ensureAdminOff inserts `admin off` inside an existing global options block
+// unless it already disables the admin API, and replaces any other `admin`
+// directive in that block so Caddy's unauthenticated control port stays off.
+func ensureAdminOff(content string) string {
+	lines, start, end := globalBlockBounds(content)
+	if start < 0 || end < 0 {
+		return content
+	}
+	for i := start + 1; i < end; i++ {
+		f := strings.Fields(lines[i])
+		if len(f) == 0 || f[0] != "admin" {
+			continue
+		}
+		if isAdminOffLine(lines[i]) {
+			return content
+		}
+		lines[i] = adminOffMarker
+		return strings.Join(lines, "\n") + "\n"
+	}
+	lines = slices.Insert(lines, start+1, adminOffMarker)
+	return strings.Join(lines, "\n") + "\n"
+}
+
+// CaddyAdminDisabled reports whether Homebrew's Caddyfile has a global block
+// at the top that sets `admin off`.
+func CaddyAdminDisabled(p paths.Paths) bool {
+	data, err := os.ReadFile(p.SystemCaddyfile)
+	if err != nil {
+		return false
+	}
+	lines, start, end := globalBlockBounds(string(data))
+	if start < 0 || end < 0 {
+		return false
+	}
+	return slices.ContainsFunc(lines[start+1:end], isAdminOffLine)
 }
 
 // hasGlobalBlock reports whether a Caddyfile starts with a global options
@@ -106,7 +176,7 @@ func strip(old string, drop func(trimmed string) bool) string {
 // blockEnd returns the index of the } line that closes a block whose { line is
 // lines[start], or -1 when lines[start] is not { or nothing closes it.
 func blockEnd(lines []string, start int) int {
-	if start >= len(lines) || strings.TrimSpace(lines[start]) != "{" {
+	if start < 0 || start >= len(lines) || strings.TrimSpace(lines[start]) != "{" {
 		return -1
 	}
 	for i := start + 1; i < len(lines); i++ {

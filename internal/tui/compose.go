@@ -5,6 +5,7 @@ package tui
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"path/filepath"
 	"strconv"
@@ -76,7 +77,7 @@ func (m *Model) showPreview(msg previewMsg) {
 	}
 	m.mode = modePreview
 	m.previewTitle = filepath.Base(msg.owner.Compose) + " for " + msg.owner.Name + " · " + count
-	m.previewOwner, m.previewEnv = msg.owner.Name, ""
+	m.previewEnv = ""
 	if strings.Contains(string(msg.out), "${"+compose.EnvVar) {
 		m.previewEnv = compose.EnvVar + "=" + msg.owner.Address
 	}
@@ -121,31 +122,45 @@ func (m Model) link(d store.Domain) (Model, tea.Cmd) {
 	}
 }
 
-// linkProject links d to the best of the project's compose files, or to its
-// own when there are none: d's compose path is saved and d's address is
-// written into the .env that file runs with.
+// linkProject links d to the best of the project's compose files.
 func (m Model) linkProject(d store.Domain, files []string) (Model, tea.Cmd) {
-	path := d.Compose
-	if len(files) > 0 {
-		path = files[0]
-	}
-	if !store.HasCompose(path) {
+	if len(files) == 0 {
 		m.err = errors.New("no compose file to link: start lodo ps in the project, or e to set one")
 		return m, nil
 	}
-	return m.linkTo(d, path)
+	return m.linkTo(d, files[0])
 }
 
 // linkTo saves path as d's compose file. Nothing is applied: it changes no
 // generated file.
 func (m Model) linkTo(d store.Domain, path string) (Model, tea.Cmd) {
 	d.Compose = path
-	next, err := store.Update(m.domains, d.Name, d)
-	if err != nil {
+	if _, err := store.Update(m.domains, d.Name, d); err != nil {
 		m.err = err
 		return m, nil
 	}
-	return m.start(d.Name, m.thenLink(m.save(next), d))
+	home := m.origin.Home
+	cmd := m.save(func(fresh []store.Domain) ([]store.Domain, error) {
+		cur, ok := store.Find(fresh, d.Name)
+		if !ok {
+			return nil, fmt.Errorf("%s is not listed", d.Name)
+		}
+		cur.Compose = path
+		return store.Update(fresh, d.Name, cur)
+	})
+	return m.start(d.Name, func() tea.Msg {
+		msg, ok := cmd().(changedMsg)
+		if ok && msg.stored {
+			if linked, found := store.Find(msg.domains, d.Name); found {
+				msg.note = linkNote(linked, home)
+			}
+		}
+		return msg
+	})
+}
+
+func linkNote(owner store.Domain, home string) string {
+	return "linked " + owner.Name + " to " + ShortPath(owner.Compose, home) + " · lodo dev sets " + compose.EnvVar + "=" + owner.Address
 }
 
 // openPreview shows the selected name's compose file, its own or its
@@ -163,7 +178,7 @@ func (m Model) openPreview() (tea.Model, tea.Cmd) {
 	return m, m.readPreview(owner)
 }
 
-// previewKey scrolls the preview; l links, p or esc goes back.
+// previewKey scrolls the preview; p or esc goes back.
 func (m Model) previewKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "p", "esc":
@@ -171,12 +186,6 @@ func (m Model) previewKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "q":
 		return m, tea.Quit
-	case "l":
-		owner, ok := store.Find(m.domains, m.previewOwner)
-		if m.busy || !ok || !store.HasCompose(owner.Compose) {
-			return m, nil
-		}
-		return m.linkTo(owner, owner.Compose)
 	}
 	var cmd tea.Cmd
 	m.preview, cmd = m.preview.Update(msg)
@@ -209,7 +218,7 @@ func (d deps) shortPath(path string) string {
 func (m Model) previewView() string {
 	env := "no port binds " + compose.EnvVar + ", so lodo dev gives compose nothing"
 	if m.previewEnv != "" {
-		env = "lodo dev and lodo exec set " + m.previewEnv + " for the ports · l links the file"
+		env = "lodo dev and lodo exec set " + m.previewEnv + " for the ports"
 	}
 	title := " " + m.styles.title.Render(m.previewTitle)
 	return title + "\n " + ansi.Truncate(m.styles.dim.Render(env), m.innerWidth()-1, "…") + "\n" + m.preview.View()

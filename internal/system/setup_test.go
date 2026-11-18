@@ -209,9 +209,13 @@ func TestSetup_RunsAreTheSame(t *testing.T) {
 	if want := strings.Replace(runs[0].out, "(backup in ", "(backup kept in ", 1); runs[1].out != want {
 		t.Errorf("second run prints\n%s\nwant the first run's lines with the backup kept:\n%s", runs[1].out, want)
 	}
+	// Run 0 trusted the CA for the first time; runs 1 and 2 verify it without re-prompting.
+	wantRun2Calls := slices.Clone(runs[0].calls)
+	iTrust := slices.Index(wantRun2Calls, trustCall(p))
+	wantRun2Calls[iTrust] = run.Line(p.Security, "verify-cert", "-c", p.TrustedCA)
 	for i, run := range runs[1:] {
-		if !slices.Equal(run.calls, runs[0].calls) {
-			t.Errorf("run %d commands differ from the first:\n%q\nwant\n%q", i+2, run.calls, runs[0].calls)
+		if !slices.Equal(run.calls, wantRun2Calls) {
+			t.Errorf("run %d commands differ:\n%q\nwant\n%q", i+2, run.calls, wantRun2Calls)
 		}
 		if !maps.Equal(run.files, runs[0].files) {
 			t.Errorf("run %d changed files: %v", i+2, changed(runs[0].files, run.files))

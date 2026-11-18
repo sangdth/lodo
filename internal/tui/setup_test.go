@@ -49,6 +49,7 @@ var flowyListed = append(slices.Clone(unlisted),
 // setupIn returns the setup form, on its own, for an lodo dev started in
 // flowy, once its first scan is in.
 func setupIn(b *fakeBackend, domains []store.Domain) Setup {
+	b.seed(domains)
 	s := NewSetup(context.Background(), b, domains, flowyOrigin)
 	return settle(s, s.Init())
 }
@@ -611,6 +612,7 @@ func TestSetup_Auto(t *testing.T) {
 	auto := flowyOrigin
 	auto.Auto = true
 	b := inFlowyApps()
+	b.onDisk = slices.Clone(unlisted)
 	s := NewSetup(context.Background(), b, unlisted, auto)
 	if s = settle(s, s.Init()); !s.Saved() || s.Err() != nil {
 		t.Fatalf("saved %v, err %v with Auto; want saved with no key", s.Saved(), s.Err())
@@ -620,6 +622,7 @@ func TestSetup_Auto(t *testing.T) {
 	}
 
 	b = inFlowyApps()
+	b.onDisk = slices.Clone(unlisted)
 	b.portsErr = errors.New("caddy is not installed: brew install caddy, then lodo setup")
 	s = NewSetup(context.Background(), b, unlisted, auto)
 	if s = settle(s, s.Init()); s.Saved() || s.done || len(b.saved) != 0 {
@@ -741,6 +744,7 @@ func TestSetup_Program(t *testing.T) {
 	t.Parallel()
 
 	b := inFlowyApps()
+	b.onDisk = slices.Clone(unlisted)
 	tm := teatest.NewTestModel(t, NewSetup(t.Context(), b, unlisted, flowyOrigin), teatest.WithInitialTermSize(80, 24))
 	teatest.WaitFor(t, tm.Output(), func(out []byte) bool {
 		return bytes.Contains(out, []byte("enter save + start"))
@@ -754,4 +758,74 @@ func TestSetup_Program(t *testing.T) {
 	if !final.Saved() || final.Err() != nil || b.appliedCount() != 1 {
 		t.Errorf("saved %v, err %v, applied %d times; want saved and applied once", final.Saved(), final.Err(), b.appliedCount())
 	}
+}
+
+// TestSetup_EditRootAppWithoutPort checks that lodo dev --edit still shows the
+// root app's row when it was saved without a port so the user can set one.
+func TestSetup_EditRootAppWithoutPort(t *testing.T) {
+	t.Parallel()
+
+	b := inFlowy()
+	b.project.Apps = []scan.App{{Dir: "."}}
+	domains := append(slices.Clone(unlisted),
+		store.Domain{Name: "flowy.test", Address: "127.0.1.2", Enabled: true, Compose: flowyDev, Root: flowyRoot},
+	)
+	s := setupIn(b, domains)
+	if len(s.rows) != 1 || s.rows[0].what != "." {
+		t.Fatalf("rows = %+v, want one row for the root app", s.rows)
+	}
+	s = send(typeText(tabTo(s, rowStop(0)+1), "4000"), "enter")
+	if !s.Saved() || s.Err() != nil {
+		t.Fatalf("saved %v, err %v (%q)", s.Saved(), s.Err(), s.errMsg)
+	}
+	if d, ok := store.Find(lastSaved(t, b), "flowy.test"); !ok || d.Port != 4000 {
+		t.Errorf("flowy.test = %+v, %v; want port 4000", d, ok)
+	}
+}
+
+// TestSetup_DuplicatePortRejected checks that two enabled apps in the same
+// project cannot be saved on the same port.
+func TestSetup_DuplicatePortRejected(t *testing.T) {
+	t.Parallel()
+
+	b := inFlowy()
+	b.project.Apps = []scan.App{{Dir: "apps/web", Port: 3000}, {Dir: "apps/admin", Port: 3000}}
+	s := send(setupIn(b, unlisted), "enter")
+	if s.Saved() || len(b.saved) != 0 || s.errAt != rowStop(1)+1 || !strings.Contains(s.errMsg, "port 3000 is already used by") {
+		t.Errorf("saved %v, errAt %d, errMsg %q; want second app port rejected", s.Saved(), s.errAt, s.errMsg)
+	}
+}
+
+// TestSetup_AutoConcurrentReconciles checks that if another process updates
+// domains.json between Scan and Save under Auto (-y), saveSetup re-scans under
+// the lock so the second project takes the next free address without clobbering.
+func TestSetup_AutoConcurrentReconciles(t *testing.T) {
+	t.Parallel()
+
+	b := inFlowyApps()
+	b.onDisk = slices.Clone(unlisted)
+	auto := flowyOrigin
+	auto.Auto = true
+	s := NewSetup(context.Background(), b, unlisted, auto)
+	next, cmd := s.Update(settleMsg(s.Init()))
+	// Simulate another process saving 127.0.1.2 before s's submit acquires the lock.
+	b.onDisk = append(slices.Clone(unlisted), store.Domain{Name: "other.test", Address: "127.0.1.2", Enabled: true})
+	s2 := settle(next.(Setup), cmd)
+	if !s2.Saved() || s2.Err() != nil {
+		t.Fatalf("saved %v, err %v", s2.Saved(), s2.Err())
+	}
+	saved := lastSaved(t, b)
+	if _, ok := store.Find(saved, "other.test"); !ok {
+		t.Errorf("other.test was clobbered: %+v", saved)
+	}
+	if d, ok := store.Find(saved, "flowy.test"); !ok || d.Address != "127.0.1.3" {
+		t.Errorf("flowy.test = %+v, %v; want it moved to 127.0.1.3", d, ok)
+	}
+}
+
+func settleMsg(cmd tea.Cmd) tea.Msg {
+	if cmd == nil {
+		return nil
+	}
+	return cmd()
 }
