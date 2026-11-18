@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -15,6 +16,23 @@ import (
 	"github.com/sangdth/lodo/internal/check"
 	"github.com/sangdth/lodo/internal/store"
 )
+
+// queuedOp is one user action in the dashboard's background change queue.
+// Multiple actions pressed while an apply runs coalesce into a single save,
+// apply and probe pass.
+type queuedOp struct {
+	names      []string // domain or service names whose spinner runs until this op finishes
+	mutate     func([]store.Domain) ([]store.Domain, error)
+	optimistic bool // replay mutate onto m.domains while queued
+	apply      bool
+	report     bool
+	note       func([]store.Domain) string
+	adding     *store.Domain
+	deleting   string
+	reload     bool
+	service    string
+	serviceOn  bool
+}
 
 // The terminal size before the first WindowSizeMsg.
 const (
@@ -64,11 +82,11 @@ type Model struct {
 
 	mode       mode
 	form       form
-	target     string       // the name a delete waits on
-	note       string       // a short message, such as what linking wrote
-	selectName string       // the name to put the cursor on once a change lands
-	startedOn  string       // the name under the cursor when the change started; empty on the add row
-	adding     store.Domain // the name being added, listed with the spinner until it is saved; Name is empty otherwise
+	target     string         // the name a delete waits on
+	note       string         // a short message, such as what linking wrote
+	selectName string         // the name to put the cursor on once a change lands
+	startedOn  string         // the name under the cursor when the change started; empty on the add row
+	adding     []store.Domain // names being added, listed with the spinner until saved
 
 	domains []store.Domain          // in store.Sort order, as the table shows them
 	checks  []check.Check           // the last doctor run; nil until the first one finishes
@@ -84,10 +102,18 @@ type Model struct {
 	previewTitle string // the file, its name and how many changes, such as compose.dev.yaml for flowy.test · 3 changes
 	previewEnv   string // the .env line the file's ports need, such as DOCKER_HOST_IP=127.0.1.3; empty when none binds it
 
-	table   table.Model
-	spinner spinner.Model
-	busy    bool   // a check or a change runs
-	pending string // the name or service the running change is for; empty for every enabled name
+	table     table.Model
+	spinner   spinner.Model
+	busy      bool           // any probe or change runs (drives spinner ticks)
+	probing   bool           // the startup read-only report runs
+	applying  bool           // a change batch runs
+	seq       int            // monotonic counter for reports and batches
+	reportSeq int            // seq of the latest report stored in checks/results
+	pending   map[string]int // reference count of active ops per domain or service name
+	deleting  map[string]int // reference count of active deletes per domain name
+	reloadAll int            // count of active full reloads (r)
+	inFlight  []queuedOp     // ops in the currently running batch
+	queue     []queuedOp     // ops pressed while inFlight runs, flushed in one batch next
 
 	onServices bool  // tab moved the keys to the status bar's services
 	service    int   // the service the keys act on, in services
@@ -108,6 +134,9 @@ func New(ctx context.Context, b Backend, domains []store.Domain, start Start) Mo
 		preview:  previewPort(),
 		logEvery: logEvery,
 		busy:     true,
+		probing:  true,
+		pending:  map[string]int{},
+		deleting: map[string]int{},
 		width:    defaultWidth,
 		height:   defaultHeight,
 		styles:   newStyles(),
@@ -140,15 +169,14 @@ func tableKeys() table.KeyMap {
 
 // Init checks the system and every name while the spinner runs.
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(m.report(m.domains), m.spinner.Tick)
+	return tea.Batch(m.report(m.domains, m.seq), m.spinner.Tick)
 }
 
-// reportMsg is a finished doctor run, after a service change when err is
-// that change's failure.
+// reportMsg is a finished startup doctor run.
 type reportMsg struct {
+	seq     int
 	checks  []check.Check
 	results []check.Result
-	err     error
 }
 
 // logTickMsg asks the open log to read what dnsmasq added.
@@ -162,100 +190,113 @@ type logMsg struct {
 	err     error
 }
 
-// changedMsg is a finished change. When stored is false nothing was saved and
-// the list stays as it was; checks is nil when the change ran no check.
+// changedMsg is a finished change batch. When synced is true, domains holds
+// the authoritative list from disk; checks is nil when the batch ran no probe.
 type changedMsg struct {
+	seq     int
 	domains []store.Domain
 	stored  bool
+	synced  bool
 	err     error
 	note    string // what to say once it is done, such as what linking wrote
 	checks  []check.Check
 	results []check.Result
 }
 
-func (m Model) report(domains []store.Domain) tea.Cmd {
+func (m Model) report(domains []store.Domain, seq int) tea.Cmd {
 	ctx, b := m.ctx, m.backend
 	return func() tea.Msg {
 		checks, results := b.Report(ctx, domains)
-		return reportMsg{checks: checks, results: results}
+		return reportMsg{seq: seq, checks: checks, results: results}
 	}
 }
 
-// setService turns service on or off, then checks the result.
-func (m Model) setService(service string, on bool) tea.Cmd {
-	ctx, b, domains := m.ctx, m.backend, m.domains
-	return func() tea.Msg {
-		err := b.SetService(ctx, service, on)
-		checks, results := b.Report(ctx, domains)
-		return reportMsg{checks: checks, results: results, err: err}
-	}
-}
-
-// change locks domains.json, reloads it, applies mutate, saves and applies
-// the result, and with report checks every name. An apply failure keeps the
-// saved list so r can apply it again.
-func (d deps) change(mutate func([]store.Domain) ([]store.Domain, error), report bool) tea.Cmd {
-	return d.commit(mutate, true, report)
-}
-
-// save writes the mutated list without applying it: a compose path changes no
-// generated file, so nothing needs a restart or a check.
-func (d deps) save(mutate func([]store.Domain) ([]store.Domain, error)) tea.Cmd {
-	return d.commit(mutate, false, false)
-}
-
-func (d deps) commit(mutate func([]store.Domain) ([]store.Domain, error), apply, report bool) tea.Cmd {
-	ctx, b := d.ctx, d.backend
-	return func() tea.Msg {
-		var msg changedMsg
-		if err := b.WithLock(func() error {
-			fresh, err := b.Load()
-			if err != nil {
-				msg.err = err
-				return nil
-			}
-			domains, err := mutate(fresh)
-			if err != nil {
-				msg.err = err
-				return nil
-			}
-			if err := b.Save(domains); err != nil {
-				msg.err = err
-				return nil
-			}
-			var applyErr error
-			if apply {
-				applyErr = b.Apply(ctx, domains)
-			}
-			msg = changedMsg{domains: domains, stored: true, err: applyErr}
-			return nil
-		}); err != nil {
-			return changedMsg{err: err}
-		}
-		if msg.stored && report {
-			msg.checks, msg.results = b.Report(ctx, msg.domains)
-		}
-		return msg
-	}
-}
-
-// reload reads domains.json again, so hand edits count, then applies it.
-func (m Model) reload() tea.Cmd {
+// runBatch executes ops in order under one file lock, coalescing domain edits
+// into a single Save, Apply and Report pass.
+func (m Model) runBatch(seq int, ops []queuedOp) tea.Cmd {
 	ctx, b := m.ctx, m.backend
 	return func() tea.Msg {
-		var msg changedMsg
+		msg := changedMsg{seq: seq}
+		needReport := false
 		if err := b.WithLock(func() error {
 			domains, err := b.Load()
 			if err != nil {
 				msg.err = err
 				return nil
 			}
-			msg = changedMsg{domains: domains, stored: true, err: b.Apply(ctx, domains)}
+			needApply, dirty := false, false
+			for _, op := range ops {
+				switch {
+				case op.service != "":
+					if err := b.SetService(ctx, op.service, op.serviceOn); err != nil && msg.err == nil {
+						msg.err = err
+					}
+					needReport = true
+				case op.reload:
+					if dirty {
+						if err := b.Save(domains); err != nil {
+							if fresh, lErr := b.Load(); lErr == nil {
+								msg.domains, msg.synced = fresh, true
+							}
+							if msg.err == nil {
+								msg.err = err
+							}
+							return nil
+						}
+						dirty = false
+					}
+					domains, err = b.Load()
+					if err != nil {
+						msg.err = err
+						return nil
+					}
+					msg.domains, msg.stored, msg.synced = domains, true, true
+					needApply, needReport = true, true
+				default:
+					next, mErr := op.mutate(domains)
+					if mErr != nil {
+						if msg.err == nil {
+							msg.err = mErr
+						}
+						msg.domains, msg.synced = domains, true
+						continue
+					}
+					domains = next
+					dirty = true
+					needApply = needApply || op.apply
+					needReport = needReport || op.report
+					if op.note != nil {
+						msg.note = op.note(domains)
+					}
+				}
+			}
+			if dirty {
+				if err := b.Save(domains); err != nil {
+					if fresh, lErr := b.Load(); lErr == nil {
+						msg.domains, msg.synced = fresh, true
+					}
+					if msg.err == nil {
+						msg.err = err
+					}
+					return nil
+				}
+				msg.domains, msg.stored, msg.synced = domains, true, true
+			} else if msg.synced {
+				msg.domains = domains
+			}
+			if needApply {
+				if err := b.Apply(ctx, domains); err != nil && msg.err == nil {
+					msg.err = err
+				}
+			}
+			if needReport && !msg.synced {
+				msg.domains = domains
+			}
 			return nil
 		}); err != nil {
-			return changedMsg{err: err}
+			return changedMsg{seq: seq, err: err}
 		}
-		if msg.stored {
+		if needReport {
 			msg.checks, msg.results = b.Report(ctx, msg.domains)
 		}
 		return msg
@@ -306,13 +347,102 @@ func (m *Model) appendLog(text string, offset int64) {
 	}
 }
 
-// start marks the model busy with a change to name, or to every enabled name
-// when name is empty, and runs cmd with the spinner going on its row.
-func (m Model) start(name string, cmd tea.Cmd) (Model, tea.Cmd) {
-	m.busy, m.pending, m.err = true, name, nil
+// cloneState clones Model's mutable maps and slices so value-copied Bubble Tea
+// models never alias an earlier state.
+func (m *Model) cloneState() {
+	m.pending = maps.Clone(m.pending)
+	m.deleting = maps.Clone(m.deleting)
+	m.adding = slices.Clone(m.adding)
+	m.inFlight = slices.Clone(m.inFlight)
+	m.queue = slices.Clone(m.queue)
+}
+
+// enqueue applies op's optimistic state at once, spins its row(s), and either
+// runs it now or queues it behind the running batch so rapid actions never
+// block one another.
+func (m Model) enqueue(op queuedOp, selectName string) (Model, tea.Cmd) {
+	m.cloneState()
+	wasBusy := m.busy
+	m.err = nil
 	m.startedOn = m.cursorName()
-	m.layout() // a name being added takes a row
-	return m, tea.Batch(cmd, m.spinner.Tick)
+	m.selectName = selectName
+	if op.optimistic && op.mutate != nil {
+		if next, err := op.mutate(m.domains); err == nil {
+			m.domains = next
+		} else if len(m.adding) > 0 {
+			if nextAdd, errAdd := op.mutate(m.adding); errAdd == nil {
+				m.adding = nextAdd
+			}
+		}
+	}
+	for _, name := range op.names {
+		if name != "" {
+			m.pending[name]++
+		}
+	}
+	if op.reload {
+		m.reloadAll++
+	}
+	if op.adding != nil {
+		m.adding = append(m.adding, *op.adding)
+	}
+	if op.deleting != "" {
+		m.deleting[op.deleting]++
+	}
+	if m.applying {
+		m.queue = append(m.queue, op)
+		m.layout()
+		return m, nil
+	}
+	m.applying = true
+	m.busy = true
+	m.inFlight = []queuedOp{op}
+	m.seq++
+	m.layout()
+	cmd := m.runBatch(m.seq, m.inFlight)
+	if !wasBusy {
+		return m, tea.Batch(cmd, m.spinner.Tick)
+	}
+	return m, cmd
+}
+
+// finishInFlight drops the spinner and temporary add/delete markers of the
+// batch that just finished.
+func (m *Model) finishInFlight() {
+	m.cloneState()
+	for _, op := range m.inFlight {
+		for _, name := range op.names {
+			if m.pending[name] <= 1 {
+				delete(m.pending, name)
+			} else {
+				m.pending[name]--
+			}
+		}
+		if op.reload && m.reloadAll > 0 {
+			m.reloadAll--
+		}
+		if op.adding != nil {
+			m.adding = slices.DeleteFunc(m.adding, func(d store.Domain) bool { return d.Name == op.adding.Name })
+		}
+		if op.deleting != "" {
+			if m.deleting[op.deleting] <= 1 {
+				delete(m.deleting, op.deleting)
+			} else {
+				m.deleting[op.deleting]--
+			}
+		}
+	}
+	m.inFlight = nil
+}
+
+// isDeleting reports whether name or an ancestor of name has an active delete.
+func (m Model) isDeleting(name string) bool {
+	for del := range m.deleting {
+		if name == del || strings.HasSuffix(name, "."+del) {
+			return true
+		}
+	}
+	return false
 }
 
 // setReport stores a doctor run.
@@ -326,23 +456,31 @@ func (m *Model) setReport(checks []check.Check, results []check.Result) {
 
 // placeCursor puts the cursor on the name the change asked for. When the
 // cursor moved while the change ran, it stays on here, the name it moved to,
-// wherever the change put that row: the change runs in the background. A
-// name that is gone leaves the cursor where it is, on a row that exists.
-func (m *Model) placeCursor(here string) {
+// wherever the change put that row: the change runs in the background. When
+// clear is false, a queued batch still awaits its own cursor target unless it
+// matches now.
+func (m *Model) placeCursor(here string, before []store.Domain, clear bool) {
 	want := here
 	if here == m.startedOn && m.selectName != "" {
 		want = m.selectName
+		clear = true
 	}
-	m.selectName, m.startedOn = "", ""
+	if clear {
+		m.selectName, m.startedOn = "", ""
+	}
+	listed := m.listed()
 	if want == "" {
-		m.table.SetCursor(len(m.listed())) // the add row
-	}
-	for i, d := range m.listed() {
-		if d.Name == want {
-			m.table.SetCursor(i)
+		m.table.SetCursor(len(listed)) // the add row
+	} else if i := slices.IndexFunc(listed, func(d store.Domain) bool { return d.Name == want }); i >= 0 {
+		m.table.SetCursor(i)
+	} else if fb := neighbor(before, listed, want); fb != "" {
+		if j := slices.IndexFunc(listed, func(d store.Domain) bool { return d.Name == fb }); j >= 0 {
+			m.table.SetCursor(j)
 		}
+	} else if len(before) > 0 && len(listed) == 0 {
+		m.table.SetCursor(0)
 	}
-	if last := len(m.listed()); m.table.Cursor() > last {
+	if last := len(listed); m.table.Cursor() > last {
 		m.table.SetCursor(last) // the add row
 	}
 	m.table.SetRows(m.rows()) // the add row looks different under the cursor
@@ -359,13 +497,19 @@ func (m Model) onAddRow() bool {
 	return m.table.Cursor() >= len(m.listed())
 }
 
-// listed is what the rows show: the names, and the one being added while it
-// saves. The cursor counts rows in this list.
+// listed is what the rows show: the names, and any being added while they
+// save. The cursor counts rows in this list.
 func (m Model) listed() []store.Domain {
-	if m.adding.Name == "" {
+	if len(m.adding) == 0 {
 		return m.domains
 	}
-	return store.Sort(append(slices.Clone(m.domains), m.adding))
+	out := slices.Clone(m.domains)
+	for _, a := range m.adding {
+		if _, exists := store.Find(out, a.Name); !exists {
+			out = append(out, a)
+		}
+	}
+	return store.Sort(out)
 }
 
 // selected returns the domain under the cursor; none on the add row.

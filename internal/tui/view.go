@@ -278,17 +278,20 @@ func indent(d store.Domain) string {
 	return strings.Repeat("  ", strings.Count(d.Name, ".")-1)
 }
 
-// spins says whether d's row shows the spinner: the name a change is for,
-// whether it is on or off, or every enabled name while the first check or a
-// reload runs.
+// spins says whether d's row shows the spinner: any name with an in-flight or
+// queued change, whether on or off, or every enabled name while the startup
+// check or a reload runs.
 func (m Model) spins(d store.Domain) bool {
 	if !m.busy {
 		return false
 	}
-	if m.pending == "" {
+	if m.pending[d.Name] > 0 {
+		return true
+	}
+	if m.probing || m.reloadAll > 0 {
 		return d.Enabled
 	}
-	return d.Name == m.pending
+	return false
 }
 
 // checkCell says how a domain's probes went.
@@ -337,7 +340,7 @@ func (m Model) statusBar() string {
 func (m Model) state(label string, id int) string {
 	c, ok := m.check(id)
 	switch {
-	case m.busy && m.pending == label:
+	case m.busy && m.pending[label] > 0:
 		return m.spinner.View()
 	case !ok:
 		return m.styles.dim.Render("…")

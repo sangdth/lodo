@@ -62,9 +62,10 @@ stops the commit.
   Caddy. `Report` returns both from one probe; `Prerequisites` runs checks 1 to 5 without probing. Code names a
   check by its ID constant (`check.IDDnsmasq` … `check.IDCaddy`), never by a bare number.
 - `internal/tui`: the Bubble Tea v2 dashboard and the setup form (`Setup`), the only review UI: `lodo dev` runs it
-  inline, the dashboard's `i` in its box. The form scrolls to the height it gets: the terminal's, or the box's from
-  `layout`. It talks to the system only through its `Backend` interface; tests use a fake backend, and snapshot
-  `View().Content` with golden files.
+  inline, the dashboard's `i` in its box. Dashboard actions update rows optimistically, spin every active row or
+  service at once, and coalesce queued changes into one save/apply/report batch. The form scrolls to the height it
+  gets: the terminal's, or the box's from `layout`. It talks to the system only through its `Backend` interface;
+  tests use a fake backend, and snapshot `View().Content` with golden files.
 
 ## Rules
 

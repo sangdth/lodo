@@ -115,7 +115,7 @@ func (m Model) link(d store.Domain) (Model, tea.Cmd) {
 	if m.origin.Dir == "" {
 		return m.linkProject(d, nil)
 	}
-	ctx, b, dir, domains := m.ctx, m.backend, m.origin.Dir, m.domains
+	ctx, b, dir, domains := m.ctx, m.backend, m.origin.Dir, m.listed()
 	return m, func() tea.Msg {
 		project, _, _ := b.Scan(ctx, dir, "", domains)
 		return linkScanMsg{name: d.Name, files: project.Compose}
@@ -134,29 +134,31 @@ func (m Model) linkProject(d store.Domain, files []string) (Model, tea.Cmd) {
 // linkTo saves path as d's compose file. Nothing is applied: it changes no
 // generated file.
 func (m Model) linkTo(d store.Domain, path string) (Model, tea.Cmd) {
-	d.Compose = path
-	if _, err := store.Update(m.domains, d.Name, d); err != nil {
+	changed := d
+	changed.Compose = path
+	if _, err := store.Update(m.listed(), d.Name, changed); err != nil {
 		m.err = err
 		return m, nil
 	}
 	home := m.origin.Home
-	cmd := m.save(func(fresh []store.Domain) ([]store.Domain, error) {
-		cur, ok := store.Find(fresh, d.Name)
-		if !ok {
-			return nil, fmt.Errorf("%s is not listed", d.Name)
-		}
-		cur.Compose = path
-		return store.Update(fresh, d.Name, cur)
-	})
-	return m.start(d.Name, func() tea.Msg {
-		msg, ok := cmd().(changedMsg)
-		if ok && msg.stored {
-			if linked, found := store.Find(msg.domains, d.Name); found {
-				msg.note = linkNote(linked, home)
+	return m.enqueue(queuedOp{
+		names:      []string{d.Name},
+		optimistic: true,
+		note: func(ds []store.Domain) string {
+			if linked, found := store.Find(ds, d.Name); found {
+				return linkNote(linked, home)
 			}
-		}
-		return msg
-	})
+			return ""
+		},
+		mutate: func(fresh []store.Domain) ([]store.Domain, error) {
+			cur, ok := store.Find(fresh, d.Name)
+			if !ok {
+				return nil, fmt.Errorf("%s is not listed", d.Name)
+			}
+			cur.Compose = path
+			return store.Update(fresh, d.Name, cur)
+		},
+	}, d.Name)
 }
 
 func linkNote(owner store.Domain, home string) string {
@@ -185,6 +187,9 @@ func (m Model) previewKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.mode = modeList
 		return m, nil
 	case "q":
+		if m.applying {
+			return m, nil
+		}
 		return m, tea.Quit
 	}
 	var cmd tea.Cmd

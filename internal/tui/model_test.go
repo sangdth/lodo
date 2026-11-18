@@ -533,8 +533,11 @@ func TestModel_AddingShowsTheRowAtOnce(t *testing.T) {
 		t.Errorf("table shows %d rows, want room for the new one", got)
 	}
 	m = settle(m, cmd)
-	if m.adding.Name != "" || len(m.table.Rows()) != len(sample)+2 || m.table.Rows()[1][0] != "  ● api.crm.test" {
-		t.Errorf("rows after saving = %q, adding %q; want the saved row once", m.table.Rows(), m.adding.Name)
+	if len(m.adding) != 0 || len(m.table.Rows()) != len(sample)+2 {
+		t.Fatalf("rows after saving = %q, adding %v; want the saved row once", m.table.Rows(), m.adding)
+	}
+	if want := "  \u25cf api.crm.test"; m.table.Rows()[1][0] != want {
+		t.Errorf("row 1 = %q, want %q", m.table.Rows()[1][0], want)
 	}
 }
 
@@ -544,8 +547,8 @@ func TestModel_AddingRowGoesWhenTheSaveFails(t *testing.T) {
 	b := &fakeBackend{saveErr: errors.New("write domains.json: permission denied")}
 	m := typeText(send(ready(b, sample), "A"), "web")
 	m = send(m, "enter")
-	if m.err == nil || m.adding.Name != "" || len(m.table.Rows()) != len(sample)+1 {
-		t.Errorf("err %v, adding %q, %d rows; want the error and the row gone", m.err, m.adding.Name, len(m.table.Rows()))
+	if m.err == nil || len(m.adding) != 0 || len(m.table.Rows()) != len(sample)+1 {
+		t.Errorf("err %v, adding %v, %d rows; want the error and the row gone", m.err, m.adding, len(m.table.Rows()))
 	}
 	if got := m.table.Height(); got != len(sample)+1 {
 		t.Errorf("table shows %d rows after the failed save, want %d", got, len(sample)+1)
@@ -606,9 +609,7 @@ func TestModel_KeysWhileBusy(t *testing.T) {
 		key      string
 		wantQuit bool
 	}{
-		{name: "space does nothing", key: "space"},
-		{name: "r does nothing", key: "r"},
-		{name: "q does not quit", key: "q"},
+		{name: "q does not quit while applying", key: "q"},
 		{name: "ctrl+c quits", key: "ctrl+c", wantQuit: true},
 	}
 	for _, tt := range tests {
@@ -623,8 +624,80 @@ func TestModel_KeysWhileBusy(t *testing.T) {
 	if next, _ := m.Update(press("down")); next.(Model).table.Cursor() != 1 {
 		t.Error("the cursor does not move while busy")
 	}
-	if len(b.saved) != 0 {
-		t.Errorf("a key started a second change: %v", b.saved)
+
+	// During the read-only startup probe, q quits immediately.
+	probing := New(t.Context(), &fakeBackend{}, sample, Start{})
+	if _, cmd := probing.Update(press("q")); cmd == nil || !isQuit(cmd()) {
+		t.Error("q does not quit during the read-only startup probe")
+	}
+}
+
+func TestModel_ToggleMultipleRowsInParallel(t *testing.T) {
+	t.Parallel()
+
+	b := &fakeBackend{}
+	m := ready(b, sample)
+
+	// Toggle row 0 (crm.test -> off), then before it finishes move to row 2
+	// (flowy.test -> off) and row 3 (old.test -> on).
+	next, cmd1 := m.Update(press("space"))
+	m = next.(Model)
+	m = send(send(m, "down"), "down") // flowy.test
+	next, cmd2 := m.Update(press("space"))
+	m = next.(Model)
+	m = send(m, "down") // old.test
+	next, cmd3 := m.Update(press("space"))
+	m = next.(Model)
+
+	if cmd2 != nil || cmd3 != nil {
+		t.Fatalf("queued toggles spawned extra commands (%v, %v); want them coalesced behind cmd1", cmd2, cmd3)
+	}
+	// Optimistic UI: enabled marks flip right away, and all three rows spin at once.
+	spin := m.spinner.View()
+	for i, wantSpin := range []bool{true, false, true, true} {
+		row := m.table.Rows()[i]
+		gotSpin := strings.HasPrefix(strings.TrimLeft(row[0], " "), spin)
+		if gotSpin != wantSpin {
+			t.Errorf("row %d %q spins = %v, want %v", i, row[0], gotSpin, wantSpin)
+		}
+	}
+	for i, wantEnabled := range []string{"", "✓", "", "✓"} {
+		if got := m.rows()[i][1]; got != wantEnabled {
+			t.Errorf("optimistic row %d enabled = %q, want %q", i, got, wantEnabled)
+		}
+	}
+
+	m = settle(m, cmd1)
+	if m.busy || m.err != nil {
+		t.Fatalf("after settle: busy %v, err %v", m.busy, m.err)
+	}
+	// Three rapid toggles ran in 2 batches (first toggle + 1 coalesced batch for the next two).
+	if len(b.saved) != 2 || len(b.applied) != 2 {
+		t.Errorf("saved %d times, applied %d times; want 2 coalesced batches", len(b.saved), len(b.applied))
+	}
+	for i, want := range []bool{false, true, false, true} {
+		if m.domains[i].Enabled != want {
+			t.Errorf("%s Enabled = %v, want %v", m.domains[i].Name, m.domains[i].Enabled, want)
+		}
+	}
+
+	// Toggling the same row twice before the first save finishes restores its state.
+	next, undoCmd := m.Update(press("space")) // old.test -> off
+	m = next.(Model)
+	next, _ = m.Update(press("space")) // old.test -> back on
+	m = settle(next.(Model), undoCmd)
+	if !m.domains[3].Enabled {
+		t.Errorf("old.test Enabled = false after double-toggle undo, want true")
+	}
+
+	// Toggling a row before the startup Init() report finishes is not blocked or overwritten.
+	b2 := &fakeBackend{onDisk: slices.Clone(sample)}
+	m2 := New(t.Context(), b2, sample, Start{})
+	initCmd := m2.Init()
+	next2, toggleCmd := m2.Update(press("space")) // crm.test -> off before initCmd settles
+	m2 = settle(next2.(Model), tea.Batch(initCmd, toggleCmd))
+	if m2.domains[0].Enabled {
+		t.Errorf("crm.test Enabled = true after toggling during startup probe, want false")
 	}
 }
 
