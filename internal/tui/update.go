@@ -1,8 +1,6 @@
 package tui
 
 import (
-	"cmp"
-	"errors"
 	"fmt"
 	"slices"
 
@@ -21,27 +19,50 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.layout()
 		return m, nil
 	case reportMsg:
-		m.busy, m.err = false, msg.err
-		here := m.cursorName()
-		m.setReport(msg.checks, msg.results)
-		m.layout()
-		m.placeCursor(here)
-		return m, nil
-	case changedMsg:
-		m.busy, m.err = false, msg.err
-		here := m.cursorName()    // before the rows change under the cursor
-		m.adding = store.Domain{} // saved, or gone when the save failed
-		if msg.note != "" {
-			m.note = msg.note
-		}
-		if msg.stored {
-			m.domains = store.Sort(msg.domains)
-		}
-		if msg.checks != nil {
+		m.probing = false
+		m.busy = m.applying
+		here, before := m.cursorName(), m.listed()
+		if m.checks == nil || msg.seq >= m.reportSeq {
+			m.reportSeq = msg.seq
 			m.setReport(msg.checks, msg.results)
 		}
 		m.layout()
-		m.placeCursor(here)
+		m.placeCursor(here, before, !m.applying)
+		return m, nil
+	case changedMsg:
+		here, before := m.cursorName(), m.listed() // before the rows change under the cursor
+		m.finishInFlight()
+		m.err = msg.err
+		if msg.note != "" {
+			m.note = msg.note
+		}
+		if msg.synced {
+			m.domains = store.Sort(msg.domains)
+			for _, q := range m.queue {
+				if q.optimistic && q.mutate != nil {
+					if next, err := q.mutate(m.domains); err == nil {
+						m.domains = next
+					}
+				}
+			}
+		}
+		if msg.checks != nil && msg.seq >= m.reportSeq {
+			m.reportSeq = msg.seq
+			m.setReport(msg.checks, msg.results)
+		}
+		if len(m.queue) > 0 {
+			batch := m.queue
+			m.queue = nil
+			m.inFlight = batch
+			m.seq++
+			m.layout()
+			m.placeCursor(here, before, false)
+			return m, m.runBatch(m.seq, batch)
+		}
+		m.applying = false
+		m.busy = m.probing
+		m.layout()
+		m.placeCursor(here, before, true)
 		return m, nil
 	case setupScanMsg:
 		if m.mode != modeSetup {
@@ -50,13 +71,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		s, cmd := m.setup.update(msg)
 		return m.afterSetup(s, cmd)
 	case linkScanMsg:
-		d, ok := store.Find(m.domains, msg.name)
-		switch {
-		case !ok:
+		d, ok := store.Find(m.listed(), msg.name)
+		if !ok || m.isDeleting(d.Name) {
 			return m, nil // deleted while the scan ran
-		case m.busy:
-			m.err = errors.New("a change is still running: press l again in a moment")
-			return m, nil
 		}
 		return m.linkProject(d, msg.files)
 	case previewMsg:
@@ -95,9 +112,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// key handles a key press. ctrl+c always quits. In the list, while a change
-// runs, only moving the cursor works: a second change must not start before
-// the first one ends.
+// key handles a key press. ctrl+c always quits. Row actions run optimistically
+// and queue behind any running apply so acting on one row never blocks others.
 func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	k := msg.String()
 	if k == "ctrl+c" {
@@ -141,15 +157,13 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 	if k == "i" && m.origin.Dir != "" {
 		m.mode, m.err = modeSetup, nil
-		m.setup = NewSetup(m.ctx, m.backend, m.domains, m.origin)
+		m.setup = NewSetup(m.ctx, m.backend, m.listed(), m.origin)
 		m.setup.embedded = true
 		m.setup.width, m.setup.height = m.innerWidth(), m.logHeight()
-		return m, m.setup.Init() // so is opening the setup form, which scans the project
+		return m, m.setup.Init()
 	}
-	if !m.busy {
-		if next, cmd, ok := m.listKey(k); ok {
-			return next, cmd
-		}
+	if next, cmd, ok := m.listKey(k); ok {
+		return next, cmd
 	}
 	var cmd tea.Cmd
 	cursor := m.table.Cursor()
@@ -161,37 +175,59 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 }
 
 // afterSetup stores the setup form after it handled a message. Once the form
-// is done, the list shows again, and a form that saved hands over its change,
-// which runs with the spinner on the project's name: a done form returns no
-// command unless it saved. A second change must not start before the first
-// one ends, so the form stays open while one runs.
+// is done, the list shows again, and a form that saved enqueues its change
+// onto Model's batch queue with the spinner on the project's name.
 func (m Model) afterSetup(s Setup, cmd tea.Cmd) (tea.Model, tea.Cmd) {
-	switch {
-	case !s.done:
+	if !s.done {
 		m.setup = s
 		return m, cmd
-	case cmd != nil && m.busy:
-		s.done, s.err = false, errors.New("a change is still running: press enter again in a moment")
-		m.setup = s
-		return m, nil
 	}
 	m.setup, m.mode = s, modeList
-	if cmd == nil {
+	if !s.saved {
 		return m, nil
 	}
-	m.selectName = s.projectName()
-	return m.start(m.selectName, cmd)
+	link := !s.unlink && s.proposal.Compose != ""
+	home := m.origin.Home
+	project := s.projectName()
+	var note func([]store.Domain) string
+	if link {
+		note = func(ds []store.Domain) string {
+			if owner, ok := store.Find(ds, project); ok {
+				return linkNote(owner, home)
+			}
+			return ""
+		}
+	}
+	return m.enqueue(queuedOp{
+		names:      []string{project},
+		optimistic: true,
+		apply:      true,
+		report:     true,
+		note:       note,
+		mutate: func(fresh []store.Domain) ([]store.Domain, error) {
+			cur := s
+			cur.domains = fresh
+			built, _, _, err := cur.build(link)
+			if err != nil {
+				return nil, err
+			}
+			if err := cur.checkPortsReady(fresh, built); err != nil {
+				return nil, err
+			}
+			return built, nil
+		},
+	}, project)
 }
 
 // openAdd opens the add form, for a subdomain of parent when it is set.
 func (m Model) openAdd(parent string) Model {
-	m.mode, m.err, m.form = modeForm, nil, newAddForm(m.domains, parent, m.origin)
+	m.mode, m.err, m.form = modeForm, nil, newAddForm(m.listed(), parent, m.origin)
 	return m
 }
 
 // openEdit opens the edit form for d.
 func (m Model) openEdit(d store.Domain) Model {
-	m.mode, m.err, m.form = modeForm, nil, newEditForm(m.domains, d, m.origin)
+	m.mode, m.err, m.form = modeForm, nil, newEditForm(m.listed(), d, m.origin)
 	return m
 }
 
@@ -199,9 +235,12 @@ func (m Model) openEdit(d store.Domain) Model {
 func (m Model) listKey(k string) (Model, tea.Cmd, bool) {
 	switch k {
 	case "q":
+		if m.applying {
+			return m, nil, true
+		}
 		return m, tea.Quit, true
 	case "r":
-		next, cmd := m.start("", m.reload())
+		next, cmd := m.enqueue(queuedOp{reload: true}, "")
 		return next, cmd, true
 	case "A", "shift+a": // terminals that report keys without their text send shift+a
 		return m.openAdd(""), nil, true
@@ -213,22 +252,30 @@ func (m Model) listKey(k string) (Model, tea.Cmd, bool) {
 		}
 		return m, nil, false
 	}
+	if m.isDeleting(d.Name) {
+		return m, nil, false
+	}
 	switch k {
 	case "space":
-		if _, err := store.Toggle(m.domains, d.Name); err != nil {
+		if _, err := store.Toggle(m.listed(), d.Name); err != nil {
 			m.err = err
 			return m, nil, true
 		}
-		m.selectName = d.Name
 		want := !d.Enabled
-		started, cmd := m.start(d.Name, m.change(func(fresh []store.Domain) ([]store.Domain, error) {
-			cur, ok := store.Find(fresh, d.Name)
-			if !ok {
-				return nil, fmt.Errorf("%s is not listed", d.Name)
-			}
-			cur.Enabled = want
-			return store.Update(fresh, d.Name, cur)
-		}, true))
+		started, cmd := m.enqueue(queuedOp{
+			names:      []string{d.Name},
+			optimistic: true,
+			apply:      true,
+			report:     true,
+			mutate: func(fresh []store.Domain) ([]store.Domain, error) {
+				cur, ok := store.Find(fresh, d.Name)
+				if !ok {
+					return nil, fmt.Errorf("%s is not listed", d.Name)
+				}
+				cur.Enabled = want
+				return store.Update(fresh, d.Name, cur)
+			},
+		}, d.Name)
 		return started, cmd, true
 	case "s":
 		next, cmd := m.toggleHTTPS(d)
@@ -252,20 +299,25 @@ func (m Model) listKey(k string) (Model, tea.Cmd, bool) {
 func (m Model) toggleHTTPS(d store.Domain) (Model, tea.Cmd) {
 	changed := d
 	changed.HTTPS = !d.HTTPS
-	if _, err := store.Update(m.domains, d.Name, changed); err != nil {
+	if _, err := store.Update(m.listed(), d.Name, changed); err != nil {
 		m.err = err
 		return m, nil
 	}
-	m.selectName = d.Name
 	want := changed.HTTPS
-	return m.start(d.Name, m.change(func(fresh []store.Domain) ([]store.Domain, error) {
-		cur, ok := store.Find(fresh, d.Name)
-		if !ok {
-			return nil, fmt.Errorf("%s is not listed", d.Name)
-		}
-		cur.HTTPS = want
-		return store.Update(fresh, d.Name, cur)
-	}, true))
+	return m.enqueue(queuedOp{
+		names:      []string{d.Name},
+		optimistic: true,
+		apply:      true,
+		report:     true,
+		mutate: func(fresh []store.Domain) ([]store.Domain, error) {
+			cur, ok := store.Find(fresh, d.Name)
+			if !ok {
+				return nil, fmt.Errorf("%s is not listed", d.Name)
+			}
+			cur.HTTPS = want
+			return store.Update(fresh, d.Name, cur)
+		},
+	}, d.Name)
 }
 
 // serviceKey handles the keys while they act on the status bar's services:
@@ -273,21 +325,28 @@ func (m Model) toggleHTTPS(d store.Domain) (Model, tea.Cmd) {
 func (m Model) serviceKey(k string) (tea.Model, tea.Cmd) {
 	switch k {
 	case "q":
+		if m.applying {
+			return m, nil
+		}
 		return m, tea.Quit
 	case "left", "h":
 		m.service = max(m.service-1, 0)
 	case "right", "l":
 		m.service = min(m.service+1, len(services)-1)
 	case "space":
-		if m.busy {
+		service := services[m.service]
+		if m.pending[service] > 0 {
 			return m, nil
 		}
-		service := services[m.service]
 		c, ok := m.check(serviceCheck(service))
 		if !ok {
 			return m, nil // no report yet, so on or off is unknown
 		}
-		return m.start(service, m.setService(service, c.Off))
+		return m.enqueue(queuedOp{
+			names:     []string{service},
+			service:   service,
+			serviceOn: c.Off,
+		}, "")
 	}
 	return m, nil
 }
@@ -301,18 +360,13 @@ func (m Model) formKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		return m.submit()
 	}
-	m.form = m.form.update(msg, m.domains)
+	m.form = m.form.update(msg, m.listed())
 	return m, nil
 }
 
 // submit checks the form against every rule and, when it passes, saves and
 // applies the new list.
 func (m Model) submit() (tea.Model, tea.Cmd) {
-	if m.busy {
-		m.form.setError(errors.New("a change is still running: press enter again in a moment"))
-		return m, nil
-	}
-	var err error
 	d, err := m.form.domain()
 	if err == nil && d.Port > 0 && (m.form.editing == "" || d.Port != m.form.original.Port) {
 		if notReady := m.backend.PortsReady(); notReady != nil {
@@ -322,34 +376,43 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 	if err == nil && d.Compose != m.form.original.Compose {
 		err = m.checkCompose(d.Compose)
 	}
+	listed := m.listed()
 	if err == nil {
 		if m.form.editing == "" {
-			_, err = store.Add(m.domains, d)
+			_, err = store.Add(listed, d)
 		} else {
-			_, err = store.Update(m.domains, m.form.editing, d)
+			_, err = store.Update(listed, m.form.editing, d)
 		}
 	}
 	if err != nil {
 		m.form.setError(err)
 		return m, nil
 	}
-	m.mode, m.selectName = modeList, d.Name
+	m.mode = modeList
 	editing := m.form.editing
 	if editing == "" {
-		m.adding = d
-	}
-	mutate := func(fresh []store.Domain) ([]store.Domain, error) {
-		if editing == "" {
-			return store.Add(fresh, d)
-		}
-		return store.Update(fresh, editing, d)
+		added := d
+		return m.enqueue(queuedOp{
+			names:  []string{d.Name},
+			adding: &added,
+			apply:  true,
+			report: true,
+			mutate: func(fresh []store.Domain) ([]store.Domain, error) {
+				return store.Add(fresh, d)
+			},
+		}, d.Name)
 	}
 	o := m.form.original
-	cmd := m.change(mutate, true)
-	if editing != "" && d.Name == o.Name && d.Address == o.Address && d.Port == o.Port {
-		cmd = m.save(mutate) // only the compose file changed, which nothing applies
-	}
-	return m.start(cmp.Or(editing, d.Name), cmd)
+	needApply := d.Name != o.Name || d.Address != o.Address || d.Port != o.Port
+	return m.enqueue(queuedOp{
+		names:      []string{editing, d.Name},
+		optimistic: true,
+		apply:      needApply,
+		report:     needApply,
+		mutate: func(fresh []store.Domain) ([]store.Domain, error) {
+			return store.Update(fresh, editing, d)
+		},
+	}, d.Name)
 }
 
 // neighbor returns the name the cursor goes to once name is deleted, with the
@@ -384,6 +447,9 @@ func (m Model) logKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.mode = modeList
 		return m, nil
 	case "q":
+		if m.applying {
+			return m, nil
+		}
 		return m, tea.Quit
 	}
 	var cmd tea.Cmd
@@ -394,17 +460,23 @@ func (m Model) logKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 // confirmKey deletes the waiting name on y; any other key keeps it.
 func (m Model) confirmKey(k string) (tea.Model, tea.Cmd) {
 	m.mode = modeList
-	if k != "y" || m.busy {
+	if k != "y" || m.isDeleting(m.target) {
 		return m, nil
 	}
-	if _, err := store.Remove(m.domains, m.target); err != nil {
+	listed := m.listed()
+	next, err := store.Remove(listed, m.target)
+	if err != nil {
 		m.err = err
 		return m, nil
 	}
 	target := m.target
-	next, _ := store.Remove(m.domains, target)
-	m.selectName = neighbor(m.domains, next, target)
-	return m.start(target, m.change(func(fresh []store.Domain) ([]store.Domain, error) {
-		return store.Remove(fresh, target)
-	}, true))
+	return m.enqueue(queuedOp{
+		names:    []string{target},
+		deleting: target,
+		apply:    true,
+		report:   true,
+		mutate: func(fresh []store.Domain) ([]store.Domain, error) {
+			return store.Remove(fresh, target)
+		},
+	}, neighbor(listed, next, target))
 }

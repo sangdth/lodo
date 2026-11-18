@@ -563,8 +563,12 @@ func (s Setup) submit() (Setup, tea.Cmd) {
 		s.err = err
 		return s, nil
 	}
+	if s.embedded {
+		s.done, s.saved = true, true
+		return s, nil
+	}
 	cmd := s.saveSetup(next, owner, link)
-	s.done, s.saving = s.embedded, !s.embedded
+	s.saving = true
 	return s, cmd
 }
 
@@ -627,9 +631,6 @@ func (s Setup) saveSetup(next []store.Domain, owner store.Domain, link bool) tea
 			return nil
 		}); err != nil {
 			return changedMsg{err: err}
-		}
-		if msg.stored && s.embedded {
-			msg.checks, msg.results = b.Report(ctx, msg.domains)
 		}
 		return msg
 	}

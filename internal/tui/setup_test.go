@@ -726,15 +726,23 @@ func TestDashboard_IEscGoesBack(t *testing.T) {
 	}
 }
 
-func TestDashboard_ISavesAfterAChange(t *testing.T) {
+func TestDashboard_ISavesWhileAChangeRuns(t *testing.T) {
 	t.Parallel()
 
 	b := inFlowyApps()
-	m := send(readyIn(b, unlisted, flowyOrigin), "i")
-	m.busy = true // a change runs
-	m = send(m, "enter")
-	if m.mode != modeSetup || len(b.saved) != 0 || m.setup.err == nil {
-		t.Errorf("mode %v, saved %v, err %v; want the form kept with why", m.mode, b.saved, m.setup.err)
+	m := readyIn(b, unlisted, flowyOrigin)
+	next, cmd1 := m.Update(press("space")) // crm.test starts turning off
+	m = send(next.(Model), "i")
+	m = send(m, "enter") // queues flowy.test's setup behind crm.test's toggle
+	if m.mode != modeList || m.err != nil {
+		t.Fatalf("mode %v, err %v; want the setup form closed and queued", m.mode, m.err)
+	}
+	m = settle(m, cmd1)
+	if d, ok := store.Find(m.domains, "crm.test"); !ok || d.Enabled {
+		t.Errorf("crm.test = %+v, %v; want it turned off", d, ok)
+	}
+	if _, ok := store.Find(m.domains, "web.flowy.test"); !ok {
+		t.Errorf("domains = %+v; want flowy's names added", m.domains)
 	}
 }
 
