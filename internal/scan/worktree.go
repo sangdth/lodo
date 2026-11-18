@@ -14,18 +14,22 @@ func (p Project) Worktree() bool {
 	return p.Repo != "" && !SameFolder(p.Repo, p.Root)
 }
 
-// mainProject returns the listed project name whose Root is the main checkout
-// of the repository p is a worktree of; ok is false when p is no worktree or
-// its main checkout has no name.
-func mainProject(p Project, domains []store.Domain) (store.Domain, bool) {
+// mainProject returns the project of the main checkout of the repository p is
+// a worktree of: the listed one for p.Repo, else the unlisted .test project
+// p.Env names, with p.EnvAddress so worktreeSlot leaves that address for the
+// main checkout. ok is false when p is no worktree or neither names its main
+// checkout.
+func mainProject(p Project, domains []store.Domain, gone func(path string) bool) (store.Domain, bool) {
 	if !p.Worktree() {
 		return store.Domain{}, false
 	}
-	i := slices.IndexFunc(domains, func(d store.Domain) bool { return store.Project(d.Name) == d.Name && SameFolder(d.Root, p.Repo) })
-	if i < 0 {
-		return store.Domain{}, false
+	if d, ok := listedProject(domains, p.Repo, gone); ok {
+		return d, true
 	}
-	return domains[i], true
+	if name := envProject(p, domains); name != "" {
+		return store.Domain{Name: name, Address: p.EnvAddress}, true
+	}
+	return store.Domain{}, false
 }
 
 // worktreeSlot returns the name and address a worktree of main takes:
@@ -42,7 +46,7 @@ func worktreeSlot(p Project, domains []store.Domain, main store.Domain, gone fun
 			return "", "", false // too long for a label: every n is
 		}
 		owner, listed := store.Find(domains, name)
-		others := slices.ContainsFunc(domains, func(d store.Domain) bool { return d.Address == address && store.Project(d.Name) != name })
+		others := address == main.Address || slices.ContainsFunc(domains, func(d store.Domain) bool { return d.Address == address && store.Project(d.Name) != name })
 		switch {
 		case others:
 		case !listed && !slices.ContainsFunc(domains, func(d store.Domain) bool { return store.Project(d.Name) == name }):

@@ -301,6 +301,20 @@ func TestPropose_Worktree(t *testing.T) {
 		t.Errorf("worktree: Notes = %q, want %q", got.Notes, want)
 	}
 
+	// The same holds before the main checkout is in domains.json: hugger.test
+	// in .env is an unlisted .test project, while crm.test is listed for other.
+	got = Propose(p, domains[3:], "", gone)
+	vars = nil
+	for _, v := range got.Env {
+		vars = append(vars, v.Env())
+	}
+	if !slices.Equal(vars, want) {
+		t.Errorf("worktree without listed main: Env =\n%q\nwant\n%q", vars, want)
+	}
+	if wantNotes := []string{".env:5 API_URL: hugger9.test has no name for api.hugger.test, so lodo dev leaves it"}; !slices.Equal(got.Notes, wantNotes) {
+		t.Errorf("worktree without listed main: Notes = %q, want %q", got.Notes, wantNotes)
+	}
+
 	// The main checkout keeps its own names.
 	p = Project{Root: main, Name: "hugger.test", Apps: []App{{Dir: ".", Port: 3000}}, Env: env, Repo: repoRoot(main)}
 	if got := Propose(p, domains, "", gone); len(got.Env) != 0 || len(got.Notes) != 0 {
@@ -397,5 +411,18 @@ func TestPropose_WorktreeSlot(t *testing.T) {
 	p := Project{Root: worktree, Name: "t3-new.test", Apps: []App{{Dir: ".", Port: 3000}}, Repo: repoRoot(worktree)}
 	if got := Propose(p, base[2:], "", gone); got.Name != "t3-new.test" || !got.Worktree || got.Main != "" {
 		t.Errorf("no main: Propose = %s, worktree %v, main %q; want t3-new.test, a worktree with no main", got.Name, got.Worktree, got.Main)
+	}
+
+	// When .env names an unlisted .test project, a worktree gets its slot and
+	// leaves EnvAddress for the main checkout.
+	p.EnvAddress = "127.0.1.1"
+	p.Env = []EnvLine{{File: ".env", Line: 1, Key: "DATABASE_URL", Text: "DATABASE_URL=postgresql://postgres:hunter2@hugger.test:5432/postgres"}}
+	got := Propose(p, base[2:], "", gone)
+	if got.Name != "hugger3.test" || got.Address != "127.0.1.3" || !got.Worktree || got.Main != "hugger.test" {
+		t.Errorf("unlisted main in .env: Propose = %s on %s, worktree %v, main %q; want hugger3.test on 127.0.1.3, main hugger.test",
+			got.Name, got.Address, got.Worktree, got.Main)
+	}
+	if len(got.Env) != 1 || got.Env[0].Env() != "DATABASE_URL=postgresql://postgres:hunter2@hugger3.test:5432/postgres" {
+		t.Errorf("unlisted main in .env: Env = %+v, want DATABASE_URL on hugger3.test", got.Env)
 	}
 }
