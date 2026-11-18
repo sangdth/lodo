@@ -91,8 +91,9 @@ variable beats a `.env` file in dotenv, Next, Node's `--env-file` and `process.l
 - In a git worktree, `COMPOSE_PROJECT_NAME` is the project's label, such as `hugger12`. It beats `name:` in the
   compose file, so each worktree gets its own containers and volumes, and starts with an empty database. A fixed
   `container_name:` still clashes between worktrees: leave it out. The main checkout keeps the file's name.
-- In each app's `.env`, a host that is a name of another checkout of the same git repository becomes this
-  checkout's: in a worktree named `hugger9.test` whose main checkout is `hugger.test`'s folder,
+- In each app's `.env`, a host that is a name of another checkout of the same git repository, or of an unlisted
+  `.test` project the `.env` was written for, becomes this checkout's: in a worktree named `hugger9.test` whose main
+  checkout is `hugger.test`'s folder (or whose `.env` names an unlisted `hugger.test`),
   `postgresql://…@hugger.test:5432` becomes `postgresql://…@hugger9.test:5432`, `SMTP_HOST=hugger.test`
   becomes `SMTP_HOST=hugger9.test` and `http://mail.hugger.test` becomes `http://mail.hugger9.test`. A name this
   checkout lacks stays, with a note.

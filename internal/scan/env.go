@@ -221,34 +221,98 @@ func isHostByte(c byte) bool {
 }
 
 // siblingNames maps each name of another checkout of the project's git
-// repository to the same name under project: hugger.test to hugger9.test and
-// mail.hugger.test to mail.hugger9.test, for the worktree named hugger9.test
-// whose repository's main checkout is hugger.test's Root. A .env copied from
-// one checkout then works in every other. A name with no match in list maps
-// to "", which renameHosts leaves.
+// repository, and each host in p.Env of an unlisted .test project, to the same
+// name under project: hugger.test to hugger9.test and mail.hugger.test to
+// mail.hugger9.test, for the worktree named hugger9.test whose repository's
+// main checkout is hugger.test's Root, or whose .env was written for an
+// unlisted hugger.test. A .env copied from one checkout then works in every
+// other. A name with no match in list maps to "", which renameHosts leaves.
 func siblingNames(p Project, list []store.Domain, project string) map[string]string {
-	if p.Repo == "" {
-		return nil
-	}
 	names := map[string]string{}
-	for _, owner := range list {
-		sibling := owner.Name
-		if owner.Root == "" || store.Project(sibling) != sibling || sibling == project || SameFolder(owner.Root, p.Root) ||
-			!SameFolder(repoRoot(owner.Root), p.Repo) {
-			continue
-		}
-		for _, d := range list {
-			if store.Project(d.Name) != sibling {
+	if p.Repo != "" {
+		for _, owner := range list {
+			sibling := owner.Name
+			if store.Project(sibling) != sibling || sibling == project || SameFolder(owner.Root, p.Root) ||
+				!sameRepo(list, owner, p.Repo) {
 				continue
 			}
-			target := strings.TrimSuffix(d.Name, sibling) + project
+			for _, d := range list {
+				if store.Project(d.Name) != sibling {
+					continue
+				}
+				target := strings.TrimSuffix(d.Name, sibling) + project
+				if _, ok := store.Find(list, target); !ok {
+					target = ""
+				}
+				names[strings.ToLower(d.Name)] = target
+			}
+		}
+	}
+	if sibling := envProject(p, list); sibling != "" && sibling != project {
+		for _, host := range envHosts(p.Env) {
+			if store.Project(host) != sibling {
+				continue
+			}
+			target := strings.TrimSuffix(host, sibling) + project
 			if _, ok := store.Find(list, target); !ok {
 				target = ""
 			}
-			names[strings.ToLower(d.Name)] = target
+			names[host] = target
 		}
 	}
+	if len(names) == 0 {
+		return nil
+	}
 	return names
+}
+
+// sameRepo reports whether the listed project owner belongs to a checkout of
+// repo, by its Root or by a compose file its names link inside repo.
+func sameRepo(list []store.Domain, owner store.Domain, repo string) bool {
+	if owner.Root != "" {
+		return SameFolder(repoRoot(owner.Root), repo)
+	}
+	return slices.ContainsFunc(list, func(d store.Domain) bool {
+		return store.Project(d.Name) == owner.Name && linksInside(d, repo)
+	})
+}
+
+// testHostRE matches a .test name inside a .env value.
+var testHostRE = regexp.MustCompile(`(?i)` + store.NamePattern)
+
+// envHosts returns the .test host names in lines' readable values, lowercase,
+// in the order they appear.
+func envHosts(lines []EnvLine) []string {
+	var hosts []string
+	for _, l := range lines {
+		val, ok := envValue(l.Text)
+		if !ok {
+			continue
+		}
+		for _, m := range testHostRE.FindAllStringIndex(val, -1) {
+			if (m[0] > 0 && isHostByte(val[m[0]-1])) || (m[1] < len(val) && isHostByte(val[m[1]])) {
+				continue
+			}
+			host := strings.ToLower(val[m[0]:m[1]])
+			if store.ValidateName(host) == nil && !slices.Contains(hosts, host) {
+				hosts = append(hosts, host)
+			}
+		}
+	}
+	return hosts
+}
+
+// envProject returns the first .test project named in p.Env that no listed
+// domain belongs to, such as hugger.test when a .env written for hugger.test
+// is scanned before hugger.test is in domains.json.
+func envProject(p Project, domains []store.Domain) string {
+	for _, host := range envHosts(p.Env) {
+		proj := store.Project(host)
+		if !slices.ContainsFunc(domains, func(d store.Domain) bool { return store.Project(d.Name) == proj }) {
+			return proj
+		}
+	}
+	return ""
 }
 
 // repoRoot returns the main checkout of the git repository whose root is dir:

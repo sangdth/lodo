@@ -380,6 +380,19 @@ func TestPropose(t *testing.T) {
 			want:    Proposal{Name: "hugger.test", Address: "127.0.1.1", Listed: true, Claim: true},
 		},
 		{
+			name: "an unlisted .test project in .env names the project",
+			project: Project{
+				Root: "/p/platform-v2", Name: "platform-v2.test", Apps: []App{{Dir: ".", Port: 3000}}, EnvAddress: "127.0.1.1",
+				Env: []EnvLine{{File: ".env", Line: 1, Key: "BETTER_AUTH_URL", Text: "BETTER_AUTH_URL=http://hugger.test"}},
+			},
+			domains: []store.Domain{{Name: "crm.test", Address: "127.0.1.3", Port: 3000, Enabled: true}},
+			want: Proposal{
+				Name:    "hugger.test",
+				Address: "127.0.1.1",
+				Add:     []store.Domain{{Name: "hugger.test", Address: "127.0.1.1", Port: 3000, Enabled: true, Root: "/p/platform-v2"}},
+			},
+		},
+		{
 			name:    "a compose file in it that another live project links names nothing",
 			project: Project{Root: filepath.Dir(live), Name: "umbrella.test", Apps: []App{{Dir: ".", Port: 3000}}},
 			domains: []store.Domain{{Name: "api.test", Address: "127.0.1.1", Enabled: true, Root: live, Compose: elsewhere}},

@@ -50,8 +50,8 @@ stops the commit.
   (Mailpit's inbox), and proposes the names and compose link the list lacks, and the variables `lodo dev` sets
   (`Proposal.Env`, `scan.Var`). It also reads `PORT=` from an app's `.env` (NestJS, Create React App, unknown
   commands), the `KEY=value` lines of each app's `.env`, the git repository's main checkout (`repoRoot`), so a
-  worktree's variables swap another checkout's names for its own (`siblingNames`), and the names Caddy serves per
-  port (`ValuesFor`). Each app keeps its own port; a
+  worktree's variables swap another checkout's or an unlisted `.test` project's names for its own (`siblingNames`),
+  and the names Caddy serves per port (`ValuesFor`). Each app keeps its own port; a
   port taken on the project's address moves the app to the next free address, with a note, since `lodo dev` binds
   one app per port. Its notes point at `lodo dev --edit`. All dev server rules and the images lodo names
   (`webImages`) live here, and so does the rule for a listed name another project's folder still has (`Taken`,

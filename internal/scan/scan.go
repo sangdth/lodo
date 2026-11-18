@@ -145,28 +145,23 @@ func (p Proposal) CanAccept() bool {
 	return len(p.Add) > 0 || p.Compose != "" || p.Claim
 }
 
-// projectName returns the project's name: the listed name whose Root is the
-// project's folder, else the project of the listed name that links a compose
-// file in it, whatever its folder is called (hugger.test for
-// huggerhustle/platform-v2), unless that project is another's (Taken), else
-// a worktree's of a listed main checkout's (worktreeSlot), else what the folder
-// suggests. When that name is another project's, such as a second clone's, it
-// is the first of <label>-2.test, <label>-3.test … that no listed name has, so
-// the project gets its own names and address.
+// projectName returns the project's name: the listed name for the project's
+// folder (listedProject), else a worktree's of its main checkout's
+// (worktreeSlot), else the unlisted .test project p.Env names (envProject),
+// else what the folder suggests. When that name is another project's, such as
+// a second clone's, it is the first of <label>-2.test, <label>-3.test … that
+// no listed name has, so the project gets its own names and address.
 func projectName(p Project, domains []store.Domain, gone func(path string) bool) string {
-	if i := slices.IndexFunc(domains, func(d store.Domain) bool { return SameFolder(d.Root, p.Root) }); i >= 0 {
-		return domains[i].Name
+	if d, ok := listedProject(domains, p.Root, gone); ok {
+		return d.Name
 	}
-	if i := slices.IndexFunc(domains, func(d store.Domain) bool {
-		owner, ok := store.Find(domains, store.Project(d.Name))
-		return linksInside(d, p.Root) && (!ok || !Taken(owner, p.Root, gone))
-	}); i >= 0 {
-		return store.Project(domains[i].Name)
-	}
-	if main, ok := mainProject(p, domains); ok {
+	if main, ok := mainProject(p, domains, gone); ok {
 		if name, _, ok := worktreeSlot(p, domains, main, gone); ok {
 			return name
 		}
+	}
+	if name := envProject(p, domains); name != "" {
+		return name
 	}
 	if d, ok := store.Find(domains, p.Name); !ok || !Taken(d, p.Root, gone) {
 		return p.Name
@@ -178,6 +173,27 @@ func projectName(p Project, domains []store.Domain, gone func(path string) bool)
 			return name
 		}
 	}
+}
+
+// listedProject returns the listed project for root: the domain whose Root is
+// root, else the project of a listed domain that links a compose file in root,
+// whatever root is called (hugger.test for huggerhustle/platform-v2), unless
+// that project belongs to another folder (Taken).
+func listedProject(domains []store.Domain, root string, gone func(path string) bool) (store.Domain, bool) {
+	if i := slices.IndexFunc(domains, func(d store.Domain) bool { return store.Project(d.Name) == d.Name && SameFolder(d.Root, root) }); i >= 0 {
+		return domains[i], true
+	}
+	if i := slices.IndexFunc(domains, func(d store.Domain) bool {
+		owner, ok := store.Find(domains, store.Project(d.Name))
+		return linksInside(d, root) && (!ok || !Taken(owner, root, gone))
+	}); i >= 0 {
+		name := store.Project(domains[i].Name)
+		if owner, ok := store.Find(domains, name); ok {
+			return owner, true
+		}
+		return store.Domain{Name: name, Address: domains[i].Address}, true
+	}
+	return store.Domain{}, false
 }
 
 // Taken reports whether the listed name d belongs to another project than the
@@ -237,7 +253,7 @@ func Propose(p Project, domains []store.Domain, name string, gone func(path stri
 		p.Name = projectName(p, domains, gone)
 	}
 	prop.Name, prop.Worktree = p.Name, p.Worktree()
-	main, _ := mainProject(p, domains)
+	main, _ := mainProject(p, domains, gone)
 	prop.Main = main.Name
 	if p.Name == "" || (len(p.Apps) == 0 && len(p.Compose) == 0) {
 		return prop
