@@ -647,9 +647,31 @@ func TestEnv_Run_Caddy(t *testing.T) {
 			want: caddyCheck.fail("Homebrew's Caddyfile does not import lodo's", "lodo setup"),
 		},
 		{
+			name: "admin API not disabled",
+			change: func(t *testing.T, m *mac) {
+				t.Helper()
+				writeFile(t, m.p.SystemCaddyfile, system.CaddyBlock(m.p))
+			},
+			want: caddyCheck.fail("Caddy's admin API is not turned off", "lodo setup"),
+		},
+		{
+			name:   "runs as root",
+			change: func(t *testing.T, m *mac) { t.Helper(); setService(t, m, "caddy", asRoot) },
+			want:   caddyCheck.fail("runs as root", "lodo setup"),
+		},
+		{
 			name:   "not running",
 			change: func(t *testing.T, m *mac) { t.Helper(); setService(t, m, "caddy", stopped) },
 			want:   caddyCheck.fail("not running", "lodo setup"),
+		},
+		{
+			name: "not running because another program holds port 80",
+			change: func(t *testing.T, m *mac) {
+				t.Helper()
+				setService(t, m, "caddy", stopped)
+				setLsof(nginxRow)(t, m)
+			},
+			want: caddyCheck.fail("port {port} is taken by nginx", "stop nginx, then lodo apply"),
 		},
 		{
 			name: "caddy rejects the config",
@@ -820,7 +842,7 @@ func newMac(t *testing.T, domains []store.Domain) *mac {
 		t.Fatal(err)
 	}
 	writeFile(t, p.Caddy, "")
-	writeFile(t, p.SystemCaddyfile, system.CaddyBlock(p))
+	writeFile(t, p.SystemCaddyfile, system.RewriteSystemCaddyfile("", p))
 
 	for _, label := range system.DnsmasqSystemLabels {
 		m.fake.Fail(launchctlPrint(p, label), `Could not find service "`+label+`" in domain for system`)
@@ -891,8 +913,13 @@ func setService(t *testing.T, m *mac, service, state string) {
 		writeFile(t, filepath.Join(m.p.LaunchDaemons, label+".plist"), "")
 	}
 	switch state {
-	case running, asRoot:
+	case running:
 		m.fake.Set(line, "gui/501/"+label+" = {\n\tstate = running\n\tpid = 42\n}\n")
+	case asRoot:
+		m.fake.Fail(line, `Could not find service "`+label+`" in domain for user gui: 501`)
+		if service == "caddy" {
+			m.fake.Set(run.Line(m.p.Launchctl, "print", "system/"+label), "system/"+label+" = {\n\tstate = running\n\tpid = 42\n}\n")
+		}
 	case stopped:
 		m.fake.Set(line, "gui/501/"+label+" = {\n\tstate = not running\n}\n")
 	default:

@@ -95,7 +95,7 @@ var help = map[mode]string{
 	modeForm:    " enter save  tab next field  esc cancel\n",
 	modeConfirm: " y delete  any other key keeps it\n",
 	modeLog:     " g or esc back to the list  ↑/↓ scroll\n q quit",
-	modePreview: " p or esc back to the list  ↑/↓ ←/→ scroll  l write the .env line\n q quit",
+	modePreview: " p or esc back to the list  ↑/↓ ←/→ scroll\n q quit",
 }
 
 // View draws the status bar, a rule, the table or the form, the status line

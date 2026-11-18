@@ -244,10 +244,10 @@ scan reads, and never writes:
 
 It proposes the project's name, a subdomain per app, such as `admin.media.test` with its port, `mail.media.test`
 for Mailpit's inbox, the compose file to link and the variables `lodo dev` sets. All of a project's apps share its
-address, and so does the inbox. Every app keeps its own port; when another name already has that port on the
-address, the app gets the next free address and a note to give one of them another port, since `lodo dev` binds
-one app per port. The inbox is skipped when a listed name has its port there, or when
-the project runs another compose file than the one the scan read, or none.
+address, and so does the inbox. Every app keeps its own port; when two apps share a port on the address, the scan
+adds a note and the setup form requires distinct ports, since `lodo dev` binds one app per port. The inbox is
+skipped when a listed name has its port there, or when the project runs another compose file than the one the
+scan read, or none.
 
 ### Compose files
 
@@ -262,9 +262,9 @@ started, or `none`.
   `http://localhost:3000` becomes `http://dashboard.blog.test`. A user and password in the URL stay.
 - Healthchecks, commands and comments keep `localhost`: inside a container it is the container itself.
 
-`l` links the selected name: the compose file of the project lodo started in, or outside one the name's own,
-becomes the name's. The setup form's link toggle and `l` in the preview do the same. The file's ports get the
-project's address from the `DOCKER_HOST_IP` that `lodo dev` and `lodo exec` set.
+`l` links the selected name to the project lodo started in, saving the compose path. The setup form's link toggle
+does the same. The file's ports get the project's address from the `DOCKER_HOST_IP` that `lodo dev` and `lodo exec`
+set.
 
 ### HTTPS
 

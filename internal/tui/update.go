@@ -3,6 +3,7 @@ package tui
 import (
 	"cmp"
 	"errors"
+	"fmt"
 	"slices"
 
 	"charm.land/bubbles/v2/spinner"
@@ -214,13 +215,20 @@ func (m Model) listKey(k string) (Model, tea.Cmd, bool) {
 	}
 	switch k {
 	case "space":
-		next, err := store.Toggle(m.domains, d.Name)
-		if err != nil {
+		if _, err := store.Toggle(m.domains, d.Name); err != nil {
 			m.err = err
 			return m, nil, true
 		}
 		m.selectName = d.Name
-		started, cmd := m.start(d.Name, m.change(next, true))
+		want := !d.Enabled
+		started, cmd := m.start(d.Name, m.change(func(fresh []store.Domain) ([]store.Domain, error) {
+			cur, ok := store.Find(fresh, d.Name)
+			if !ok {
+				return nil, fmt.Errorf("%s is not listed", d.Name)
+			}
+			cur.Enabled = want
+			return store.Update(fresh, d.Name, cur)
+		}, true))
 		return started, cmd, true
 	case "s":
 		next, cmd := m.toggleHTTPS(d)
@@ -244,13 +252,20 @@ func (m Model) listKey(k string) (Model, tea.Cmd, bool) {
 func (m Model) toggleHTTPS(d store.Domain) (Model, tea.Cmd) {
 	changed := d
 	changed.HTTPS = !d.HTTPS
-	next, err := store.Update(m.domains, d.Name, changed)
-	if err != nil {
+	if _, err := store.Update(m.domains, d.Name, changed); err != nil {
 		m.err = err
 		return m, nil
 	}
 	m.selectName = d.Name
-	return m.start(d.Name, m.change(next, true))
+	want := changed.HTTPS
+	return m.start(d.Name, m.change(func(fresh []store.Domain) ([]store.Domain, error) {
+		cur, ok := store.Find(fresh, d.Name)
+		if !ok {
+			return nil, fmt.Errorf("%s is not listed", d.Name)
+		}
+		cur.HTTPS = want
+		return store.Update(fresh, d.Name, cur)
+	}, true))
 }
 
 // serviceKey handles the keys while they act on the status bar's services:
@@ -297,6 +312,7 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 		m.form.setError(errors.New("a change is still running: press enter again in a moment"))
 		return m, nil
 	}
+	var err error
 	d, err := m.form.domain()
 	if err == nil && d.Port > 0 && (m.form.editing == "" || d.Port != m.form.original.Port) {
 		if notReady := m.backend.PortsReady(); notReady != nil {
@@ -306,12 +322,11 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 	if err == nil && d.Compose != m.form.original.Compose {
 		err = m.checkCompose(d.Compose)
 	}
-	var next []store.Domain
 	if err == nil {
 		if m.form.editing == "" {
-			next, err = store.Add(m.domains, d)
+			_, err = store.Add(m.domains, d)
 		} else {
-			next, err = store.Update(m.domains, m.form.editing, d)
+			_, err = store.Update(m.domains, m.form.editing, d)
 		}
 	}
 	if err != nil {
@@ -319,15 +334,22 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.mode, m.selectName = modeList, d.Name
-	if m.form.editing == "" {
+	editing := m.form.editing
+	if editing == "" {
 		m.adding = d
 	}
-	o := m.form.original
-	cmd := m.change(next, true)
-	if m.form.editing != "" && d.Name == o.Name && d.Address == o.Address && d.Port == o.Port {
-		cmd = m.save(next) // only the compose file changed, which nothing applies
+	mutate := func(fresh []store.Domain) ([]store.Domain, error) {
+		if editing == "" {
+			return store.Add(fresh, d)
+		}
+		return store.Update(fresh, editing, d)
 	}
-	return m.start(cmp.Or(m.form.editing, d.Name), cmd)
+	o := m.form.original
+	cmd := m.change(mutate, true)
+	if editing != "" && d.Name == o.Name && d.Address == o.Address && d.Port == o.Port {
+		cmd = m.save(mutate) // only the compose file changed, which nothing applies
+	}
+	return m.start(cmp.Or(editing, d.Name), cmd)
 }
 
 // neighbor returns the name the cursor goes to once name is deleted, with the
@@ -375,11 +397,14 @@ func (m Model) confirmKey(k string) (tea.Model, tea.Cmd) {
 	if k != "y" || m.busy {
 		return m, nil
 	}
-	next, err := store.Remove(m.domains, m.target)
-	if err != nil {
+	if _, err := store.Remove(m.domains, m.target); err != nil {
 		m.err = err
 		return m, nil
 	}
-	m.selectName = neighbor(m.domains, next, m.target)
-	return m.start(m.target, m.change(next, true))
+	target := m.target
+	next, _ := store.Remove(m.domains, target)
+	m.selectName = neighbor(m.domains, next, target)
+	return m.start(target, m.change(func(fresh []store.Domain) ([]store.Domain, error) {
+		return store.Remove(fresh, target)
+	}, true))
 }

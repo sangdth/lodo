@@ -16,6 +16,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"syscall"
 
 	"github.com/sangdth/lodo/internal/fsutil"
 )
@@ -430,4 +431,22 @@ func Save(path string, domains []Domain) error {
 		return fmt.Errorf("save domains: %w", err)
 	}
 	return nil
+}
+
+// WithLock runs fn while holding an exclusive advisory lock for path, so
+// concurrent processes read, modify and save domains.json one at a time.
+func WithLock(path string, fn func() error) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil { //nolint:gosec // G301: ~/.config/lodo holds no secrets
+		return fmt.Errorf("create %s: %w", filepath.Dir(path), err)
+	}
+	f, err := os.OpenFile(path+".lock", os.O_CREATE|os.O_RDWR, 0o644) //nolint:gosec // G304,G302: path comes from paths.Paths and holds no secrets
+	if err != nil {
+		return fmt.Errorf("lock %s: %w", path, err)
+	}
+	defer func() { _ = f.Close() }() // lock file: closed after unlock
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+		return fmt.Errorf("lock %s: %w", path, err)
+	}
+	defer func() { _ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN) }() // best effort unlock before close
+	return fn()
 }

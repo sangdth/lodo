@@ -17,6 +17,7 @@ import (
 	"github.com/sangdth/lodo/internal/run"
 	"github.com/sangdth/lodo/internal/scan"
 	"github.com/sangdth/lodo/internal/store"
+	"github.com/sangdth/lodo/internal/system"
 )
 
 func TestApp_Doctor(t *testing.T) {
@@ -48,6 +49,71 @@ func TestApp_PsRefusesBeforeSetup(t *testing.T) {
 	if strings.Contains(stderr.String(), " 7 ") {
 		t.Errorf("the gate ran past check 5:\n%s", stderr.String())
 	}
+}
+
+func TestApp_Apply(t *testing.T) {
+	t.Parallel()
+
+	t.Run("before setup", func(t *testing.T) {
+		t.Parallel()
+		var stdout, stderr strings.Builder
+		a := newApp(paths.ForTest(t.TempDir()), run.NewFake(), &stdout, &stderr)
+		if code := a.apply(t.Context()); code != 1 || !strings.Contains(stderr.String(), system.ErrNotSetUp.Error()) {
+			t.Errorf("code %d, stderr %q; want 1 and ErrNotSetUp", code, stderr.String())
+		}
+	})
+	t.Run("no enabled domains", func(t *testing.T) {
+		t.Parallel()
+		p, r := paths.ForTest(t.TempDir()), run.NewFake()
+		setUpFakeMac(t, p, r)
+		var stdout, stderr strings.Builder
+		a := newApp(p, r, &stdout, &stderr)
+		if code := a.apply(t.Context()); code != 0 || stdout.String() != "no enabled domains\n" {
+			t.Errorf("code %d, stdout %q, stderr %q; want 0 and no enabled domains", code, stdout.String(), stderr.String())
+		}
+	})
+	t.Run("apply fails", func(t *testing.T) {
+		t.Parallel()
+		p, r := paths.ForTest(t.TempDir()), run.NewFake()
+		setUpFakeMac(t, p, r)
+		r.Fail(run.Line(p.Sudo, "-n", p.Script), "sudo: a password is required")
+		var stdout, stderr strings.Builder
+		a := newApp(p, r, &stdout, &stderr)
+		if code := a.apply(t.Context()); code != 1 || !strings.Contains(stderr.String(), "sudo: a password is required") {
+			t.Errorf("code %d, stderr %q; want 1 and script failure", code, stderr.String())
+		}
+	})
+	t.Run("probe fails", func(t *testing.T) {
+		t.Parallel()
+		p, r := paths.ForTest(t.TempDir()), run.NewFake()
+		setUpFakeMac(t, p, r)
+		if err := store.Save(p.DomainsJSON, []store.Domain{{Name: "crm.test", Address: "127.0.1.1", Enabled: true}}); err != nil {
+			t.Fatal(err)
+		}
+		var stdout, stderr strings.Builder
+		a := newApp(p, r, &stdout, &stderr)
+		a.env.DNS = "127.0.0.1:1"
+		if code := a.apply(t.Context()); code != 1 || !strings.Contains(stdout.String(), "crm.test") {
+			t.Errorf("code %d, stdout %q; want 1 and probe line", code, stdout.String())
+		}
+	})
+}
+
+func setUpFakeMac(t *testing.T, p paths.Paths, r *run.Fake) {
+	t.Helper()
+	for path, content := range map[string]string{
+		p.SystemConf: system.RewriteSystemConf("", p),
+		p.Script:     system.Script(p),
+		filepath.Join(p.LaunchAgents, "sh.brew.dnsmasq.plist"): "",
+	} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	r.Set(run.Line(p.Launchctl, "print", "gui/501/sh.brew.dnsmasq"), "\tstate = running\n\tpid = 42\n")
 }
 
 func TestFormatChecks(t *testing.T) {

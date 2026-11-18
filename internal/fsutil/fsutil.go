@@ -13,6 +13,12 @@ import (
 	"path/filepath"
 )
 
+// Exists reports whether something exists at path, following symlinks.
+func Exists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
 // WriteFile replaces path with data through a temporary file and a rename.
 // It skips the write when path already holds data, and reports whether it
 // wrote.

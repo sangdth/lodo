@@ -56,6 +56,12 @@ func TestScript_Run(t *testing.T) {
 			wantStdout: "lodo: 2 resolver files written, 0 removed, 0 lines skipped\n",
 		},
 		{
+			name:       "skips binary lines with null bytes",
+			list:       "a\x00b\ncrm.test\n",
+			after:      map[string]string{"crm.test": resolver},
+			wantStdout: "lodo: 1 resolver files written, 0 removed, 1 lines skipped\n",
+		},
+		{
 			name:       "skips invalid lines",
 			list:       "test\n../x.test\nX.TEST\nx.com\n\nx.test \n-x.test\nflowy.test\na/b.test\n" + long + "\n",
 			after:      map[string]string{"flowy.test": resolver},
@@ -190,6 +196,47 @@ func TestScript_RunNeverOpensInput(t *testing.T) {
 	}
 }
 
+// TestScript_RunNeverOpensSpecialTarget checks that a symlink or FIFO already
+// in ResolverDir at a domain's name is left alone without opening it.
+func TestScript_RunNeverOpensSpecialTarget(t *testing.T) {
+	t.Parallel()
+
+	p := paths.ForTest(t.TempDir())
+	if err := os.MkdirAll(p.ResolverDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fifo := filepath.Join(p.ResolverDir, "fifo.test")
+	if err := syscall.Mkfifo(fifo, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sym := filepath.Join(p.ResolverDir, "sym.test")
+	target := filepath.Join(t.TempDir(), "real")
+	writeFile(t, target, system.Marker+"\n")
+	if err := os.Symlink(target, sym); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	script := filepath.Join(t.TempDir(), "apply-resolvers.sh")
+	writeFile(t, script, system.Script(p))
+	var out, errOut strings.Builder
+	cmd := exec.CommandContext(ctx, "/bin/sh", script)
+	cmd.Stdin = strings.NewReader("fifo.test\nsym.test\n")
+	cmd.Stdout, cmd.Stderr = &out, &errOut
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("%v: %s", err, errOut.String())
+	}
+	if !strings.Contains(errOut.String(), "fifo.test alone") || !strings.Contains(errOut.String(), "sym.test alone") {
+		t.Errorf("stderr = %q, want both special targets left alone", errOut.String())
+	}
+	if info, err := os.Lstat(fifo); err != nil || info.Mode()&os.ModeNamedPipe == 0 {
+		t.Errorf("fifo.test replaced: %v, %v", info, err)
+	}
+	if info, err := os.Lstat(sym); err != nil || info.Mode()&os.ModeSymlink == 0 {
+		t.Errorf("sym.test replaced: %v, %v", info, err)
+	}
+}
+
 func TestScript_RunQuotedPath(t *testing.T) {
 	t.Parallel()
 
@@ -304,7 +351,7 @@ func TestConfBlock(t *testing.T) {
 func TestCaddyBlock(t *testing.T) {
 	t.Parallel()
 
-	want := "# lodo\nimport /fake/Users/tester/.config/lodo/Caddyfile\n"
+	want := "# lodo\nimport \"/fake/Users/tester/.config/lodo/Caddyfile\"\n"
 	if got := system.CaddyBlock(fake); got != want {
 		t.Errorf("CaddyBlock = %q, want %q", got, want)
 	}

@@ -33,6 +33,7 @@ type app struct {
 	// replace it, and lookPath, which finds a command on PATH.
 	form     func(ctx context.Context, domains []store.Domain, dir string, auto bool) (saved bool, err error)
 	lookPath func(file string) (string, error)
+	teaOpts  []tea.ProgramOption
 }
 
 func newApp(p paths.Paths, r run.Runner, stdout, stderr io.Writer) app {
@@ -118,12 +119,23 @@ func (a app) setup(ctx context.Context) int {
 // apply makes the system match domains.json and probes every enabled name.
 // A name whose app isn't running doesn't make it fail.
 func (a app) apply(ctx context.Context) int {
-	domains, err := store.Load(a.paths.DomainsJSON)
-	if err != nil {
+	var domains []store.Domain
+	var loadErr, applyErr error
+	if err := store.WithLock(a.paths.DomainsJSON, func() error {
+		domains, loadErr = store.Load(a.paths.DomainsJSON)
+		if loadErr != nil {
+			return nil
+		}
+		applyErr = system.Apply(ctx, a.paths, a.runner, domains)
+		return nil
+	}); err != nil {
 		a.fail(err)
 		return 1
 	}
-	applyErr := system.Apply(ctx, a.paths, a.runner, domains)
+	if loadErr != nil {
+		a.fail(loadErr)
+		return 1
+	}
 	if errors.Is(applyErr, system.ErrNotSetUp) {
 		a.fail(applyErr)
 		return 1

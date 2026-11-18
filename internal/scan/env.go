@@ -57,10 +57,18 @@ func findEnv(root string, apps []App) []EnvLine {
 		if err != nil {
 			continue
 		}
+		var fileLines []EnvLine
+		last := map[string]int{}
 		for i, text := range strings.Split(string(data), "\n") {
 			text = strings.TrimSuffix(text, "\r")
 			if m := keyRE.FindStringSubmatch(text); m != nil {
-				lines = append(lines, EnvLine{File: file, Line: i + 1, Key: m[1], Text: text})
+				last[m[1]] = len(fileLines)
+				fileLines = append(fileLines, EnvLine{File: file, Line: i + 1, Key: m[1], Text: text})
+			}
+		}
+		for i, l := range fileLines {
+			if last[l.Key] == i {
+				lines = append(lines, l)
 			}
 		}
 	}

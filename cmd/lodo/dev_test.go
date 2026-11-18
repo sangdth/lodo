@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io/fs"
@@ -12,12 +13,14 @@ import (
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/exp/golden"
 
 	"github.com/sangdth/lodo/internal/paths"
 	"github.com/sangdth/lodo/internal/run"
 	"github.com/sangdth/lodo/internal/scan"
 	"github.com/sangdth/lodo/internal/store"
+	"github.com/sangdth/lodo/internal/system"
 	"github.com/sangdth/lodo/internal/tui"
 )
 
@@ -142,6 +145,61 @@ func TestApp_StartDev(t *testing.T) {
 	if slices.ContainsFunc(env, func(kv string) bool { return strings.HasPrefix(kv, "COMPOSE_PROJECT_NAME=") }) {
 		t.Errorf("env sets COMPOSE_PROJECT_NAME outside a worktree: %q", env)
 	}
+}
+
+// TestApp_DevAutoRealForm runs lodo dev -y through the real tui.Setup form
+// and verifies it saves domains.json, applies configs, and starts the app.
+func TestApp_DevAutoRealForm(t *testing.T) {
+	t.Parallel()
+
+	tree := maps.Clone(shopTree)
+	tree["apps/api/package.json"] = `{"scripts": {"dev": "nest start --watch"}}`
+	tree["apps/api/.env"] = "PORT=4001\n"
+	root := writeTree(t, tree)
+
+	p, r, out := paths.ForTest(t.TempDir()), run.NewFake(), &strings.Builder{}
+	setUpFakeMac(t, p, r)
+	for path, content := range map[string]string{
+		p.Caddy:           "",
+		p.SystemCaddyfile: system.RewriteSystemCaddyfile("", p),
+		filepath.Join(p.LaunchAgents, "sh.brew.caddy.plist"): "",
+	} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	r.Set(run.Line(p.Launchctl, "print", "gui/501/sh.brew.caddy"), "\tstate = running\n\tpid = 43\n")
+
+	a := newApp(p, r, out, out)
+	a.lookPath = func(file string) (string, error) { return "/opt/bin/" + file, nil }
+	a.teaOpts = []tea.ProgramOption{
+		tea.WithInput(&bytes.Buffer{}),
+		tea.WithOutput(&bytes.Buffer{}),
+		tea.WithoutSignals(),
+		tea.WithWindowSize(80, 24),
+	}
+	a.form = a.setupForm // rebind after setting teaOpts on value receiver a
+
+	if err := a.startDev(t.Context(), root, nil, options{auto: true}); err != nil {
+		t.Fatalf("startDev(-y): %v\n%s", err, out.String())
+	}
+	saved, err := store.Load(p.DomainsJSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := store.Find(saved, "shop.test"); !ok {
+		t.Errorf("saved = %+v, want shop.test", saved)
+	}
+	if _, ok := store.Find(saved, "web.shop.test"); !ok {
+		t.Errorf("saved = %+v, want web.shop.test", saved)
+	}
+	if _, ok := store.Find(saved, "api.shop.test"); !ok {
+		t.Errorf("saved = %+v, want api.shop.test", saved)
+	}
+	checkStarted(t, r, root, filepath.Join(p.DevDir, "shop.test.cjs"))
 }
 
 func TestApp_StartDevAuto(t *testing.T) {
@@ -273,7 +331,7 @@ func TestApp_StartExec(t *testing.T) {
 func TestApp_StartDevForm(t *testing.T) {
 	t.Parallel()
 
-	errEnv := errors.New("set apps/web/.env: permission denied")
+	errApply := errors.New("update /etc/resolver: sudo: a password is required")
 	tests := []struct {
 		name      string
 		listed    bool  // shop.test is listed before lodo dev
@@ -287,8 +345,8 @@ func TestApp_StartDevForm(t *testing.T) {
 	}{
 		{name: "first run, canceled", wantOut: "nothing saved\n"},
 		{name: "first run, saved", saved: true, wantOut: "starting: pnpm run dev", wantStart: true},
-		{name: "saved, a .env line failed", saved: true, formErr: errEnv, wantOut: "✗ " + errEnv.Error(), wantStart: true},
-		{name: "saving failed", formErr: errEnv, wantErr: errEnv},
+		{name: "saved, apply failed", saved: true, formErr: errApply, wantErr: errApply},
+		{name: "saving failed", formErr: errApply, wantErr: errApply},
 		{name: "--edit, canceled", listed: true, edit: true, wantOut: "nothing saved\n"},
 		{name: "another clone's name, canceled", other: true, wantOut: "nothing saved\n"},
 	}

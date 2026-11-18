@@ -1,17 +1,21 @@
 package system
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/sangdth/lodo/internal/brew"
 	"github.com/sangdth/lodo/internal/caddy"
 	"github.com/sangdth/lodo/internal/dnsmasq"
+	"github.com/sangdth/lodo/internal/fsutil"
 	"github.com/sangdth/lodo/internal/paths"
 	"github.com/sangdth/lodo/internal/run"
 	"github.com/sangdth/lodo/internal/store"
@@ -38,7 +42,8 @@ func Apply(ctx context.Context, p paths.Paths, r run.Runner, domains []store.Dom
 	}
 	names := ""
 	if st := brew.Info(ctx, r, p, "dnsmasq"); !st.Off() {
-		if !st.Running || slices.Contains(changed, p.DnsmasqConf) {
+		trimmed := trimLog(p.Log)
+		if !st.Running || slices.Contains(changed, p.DnsmasqConf) || trimmed {
 			if err := brew.Restart(ctx, r, p, "dnsmasq"); err != nil {
 				return err
 			}
@@ -163,12 +168,45 @@ func setDnsmasq(ctx context.Context, p paths.Paths, r run.Runner, on bool) error
 // SetupDone reports whether lodo setup has run: the resolver script is
 // installed and Homebrew's dnsmasq.conf includes lodo's file.
 func SetupDone(p paths.Paths) bool {
-	return exists(p.Script) && hasLine(p.SystemConf, "conf-file="+p.DnsmasqConf)
+	return fsutil.Exists(p.Script) && hasLine(p.SystemConf, "conf-file="+p.DnsmasqConf)
 }
 
 // CaddySetUp reports whether Homebrew's Caddyfile imports lodo's.
 func CaddySetUp(p paths.Paths) bool {
-	return hasLine(p.SystemCaddyfile, "import "+p.Caddyfile)
+	return hasLine(p.SystemCaddyfile, "import "+p.Caddyfile) ||
+		hasLine(p.SystemCaddyfile, "import "+strconv.Quote(p.Caddyfile))
+}
+
+const maxLogSize = 1 << 20
+
+// trimLog caps dnsmasq's query log at dnsmasq.MaxTail bytes when it exceeds
+// maxLogSize, so unbounded query logging cannot fill disk. It reports whether
+// the log was rewritten, so the caller restarts dnsmasq onto the new file.
+func trimLog(path string) bool {
+	info, err := os.Stat(path)
+	if err != nil || !info.Mode().IsRegular() || info.Size() <= maxLogSize {
+		return false
+	}
+	f, err := os.Open(path) //nolint:gosec // G304: path comes from paths.Paths
+	if err != nil {
+		return false
+	}
+	defer func() { _ = f.Close() }() // read only: a close error loses nothing
+	start := max(int64(0), info.Size()-dnsmasq.MaxTail-1)
+	if _, err := f.Seek(start, io.SeekStart); err != nil {
+		return false
+	}
+	buf, err := io.ReadAll(io.LimitReader(f, dnsmasq.MaxTail+1))
+	if err != nil {
+		return false
+	}
+	if i := bytes.IndexByte(buf, '\n'); i >= 0 {
+		buf = buf[i+1:]
+	} else if len(buf) > dnsmasq.MaxTail {
+		buf = buf[len(buf)-dnsmasq.MaxTail:]
+	}
+	wrote, err := fsutil.WriteFile(path, buf, 0o644)
+	return err == nil && wrote
 }
 
 // hasLine reports whether the file at path has a line that, trimmed, is want.

@@ -1,6 +1,7 @@
 package system
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -62,6 +63,7 @@ func Setup(ctx context.Context, p paths.Paths, r run.Runner, out io.Writer) erro
 		{"loopback addresses " + store.OwnAddress(store.OwnFirst) + "–" + store.OwnAddress(store.OwnLast) + " on lo0", "lodo setup", func() (string, error) { return "", installLoopback(ctx, p, r) }},
 		{"no " + p.ResolverLocal, "sudo rm " + p.ResolverLocal, func() (string, error) { return removeResolverLocal(ctx, p, r) }},
 		{"dnsmasq runs as you on port 53535", "brew services restart dnsmasq", func() (string, error) {
+			trimLog(p.Log)
 			return "", brew.Restart(ctx, r, p, "dnsmasq")
 		}},
 		{"Caddy serves lodo's sites on port 80", "brew services restart caddy", func() (string, error) { return "", setupCaddy(ctx, p, r) }},
@@ -75,7 +77,7 @@ func Setup(ctx context.Context, p paths.Paths, r run.Runner, out io.Writer) erro
 
 	var left []string
 	for _, l := range p.Leftovers {
-		if exists(l) {
+		if fsutil.Exists(l) {
 			left = append(left, l)
 		}
 	}
@@ -94,7 +96,7 @@ func preflight(p paths.Paths) error {
 		{p.Dnsmasq, "dnsmasq"},
 		{p.SystemConf, "Homebrew's dnsmasq.conf"},
 	} {
-		if !exists(f.path) {
+		if !fsutil.Exists(f.path) {
 			return fmt.Errorf("%s not found at %s", f.what, f.path)
 		}
 	}
@@ -105,7 +107,7 @@ func userFiles(p paths.Paths) error {
 	if err := os.MkdirAll(p.ConfigDir, 0o755); err != nil { //nolint:gosec // G301: ~/.config/lodo holds no secrets
 		return fmt.Errorf("create %s: %w", p.ConfigDir, err)
 	}
-	if !exists(p.DomainsJSON) {
+	if !fsutil.Exists(p.DomainsJSON) {
 		if err := store.Save(p.DomainsJSON, nil); err != nil {
 			return err
 		}
@@ -126,7 +128,7 @@ func systemConf(p paths.Paths) (string, error) {
 		return "", fmt.Errorf("read %s: %w", p.SystemConf, err)
 	}
 	note := "backup kept in " + filepath.Base(p.SystemConfBackup)
-	if !exists(p.SystemConfBackup) {
+	if !fsutil.Exists(p.SystemConfBackup) {
 		note = "backup in " + filepath.Base(p.SystemConfBackup)
 	}
 	if err := backUp(p.SystemConfBackup, old, StripSystemConf); err != nil {
@@ -149,7 +151,7 @@ func stopSystemDnsmasq(ctx context.Context, p paths.Paths, r run.Runner) (string
 			done = append(done, "stopped system/"+label)
 		}
 		plist := filepath.Join(p.LaunchDaemons, label+".plist")
-		if exists(plist) {
+		if fsutil.Exists(plist) {
 			if _, err := r.Run(ctx, p.Sudo, "-n", p.Rm, "-f", plist); err != nil {
 				return "", err
 			}
@@ -205,7 +207,7 @@ func proveScript(ctx context.Context, p paths.Paths, r run.Runner) error {
 }
 
 func removeResolverLocal(ctx context.Context, p paths.Paths, r run.Runner) (string, error) {
-	if !exists(p.ResolverLocal) {
+	if _, err := os.Lstat(p.ResolverLocal); err != nil {
 		return "", nil
 	}
 	if _, err := r.Run(ctx, p.Sudo, "-n", p.Rm, "-f", p.ResolverLocal); err != nil {
@@ -217,14 +219,14 @@ func removeResolverLocal(ctx context.Context, p paths.Paths, r run.Runner) (stri
 // setupCaddy points Homebrew's Caddyfile at lodo's and restarts Caddy. Without
 // Caddy installed it skips: only domains with a port need it.
 func setupCaddy(ctx context.Context, p paths.Paths, r run.Runner) error {
-	if !exists(p.Caddy) {
+	if !fsutil.Exists(p.Caddy) {
 		return skipped("Caddy is not installed; domains with a port need it: brew install caddy, then lodo setup")
 	}
 	old, err := os.ReadFile(p.SystemCaddyfile)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("read %s: %w", p.SystemCaddyfile, err)
 	}
-	if err == nil || exists(p.SystemCaddyfileBackup) {
+	if err == nil || fsutil.Exists(p.SystemCaddyfileBackup) {
 		strip := func(s string) string { return StripSystemCaddyfile(s, p) }
 		if err := backUp(p.SystemCaddyfileBackup, old, strip); err != nil {
 			return err
@@ -240,7 +242,8 @@ func setupCaddy(ctx context.Context, p paths.Paths, r run.Runner) error {
 // browsers trust the certificates tls internal makes. It reads the root from
 // the file Caddy writes at startup, never from a server, copies it to
 // p.TrustedCA and trusts that copy, which also records what uninstall
-// untrusts. security runs through sudo, which Setup's sudo -v already covered.
+// untrusts. If Caddy rotated its CA, it untrusts the previous copy first; if
+// the copy matches and macOS already trusts it, it skips the keychain prompt.
 // It skips unless an enabled domain has HTTPS on.
 func trustCaddy(ctx context.Context, p paths.Paths, r run.Runner) error {
 	domains, err := store.Load(p.DomainsJSON)
@@ -250,14 +253,23 @@ func trustCaddy(ctx context.Context, p paths.Paths, r run.Runner) error {
 	if !slices.ContainsFunc(domains, func(d store.Domain) bool { return d.Enabled && d.HTTPS }) {
 		return skipped("no enabled name has HTTPS on")
 	}
-	if !exists(p.Caddy) {
+	if !fsutil.Exists(p.Caddy) {
 		return skipped("Caddy is not installed; names with HTTPS on need it: brew install caddy, then lodo setup")
 	}
 	root, err := readCaddyRoot(ctx, p)
 	if err != nil {
 		return err
 	}
-	had := exists(p.TrustedCA)
+	oldCA, readErr := os.ReadFile(p.TrustedCA)
+	had := readErr == nil
+	if had && bytes.Equal(oldCA, root) {
+		if _, err := r.Run(ctx, p.Security, "verify-cert", "-c", p.TrustedCA); err == nil {
+			return nil
+		}
+	} else if had {
+		// Caddy rotated its CA; untrust the old root before replacing p.TrustedCA.
+		_ = r.RunTTY(ctx, p.Sudo, p.Security, "remove-trusted-cert", "-d", p.TrustedCA)
+	}
 	if _, err := fsutil.WriteFile(p.TrustedCA, root, 0o644); err != nil {
 		return err
 	}
@@ -363,9 +375,4 @@ func stage(p paths.Paths, target, content string) (string, error) {
 		return "", fmt.Errorf("stage %s: %w", filepath.Base(target), err)
 	}
 	return staged, nil
-}
-
-func exists(path string) bool {
-	_, err := os.Lstat(path)
-	return err == nil
 }

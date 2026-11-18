@@ -14,7 +14,7 @@ import (
 	"github.com/sangdth/lodo/internal/system"
 )
 
-func uninstallCalls(p paths.Paths, withScript, withCaddy bool) []string {
+func uninstallCalls(p paths.Paths, withScript, withCaddy bool, activeAddrs ...string) []string {
 	calls := []string{run.Line(p.Sudo, "-v")}
 	if withScript {
 		calls = append(calls, run.Line(p.Sudo, "-n", p.Script))
@@ -26,9 +26,10 @@ func uninstallCalls(p paths.Paths, withScript, withCaddy bool) []string {
 	calls = append(calls,
 		run.Line(p.Sudo, "-n", p.Launchctl, "bootout", "system/io.lodo.loopback"),
 		run.Line(p.Sudo, "-n", p.Rm, "-f", p.LoopbackPlist),
+		run.Line(p.Ifconfig, "lo0"),
 	)
-	for i := store.OwnFirst; i <= store.OwnLast; i++ {
-		calls = append(calls, run.Line(p.Sudo, "-n", p.Ifconfig, "lo0", "-alias", store.OwnAddress(i)))
+	for _, addr := range activeAddrs {
+		calls = append(calls, run.Line(p.Sudo, "-n", p.Ifconfig, "lo0", "-alias", addr))
 	}
 	return append(calls,
 		run.Line(p.Sudo, "-n", p.Rm, "-f", p.Sudoers, p.Script),
@@ -52,11 +53,12 @@ func TestUninstall(t *testing.T) {
 	writeFile(t, p.Script, "#!/bin/sh\n") // the fake runner installed nothing
 
 	r = run.NewFake()
+	r.Set(run.Line(p.Ifconfig, "lo0"), "\tinet 127.0.1.1 netmask 0xff000000\n\tinet 127.0.1.3 netmask 0xff000000\n")
 	var out strings.Builder
 	if err := system.Uninstall(ctx, p, r, &out); err != nil {
 		t.Fatalf("Uninstall: %v\n%s", err, out.String())
 	}
-	assertCalls(t, r.Calls(), uninstallCalls(p, true, true))
+	assertCalls(t, r.Calls(), uninstallCalls(p, true, true, "127.0.1.1", "127.0.1.3"))
 	assertFile(t, p.SystemConf, "# dnsmasq\n#port=5353\n")
 	assertFile(t, p.SystemCaddyfile, "example.com {\n\trespond \"hi\"\n}\n")
 	for _, gone := range []string{p.SystemConfBackup, p.SystemCaddyfileBackup} {

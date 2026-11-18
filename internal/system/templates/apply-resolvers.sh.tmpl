@@ -30,8 +30,8 @@ if [ "$(/usr/bin/wc -c < "$work/list")" -gt {{.MaxInput}} ]; then
 fi
 
 # Valid names only. grep exits 1 when no line matches, which is fine.
-/usr/bin/grep -E -x -e "$pattern" "$work/list" > "$work/names" || [ $? -eq 1 ]
-skipped=$(/usr/bin/grep -c -v -E -x -e "$pattern" "$work/list" || [ $? -eq 1 ])
+/usr/bin/grep -a -E -x -e "$pattern" "$work/list" > "$work/names" || [ $? -eq 1 ]
+skipped=$(/usr/bin/grep -a -c -v -E -x -e "$pattern" "$work/list" || [ $? -eq 1 ])
 
 written=0
 while IFS= read -r name; do
@@ -41,6 +41,10 @@ while IFS= read -r name; do
 	fi
 	target="$dir/$name"
 	if [ -e "$target" ] || [ -L "$target" ]; then
+		if [ -L "$target" ] || [ ! -f "$target" ]; then
+			echo "lodo: left $target alone: lodo did not write it" >&2
+			continue
+		fi
 		first=
 		IFS= read -r first < "$target" || :
 		if [ "$first" != "$marker" ]; then
@@ -60,7 +64,7 @@ for f in "$dir"/*; do
 	first=
 	IFS= read -r first < "$f" || :
 	[ "$first" = "$marker" ] || continue
-	if ! /usr/bin/grep -F -x -q -e "${f##*/}" "$work/names"; then
+	if ! /usr/bin/grep -a -F -x -q -e "${f##*/}" "$work/names"; then
 		/bin/rm -f "$f"
 		removed=$((removed + 1))
 	fi

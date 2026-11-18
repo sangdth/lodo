@@ -18,6 +18,7 @@ import (
 	"github.com/sangdth/lodo/internal/brew"
 	"github.com/sangdth/lodo/internal/caddy"
 	"github.com/sangdth/lodo/internal/dnsmasq"
+	"github.com/sangdth/lodo/internal/fsutil"
 	"github.com/sangdth/lodo/internal/paths"
 	"github.com/sangdth/lodo/internal/run"
 	"github.com/sangdth/lodo/internal/store"
@@ -155,7 +156,7 @@ func Failed(checks []Check) []Check {
 // Homebrew's job runs it as the user.
 func (e Env) checkDnsmasq(ctx context.Context, _ []store.Domain, _ []Result) Check {
 	p := e.Paths
-	if !installed(p.Dnsmasq) {
+	if !fsutil.Exists(p.Dnsmasq) {
 		return fail("not installed", "brew install dnsmasq")
 	}
 	for _, label := range system.DnsmasqSystemLabels {
@@ -167,10 +168,10 @@ func (e Env) checkDnsmasq(ctx context.Context, _ []store.Domain, _ []Result) Che
 	switch {
 	case st.Off():
 		return off("turned off: no .test name resolves until it is on")
-	case !st.Running:
-		return fail("not running", fixSetup)
 	case st.User != "" && st.User != p.User:
 		return fail("runs as "+st.User, fixSetup)
+	case !st.Running:
+		return fail("not running", fixSetup)
 	}
 	return pass(fmt.Sprintf("running as %s, pid %d", p.User, st.PID))
 }
@@ -391,7 +392,7 @@ func (e Env) checkCaddy(ctx context.Context, domains []store.Domain, _ []Result)
 	}
 	p := e.Paths
 	if sites == 0 {
-		if installed(p.Caddy) && system.CaddySetUp(p) {
+		if fsutil.Exists(p.Caddy) && system.CaddySetUp(p) {
 			st := brew.Info(ctx, e.Runner, p, "caddy")
 			switch {
 			case st.Off():
@@ -402,23 +403,41 @@ func (e Env) checkCaddy(ctx context.Context, domains []store.Domain, _ []Result)
 		}
 		return skip("no enabled domain has a port")
 	}
-	if !installed(p.Caddy) {
+	if !fsutil.Exists(p.Caddy) {
 		return fail("not installed", "brew install caddy, then lodo setup")
 	}
 	if !system.CaddySetUp(p) {
 		return fail("Homebrew's Caddyfile does not import lodo's", fixSetup)
 	}
+	if !system.CaddyAdminDisabled(p) {
+		return fail("Caddy's admin API is not turned off", fixSetup)
+	}
 	st := brew.Info(ctx, e.Runner, p, "caddy")
 	switch {
 	case st.Off():
 		return off(caddyOff)
+	case st.User != "" && st.User != p.User:
+		return fail("runs as "+st.User, fixSetup)
 	case !st.Running:
+		if c, taken := e.portBlocker(ctx); taken {
+			return c
+		}
 		return fail("not running", fixSetup)
 	}
 	if err := caddy.Validate(ctx, e.Runner, p.Caddy, p.SystemCaddyfile); err != nil {
 		return fail(oneLine(err.Error()), fixApply)
 	}
 	return e.portOwner(ctx, sites)
+}
+
+// portBlocker reports whether another program holds e.HTTPPort so Caddy cannot start.
+func (e Env) portBlocker(ctx context.Context) (Check, bool) {
+	out, _ := e.Runner.Run(ctx, e.Paths.Lsof, "-nP", fmt.Sprintf("-iTCP:%d", e.HTTPPort), "-sTCP:LISTEN")
+	commands := listeners(out)
+	if len(commands) == 0 || slices.ContainsFunc(commands, func(c string) bool { return strings.HasPrefix(c, "caddy") }) {
+		return Check{}, false
+	}
+	return fail(fmt.Sprintf("port %d is taken by %s", e.HTTPPort, commands[0]), "stop "+commands[0]+", then lodo apply"), true
 }
 
 // portOwner checks that Caddy is what listens on the HTTP port.
@@ -451,13 +470,6 @@ func enabled(domains []store.Domain) []store.Domain {
 		}
 	}
 	return on
-}
-
-// installed reports whether a tool is at path. It follows symlinks, such as
-// Homebrew's links into its Cellar, so a dangling link is not installed.
-func installed(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
 }
 
 // readFile returns the content of a file at a path from paths.Paths.

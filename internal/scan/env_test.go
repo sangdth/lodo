@@ -43,6 +43,16 @@ func TestFind_Env(t *testing.T) {
 		t.Errorf("Repo = %q, want the root %q", p.Repo, root)
 	}
 
+	// Duplicate keys in one .env keep the last line, matching dotenv/compose.
+	root = project(t, "api", map[string]string{
+		"package.json": `{"scripts": {"dev": "next dev"}}`,
+		".env":         "API_URL=http://localhost:9999\nAPI_URL=http://localhost:3000\n",
+	})
+	p, _ = Find(root)
+	if want := []EnvLine{{File: ".env", Line: 2, Key: "API_URL", Text: "API_URL=http://localhost:3000"}}; !slices.Equal(p.Env, want) {
+		t.Errorf("duplicate key: Env = %+v, want %+v", p.Env, want)
+	}
+
 	// The root's .env is an app's when the root is the app.
 	root = project(t, "blog", map[string]string{"package.json": `{"scripts": {"dev": "next dev"}}`, ".env": "API_URL=http://localhost:3000\n"})
 	p, _ = Find(root)

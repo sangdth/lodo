@@ -22,6 +22,12 @@ func TestServerIn(t *testing.T) {
 		{name: "a port variable", script: "next dev -p $PORT", tool: "next"},
 		{name: "after another command", script: "next typegen && TZ=UTC next dev -p 3411", tool: "next", port: 3411},
 		{name: "vite config", script: "vite", files: map[string]string{"vite.config.ts": "server: { port: 5171, strictPort: true }"}, tool: "vite", port: 5171},
+		{name: "vite config with comments and preview", script: "vite", files: map[string]string{
+			"vite.config.ts": "// port: 8080\n/* port: 9000 */\nexport default {\n  preview: { port: 4173 },\n  server: { port: 5175 }\n}",
+		}, tool: "vite", port: 5175},
+		{name: "vite config with typescript port type", script: "vite", files: map[string]string{
+			"vite.config.ts": "type Opts = { port: number };\nexport default { server: { port: 5176 } }",
+		}, tool: "vite", port: 5176},
 		{name: "vite config from env", script: "vite", files: map[string]string{"vite.config.ts": "server: { port: Number(env.PORT) || 3000 }"}, tool: "vite"},
 		{name: "vite config without a port", script: "vite", files: map[string]string{"vite.config.js": "export default {}"}, tool: "vite", port: 5173},
 		{name: "vite dev", script: "vite dev --port 5174", tool: "vite", port: 5174},
@@ -74,6 +80,7 @@ func TestDevServer(t *testing.T) {
 		{name: "a script it runs", pkg: `{"scripts": {"dev": "concurrently \"npm:next\" \"npm:stripe\"", "next": "next dev -p 3002"}}`, tool: "next", port: 3002, known: true, hasDev: true},
 		{name: "pnpm run", pkg: `{"scripts": {"dev": "pnpm run web", "web": "astro dev"}}`, tool: "astro", port: 4321, known: true, hasDev: true},
 		{name: "an unknown tool with a port", pkg: `{"scripts": {"dev": "mintlify dev --port 3004"}}`, port: 3004, hasDev: true},
+		{name: "an unknown tool quoted in concurrently", pkg: `{"scripts": {"dev": "concurrently \"mintlify dev --port 3004\""}}`, port: 3004, hasDev: true},
 		{name: "an unknown tool", pkg: `{"scripts": {"dev": "tsx watch src/server.ts"}}`, hasDev: true},
 		{name: "no dev script", pkg: `{"scripts": {"start": "next start"}}`},
 	}
@@ -118,6 +125,7 @@ func TestDevServer_EnvPort(t *testing.T) {
 		{name: "create react app without one", pkg: cra, want: 3000},
 		{name: "next ignores it", pkg: `{"scripts": {"dev": "next dev"}}`, env: "PORT=4000\n", want: 3000},
 		{name: "an unknown command", pkg: `{"scripts": {"dev": "tsx watch src/server.ts"}}`, env: "PORT=4000\n", want: 4000},
+		{name: "tsc -p falls back to .env", pkg: `{"scripts": {"dev": "tsc -p tsconfig.json && tsx watch src/server.ts"}}`, env: "PORT=4000\n", want: 4000},
 		{name: "its -p first", pkg: `{"scripts": {"dev": "tsx watch -p 5000 src/server.ts"}}`, env: "PORT=4000\n", want: 5000},
 	}
 	for _, tt := range tests {

@@ -7,11 +7,11 @@ package brew
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
 
+	"github.com/sangdth/lodo/internal/fsutil"
 	"github.com/sangdth/lodo/internal/paths"
 	"github.com/sangdth/lodo/internal/run"
 )
@@ -46,20 +46,28 @@ type job struct {
 
 // find reads service's job as brew services info does: a plist in the user's
 // LaunchAgents, or a root one in LaunchDaemons, registers it, and launchctl
-// print in the user's domain says whether it is loaded and its pid.
+// print in its domain says whether it is loaded and its pid.
 func find(ctx context.Context, r run.Runner, p paths.Paths, service string) job {
 	j := job{label: labels(service)[0]}
 	for _, label := range labels(service) {
-		if exists(filepath.Join(p.LaunchAgents, label+".plist")) {
+		if fsutil.Exists(filepath.Join(p.LaunchAgents, label+".plist")) {
 			j.label, j.status.Registered, j.status.User = label, true, p.User
 			break
 		}
-		if exists(filepath.Join(p.LaunchDaemons, label+".plist")) {
-			j.label, j.status.Registered, j.status.User = label, true, "root"
-			break
+	}
+	if !j.status.Registered {
+		for _, label := range labels(service) {
+			if fsutil.Exists(filepath.Join(p.LaunchDaemons, label+".plist")) {
+				j.label, j.status.Registered, j.status.User = label, true, "root"
+				break
+			}
 		}
 	}
-	out, err := r.Run(ctx, p.Launchctl, "print", target(p, j.label))
+	domainTarget := target(p, j.label)
+	if j.status.User == "root" {
+		domainTarget = "system/" + j.label
+	}
+	out, err := r.Run(ctx, p.Launchctl, "print", domainTarget)
 	if err != nil {
 		return j // launchctl print fails for a job that is not loaded
 	}
@@ -104,9 +112,4 @@ func Stop(ctx context.Context, r run.Runner, p paths.Paths, service string) erro
 // target is label's job in the user's launchd domain.
 func target(p paths.Paths, label string) string {
 	return "gui/" + strconv.Itoa(p.UID) + "/" + label
-}
-
-func exists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
 }

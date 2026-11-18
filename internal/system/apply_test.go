@@ -248,6 +248,33 @@ func TestSetService_CaddyStopsAfterStart(t *testing.T) {
 	}
 }
 
+func TestApply_TrimsLongLog(t *testing.T) {
+	t.Parallel()
+
+	p, r := setUpMac(t, false)
+	domains := []store.Domain{{Name: "crm.test", Address: "127.0.1.1", Enabled: true}}
+	if _, err := system.WriteFiles(p, domains); err != nil {
+		t.Fatal(err)
+	}
+	line := "Oct  8 18:27:22 dnsmasq[1]: query[A] crm.test from 127.0.0.1\n"
+	big := strings.Repeat(line, (1<<20)/len(line)+10) + "FINAL_LINE\n"
+	writeFile(t, p.Log, big)
+
+	if err := system.Apply(context.Background(), p, r, domains); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(p.Log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) > dnsmasq.MaxTail || !strings.HasSuffix(string(got), "FINAL_LINE\n") {
+		t.Errorf("trimmed log len = %d, suffix ok = %v", len(got), strings.HasSuffix(string(got), "FINAL_LINE\n"))
+	}
+	if !slices.Contains(r.Calls(), restartCalls(p, "dnsmasq")[1]) {
+		t.Errorf("did not restart dnsmasq after trimming log: %q", r.Calls())
+	}
+}
+
 func TestApply_BeforeSetup(t *testing.T) {
 	t.Parallel()
 

@@ -245,14 +245,14 @@ func TestPropose(t *testing.T) {
 			},
 		},
 		{
-			name:    "monorepo: an app on a taken port gets the next address, unknown port gets a note",
+			name:    "monorepo: an app on a taken port stays on the project address with a note, unknown port gets a note",
 			project: Project{Root: "/p/shop", Name: "shop.test", Apps: monorepo},
 			want: Proposal{
 				Address: "127.0.1.1",
 				Add: []store.Domain{
 					{Name: "shop.test", Address: "127.0.1.1", Enabled: true, Root: "/p/shop"},
 					{Name: "storefront.shop.test", Address: "127.0.1.1", Port: 3000, Enabled: true},
-					{Name: "admin.shop.test", Address: "127.0.1.2", Port: 3000, Enabled: true},
+					{Name: "admin.shop.test", Address: "127.0.1.1", Port: 3000, Enabled: true},
 					{Name: "api.shop.test", Address: "127.0.1.1", Enabled: true},
 					{Name: "email.shop.test", Address: "127.0.1.1", Port: 3003, Enabled: true},
 				},
@@ -276,7 +276,7 @@ func TestPropose(t *testing.T) {
 				Listed:  true,
 				Claim:   true,
 				Add: []store.Domain{
-					{Name: "admin.shop.test", Address: "127.0.1.1", Port: 3000, Enabled: true},
+					{Name: "admin.shop.test", Address: "127.0.1.4", Port: 3000, Enabled: true},
 					{Name: "email.shop.test", Address: "127.0.1.4", Port: 3003, Enabled: true},
 				},
 			},
@@ -452,7 +452,7 @@ func TestPropose(t *testing.T) {
 			},
 		},
 		{
-			name:    "two apps on one port get two addresses",
+			name:    "two apps on one port keep the project address with a note",
 			project: Project{Root: "/p/shop", Name: "shop.test", Apps: []App{{Dir: "apps/api", Port: 3000}, {Dir: "apps/mail", Port: 3000}}},
 			want: Proposal{
 				Notes:   []string{"api.shop.test and mail.shop.test both take port 3000; lodo dev binds one app per port: give one of them another port"},
@@ -460,7 +460,7 @@ func TestPropose(t *testing.T) {
 				Add: []store.Domain{
 					{Name: "shop.test", Address: "127.0.1.1", Enabled: true, Root: "/p/shop"},
 					{Name: "api.shop.test", Address: "127.0.1.1", Port: 3000, Enabled: true},
-					{Name: "mail.shop.test", Address: "127.0.1.2", Port: 3000, Enabled: true},
+					{Name: "mail.shop.test", Address: "127.0.1.1", Port: 3000, Enabled: true},
 				},
 			},
 		},
@@ -513,7 +513,7 @@ func TestPropose(t *testing.T) {
 			want: Proposal{
 				Notes:   []string{"api.shop.test and web.shop.test both take port 3000; lodo dev binds one app per port: give one of them another port"},
 				Address: "127.0.1.4", Listed: true, Claim: true,
-				Add: []store.Domain{{Name: "web.shop.test", Address: "127.0.1.1", Port: 3000, Enabled: true}},
+				Add: []store.Domain{{Name: "web.shop.test", Address: "127.0.1.4", Port: 3000, Enabled: true}},
 			},
 		},
 		{
@@ -525,7 +525,7 @@ func TestPropose(t *testing.T) {
 			want: Proposal{
 				Notes:   []string{"shop.test and web.shop.test both take port 3000; lodo dev binds one app per port: give one of them another port"},
 				Address: "127.0.1.4", Listed: true, Claim: true,
-				Add: []store.Domain{{Name: "web.shop.test", Address: "127.0.1.1", Port: 3000, Enabled: true}},
+				Add: []store.Domain{{Name: "web.shop.test", Address: "127.0.1.4", Port: 3000, Enabled: true}},
 			},
 		},
 		{
@@ -559,7 +559,10 @@ func TestPropose(t *testing.T) {
 
 func equal(a, b Proposal) bool {
 	return a.Root == b.Root && a.Name == b.Name && a.Address == b.Address && a.Listed == b.Listed && a.Claim == b.Claim &&
-		slices.Equal(a.Add, b.Add) && a.Compose == b.Compose && slices.Equal(a.Env, b.Env) &&
+		slices.Equal(a.Add, b.Add) && a.Compose == b.Compose &&
+		slices.EqualFunc(a.Env, b.Env, func(x, y Var) bool {
+			return x.File == y.File && x.Line == y.Line && x.Key == y.Key && x.Value == y.Value
+		}) &&
 		slices.Equal(a.Notes, b.Notes)
 }
 
@@ -629,7 +632,11 @@ func TestPropose_SameFolderName(t *testing.T) {
 func TestPropose_AnotherPath(t *testing.T) {
 	t.Parallel()
 
-	root := project(t, "flowy", map[string]string{"package.json": `{"scripts": {"dev": "next dev"}}`, "compose.yaml": "services: {}\n"})
+	root := project(t, "flowy", map[string]string{
+		"package.json": `{"scripts": {"dev": "next dev"}}`,
+		"compose.yaml": "services:\n  db:\n    image: postgres\n    ports: [\"${DOCKER_HOST_IP:-127.0.0.1}:5432:5432\"]\n",
+		".env":         "DATABASE_URL=postgres://localhost:5432/flowy\n",
+	})
 	upper := strings.ToUpper(root)
 	if _, err := os.Stat(upper); err != nil {
 		t.Skip("this file system tells case apart")
@@ -640,7 +647,11 @@ func TestPropose_AnotherPath(t *testing.T) {
 	}
 	domains := []store.Domain{{Name: "flowy.test", Address: "127.0.1.2", Port: 3000, Enabled: true, Root: root, Compose: filepath.Join(root, "compose.yaml")}}
 	got := Propose(p, domains, "", gone)
-	if want := (Proposal{Root: upper, Name: "flowy.test", Address: "127.0.1.2", Listed: true}); !equal(got, want) {
+	want := Proposal{
+		Root: upper, Name: "flowy.test", Address: "127.0.1.2", Listed: true,
+		Env: []Var{{File: ".env", Line: 1, Key: "DATABASE_URL", Value: "postgres://flowy.test:5432/flowy"}},
+	}
+	if !equal(got, want) {
 		t.Errorf("Propose =\n%+v\nwant\n%+v", got, want)
 	}
 }
