@@ -35,6 +35,8 @@ Usage:
   lodo doctor     check every part and print what to fix
   lodo scan       print what the project in this folder needs; --json for scripts,
                   --name hugger or --name hugger.custom to name the project
+  lodo prune      remove listed names whose project folder is gone; --worktree
+                  also removes the git worktree in this folder
   lodo uninstall  remove what setup installed; keeps domains.json
   lodo version    print the version
   lodo help       print this help
@@ -64,7 +66,7 @@ func dispatch(args []string, stdout, stderr io.Writer) int {
 			return 2
 		}
 		return runApp(command, options{}, stdout, stderr)
-	case "scan", "dev":
+	case "scan", "dev", "prune":
 		o, err := parseFlags(command, args[1:])
 		if err != nil {
 			fmt.Fprintf(stderr, "lodo: %s: %v\n\n%s", command, err, usage)
@@ -88,28 +90,33 @@ func dispatch(args []string, stdout, stderr io.Writer) int {
 }
 
 // options are the commands' flags: scan's JSON output and the project's name
-// the user chose, with or without .test, dev's --edit and -y or --auto, and
-// the command exec runs.
+// the user chose, with or without .lodo, dev's --edit and -y or --auto,
+// prune's --worktree, and the command exec runs.
 type options struct {
-	json bool
-	name string
-	edit bool
-	auto bool
-	args []string
+	json     bool
+	name     string
+	edit     bool
+	auto     bool
+	worktree bool
+	args     []string
 }
 
-// parseFlags reads the flags of command, scan or dev.
+// parseFlags reads the flags of command: scan, dev or prune.
 func parseFlags(command string, args []string) (options, error) {
 	var o options
 	fs := flag.NewFlagSet(command, flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
-	fs.StringVar(&o.name, "name", "", "")
-	if command == "scan" {
+	switch command {
+	case "scan":
 		fs.BoolVar(&o.json, "json", false, "")
-	} else {
+		fs.StringVar(&o.name, "name", "", "")
+	case "dev":
+		fs.StringVar(&o.name, "name", "", "")
 		fs.BoolVar(&o.edit, "edit", false, "")
 		fs.BoolVar(&o.auto, "y", false, "")
 		fs.BoolVar(&o.auto, "auto", false, "")
+	case "prune":
+		fs.BoolVar(&o.worktree, "worktree", false, "")
 	}
 	if err := fs.Parse(args); err != nil {
 		return o, err

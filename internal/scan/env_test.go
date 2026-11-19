@@ -125,6 +125,13 @@ func TestRepoRoot(t *testing.T) {
 			t.Errorf("repoRoot(%q) = %q, want %q", dir, got, want)
 		}
 	}
+	subdir := filepath.Join(worktree, "apps", "web")
+	write(t, filepath.Join(subdir, "package.json"), "{}")
+	for dir, want := range map[string]string{worktree: worktree, subdir: worktree, main: "", submodule: "", plain: ""} {
+		if got := WorktreeRoot(dir); got != want {
+			t.Errorf("WorktreeRoot(%q) = %q, want %q", dir, got, want)
+		}
+	}
 }
 
 func TestPropose_Env(t *testing.T) {

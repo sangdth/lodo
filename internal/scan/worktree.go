@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/sangdth/lodo/internal/compose"
 	"github.com/sangdth/lodo/internal/store"
 )
 
@@ -12,6 +13,20 @@ import (
 // checkout is another folder.
 func (p Project) Worktree() bool {
 	return p.Repo != "" && !SameFolder(p.Repo, p.Root)
+}
+
+// WorktreeRoot returns the root of the git worktree dir is in, or "" when dir
+// is outside a git repository or in its main checkout.
+func WorktreeRoot(dir string) string {
+	root, ok := compose.ProjectRoot(dir)
+	if !ok {
+		return ""
+	}
+	p := Project{Root: root, Repo: repoRoot(root)}
+	if !p.Worktree() {
+		return ""
+	}
+	return root
 }
 
 // mainProject returns the project of the main checkout of the repository p is
