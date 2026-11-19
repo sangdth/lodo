@@ -20,11 +20,9 @@ import (
 // dev starts the Node apps of the project dir is in on the project's
 // addresses, once ready.
 func (a app) dev(ctx context.Context, dir string, o options) int {
-	if o.name != "" {
-		if err := store.ValidateProject(store.ResolveName(o.name)); err != nil {
-			a.fail(fmt.Errorf("--name %s: %w", o.name, err))
-			return 2
-		}
+	var ok bool
+	if o.name, ok = a.projectFlag(o.name); !ok {
+		return 2
 	}
 	domains, ok := a.ready(ctx, "lodo dev starts")
 	if !ok {
@@ -45,12 +43,7 @@ func (a app) dev(ctx context.Context, dir string, o options) int {
 // With o.auto the form saves what the scan proposes with no key pressed: a
 // new worktree of a listed project gets <main><n>.lodo on 127.0.1.<n>.
 func (a app) startDev(ctx context.Context, dir string, domains []store.Domain, o options) error {
-	if o.name != "" {
-		o.name = store.ResolveName(o.name)
-		if err := store.ValidateProject(o.name); err != nil {
-			return fmt.Errorf("--name %s: %w", o.name, err)
-		}
-	}
+	o.name = store.ResolveName(o.name)
 	backend := tui.NewBackend(a.paths, a.runner)
 	_, proposal, ok := backend.Scan(ctx, dir, o.name, domains)
 	if !ok {

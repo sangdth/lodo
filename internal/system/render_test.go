@@ -270,13 +270,13 @@ func TestScript_AgreesWithStore(t *testing.T) {
 	t.Parallel()
 
 	names := []string{
-		"a.test", "1.test", "a--b.test", "xn--bcher-kva.test", "a.b.c.d.test", "a.local.test",
+		"flowy.lodo", "a.custom", "a.test", "1.test", "a--b.test", "xn--bcher-kva.test", "a.b.c.d.test", "a.local.test",
 		strings.Repeat("a", 63) + ".test",
 		strings.Repeat("a", 64) + ".test",
 		strings.Repeat("abc.", 61) + "a.test",     // 250 characters
 		strings.Repeat("abc.", 61) + "abcde.test", // 254 characters
-		"test", "a-.test", "-a.test", "TEST", "a.TEST", "a.test.", "a..test", ".a.test", "flowy.local",
-		"a.tests", "localhost", "a.test\r", "a\tb.test", "a b.test", "é.test", "a/b.test", "..test",
+		"test", "lodo", "a-.test", "-a.test", "TEST", "a.TEST", "a.test.", "a..test", ".a.test", "flowy.local",
+		"flowy.localhost", "127.0.0.1", "a.tests", "localhost", "a.test\r", "a\tb.test", "a b.test", "é.test", "a/b.test", "..test",
 	}
 	p := paths.ForTest(t.TempDir())
 	if _, stderr, err := runScript(t, p, strings.Join(names, "\n")+"\n"); err != nil {

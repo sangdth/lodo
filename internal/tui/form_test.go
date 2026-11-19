@@ -194,7 +194,7 @@ func TestForm_NameSuffix(t *testing.T) {
 		typed string
 		want  string // the name field as drawn, without styles
 	}{
-		{name: "empty shows the placeholder", typed: "", want: "app.flowy .lodo"},
+		{name: "empty shows the placeholder", typed: "", want: "flowy .lodo"},
 		{name: "labels", typed: "web", want: "web .lodo"},
 		{name: "custom domain", typed: "web.custom", want: "web.custom "},
 		{name: "a suffix typed out of habit", typed: "web.lodo", want: "web.lodo "},

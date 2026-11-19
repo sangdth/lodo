@@ -189,6 +189,10 @@ func (s Setup) setScan(msg setupScanMsg) (Setup, tea.Cmd) {
 		s.scanned, s.found, s.submitting, s.err = true, false, false, scan.ErrNoProject
 		return s, nil
 	}
+	if !s.scanned && msg.proposal.Name == "" && s.origin.Name != "" {
+		s.seq++
+		return s, s.scan(s.origin.Name, s.domains)
+	}
 	first := !s.scanned
 	s.scanned, s.project, s.proposal = true, msg.project, msg.proposal
 	if first {
@@ -200,12 +204,13 @@ func (s Setup) setScan(msg setupScanMsg) (Setup, tea.Cmd) {
 	}
 	if first && s.origin.Name != "" && s.origin.Name != s.proposal.Name {
 		s.name.SetValue(store.TrimDefaultSuffix(s.origin.Name))
-		s.submitting = s.origin.Auto
-		s, cmd := s.rescan()
-		s.focusOn(min(s.focus, s.stops()-1))
+		next, cmd := s.rescan()
 		if cmd != nil {
-			return s, cmd
+			next.submitting = s.origin.Auto
+			next.focusOn(min(next.focus, next.stops()-1))
+			return next, cmd
 		}
+		s.dirty = true
 	}
 	s.focusOn(min(s.focus, s.stops()-1)) // the toggles shown may have changed
 	if first && s.found && s.origin.Auto {
@@ -234,7 +239,6 @@ func (s *Setup) fill() {
 	s.errAt, s.errMsg = -1, "" // the rows it was about are gone
 	inputs := newInputs(store.Suffix)
 	s.name, s.address = inputs[fieldName], inputs[fieldAddress]
-	s.name.Placeholder = "flowy"
 	s.name.SetValue(store.TrimDefaultSuffix(p.Name))
 	s.address.SetValue(p.Address)
 
@@ -626,6 +630,11 @@ func (s Setup) saveSetup(next []store.Domain, owner store.Domain, link bool) tea
 					if !ok {
 						msg.err = scan.ErrNoProject
 						return nil
+					}
+					if !prop.Listed && cur.origin.Name != "" {
+						if _, p2, ok2 := b.Scan(ctx, cur.origin.Dir, cur.origin.Name, fresh); ok2 && (p2.CanAccept() || p2.Listed) {
+							prop = p2
+						}
 					}
 					cur.project, cur.proposal = proj, prop
 					cur.fill()

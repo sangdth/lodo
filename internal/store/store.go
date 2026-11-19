@@ -161,10 +161,8 @@ func ResolveName(name string) string {
 // form field shows "flowy" with ".lodo" dimmed and keeps a custom domain like
 // "flowy.custom" intact.
 func TrimDefaultSuffix(name string) string {
-	if Project(name) == name {
-		if label, ok := strings.CutSuffix(name, Suffix); ok && !strings.Contains(label, ".") {
-			return label
-		}
+	if label, ok := strings.CutSuffix(name, Suffix); ok && label != "" && !strings.Contains(label, ".") {
+		return label
 	}
 	return name
 }

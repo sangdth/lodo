@@ -18,13 +18,9 @@ import (
 // changes nothing; lodo dev's setup form applies it, and lodo dev and lodo
 // exec set its variables.
 func (a app) scan(ctx context.Context, dir string, o options) int {
-	name := ""
-	if o.name != "" {
-		name = store.ResolveName(o.name)
-		if err := store.ValidateProject(name); err != nil {
-			a.fail(fmt.Errorf("--name %s: %w", o.name, err))
-			return 2
-		}
+	name, ok := a.projectFlag(o.name)
+	if !ok {
+		return 2
 	}
 	domains, err := store.Load(a.paths.DomainsJSON)
 	if err != nil {
