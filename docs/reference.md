@@ -54,7 +54,7 @@ In a project, `lodo dev`:
    and exits. With `-y` or `--auto` the form saves what it proposes with no key pressed, and stays open only when
    that breaks a rule;
 2. warns about each app the scan found that has no name: `warn  apps/api has no name: lodo dev --edit adds
-   api.shop.test`;
+   api.shop.lodo`;
 3. picks the package manager: `packageManager` in the project's `package.json`, else the lock file
    (`pnpm-lock.yaml`, `yarn.lock`, `bun.lock` or `bun.lockb`, `package-lock.json`), else npm. It refuses a
    project whose `package.json` has no `dev` script;
@@ -63,17 +63,17 @@ In a project, `lodo dev`:
    manager:
 
 ```text
-web.shop.test  https://web.shop.test  -> 127.0.1.1:3001
+web.shop.lodo  https://web.shop.lodo  -> 127.0.1.1:3001
 env   DOCKER_HOST_IP=127.0.1.1
-env   DATABASE_URL=postgres://***@shop.test:5432/shop
+env   DATABASE_URL=postgres://***@shop.lodo:5432/shop
 starting: pnpm run dev
 ```
 
 The apps get their address from a small Node hook. `lodo dev` writes `~/.config/lodo/bind.cjs` and
-`~/.config/lodo/dev/shop.test.cjs`, which holds the project's ports and addresses, and runs the dev script with
-`NODE_OPTIONS="--require …/shop.test.cjs"`, which every Node process under it loads, through pnpm and turbo too.
+`~/.config/lodo/dev/shop.lodo.cjs`, which holds the project's ports and addresses, and runs the dev script with
+`NODE_OPTIONS="--require …/shop.lodo.cjs"`, which every Node process under it loads, through pnpm and turbo too.
 A server that listens on one of the project's ports with no host, `localhost`, `127.0.0.1`, `::1`, `0.0.0.0` or
-`::` then listens on the project's address instead; other ports stay as they are. The hook also adds `.shop.test`
+`::` then listens on the project's address instead; other ports stay as they are. The hook also adds `.shop.lodo`
 to `__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS`, so Vite accepts the project's names with no `allowedHosts`. No project
 file changes. Only Node apps get it: start any other dev server on its address yourself, and run
 `docker compose up` yourself, from the dev script or with `lodo exec`. The hook tells apps apart only by port, so
@@ -92,21 +92,21 @@ variable beats a `.env` file in dotenv, Next, Node's `--env-file` and `process.l
   compose file, so each worktree gets its own containers and volumes, and starts with an empty database. A fixed
   `container_name:` still clashes between worktrees: leave it out. The main checkout keeps the file's name.
 - In each app's `.env`, a host that is a name of another checkout of the same git repository, or of an unlisted
-  `.test` project the `.env` was written for, becomes this checkout's: in a worktree named `hugger9.test` whose main
-  checkout is `hugger.test`'s folder (or whose `.env` names an unlisted `hugger.test`),
-  `postgresql://…@hugger.test:5432` becomes `postgresql://…@hugger9.test:5432`, `SMTP_HOST=hugger.test`
-  becomes `SMTP_HOST=hugger9.test` and `http://mail.hugger.test` becomes `http://mail.hugger9.test`. A name this
+  `.lodo` project the `.env` was written for, becomes this checkout's: in a worktree named `hugger9.lodo` whose main
+  checkout is `hugger.lodo`'s folder (or whose `.env` names an unlisted `hugger.lodo`),
+  `postgresql://…@hugger.lodo:5432` becomes `postgresql://…@hugger9.lodo:5432`, `SMTP_HOST=hugger.lodo`
+  becomes `SMTP_HOST=hugger9.lodo` and `http://mail.hugger.lodo` becomes `http://mail.hugger9.lodo`. A name this
   checkout lacks stays, with a note.
 - An http or ws URL on `localhost` or `127.0.0.1` on a port a name serves becomes that name, https when HTTPS is
-  on: `API_URL=http://localhost:3001` becomes `API_URL=http://web.media.test`. Any URL on a port the compose file
-  binds to `DOCKER_HOST_IP` becomes `<project>.test:<port>`, such as `postgres://…@media.test:5432`. Another http
+  on: `API_URL=http://localhost:3001` becomes `API_URL=http://web.media.lodo`. Any URL on a port the compose file
+  binds to `DOCKER_HOST_IP` becomes `<project>.lodo:<port>`, such as `postgres://…@media.lodo:5432`. Another http
   or ws port gets a note, and the rest stays: `localhost` still reaches it.
 
 Every app of the project gets one environment, so a key two apps' `.env` files set to values that come out
 different gets a note and stays as each file has it. A value over more lines, or with a `\` or a `$`, which
 loaders read differently, stays too, with a note. Only each app's `.env` is read; `.env.local` and
 `.env.development` keep their values, except for a key lodo sets. An exported value also reaches `${…}` in a
-compose file, and a container can't resolve a `.test` name: give a container its own value in `environment`.
+compose file, and a container can't resolve a `.lodo` name: give a container its own value in `environment`.
 lodo prints a URL's user and password as `***`. Restart the dev servers after editing a `.env`, since an
 exported variable keeps its value until then.
 
@@ -119,14 +119,14 @@ project's names from a first `lodo dev`, and prints the variables on stderr, so 
 ```text
 lodo dev · ~/Projects/flowy
 
-Project   flowy .test   address 127.0.1.2
+Project   flowy .lodo   address 127.0.1.2
 
 Apps
-  apps/web  web.flowy.test   port 3000
-  apps/api  api.flowy.test   port 4000
+  apps/web  web.flowy.lodo   port 3000
+  apps/api  api.flowy.lodo   port 4000
 
 Services  compose.dev.yaml
-  mail      mail.flowy.test  port 8025
+  mail      mail.flowy.lodo  port 8025
 
 [x] link compose.dev.yaml  lodo dev sets DOCKER_HOST_IP=127.0.1.2
 
@@ -135,8 +135,8 @@ tab/shift+tab move  space toggle  enter save + start  esc cancel
 
 The form shows what [the scan](#what-the-scan-reads) found: the project's name and address, then a row per app and
 per web page in its compose file, with a label and a port. The rows hold the project's listed names first, then the
-ones the scan proposes. Each label gets `.<project>.test`; an empty label gives the app the project's name alone,
-such as `flowy.test`, and only one row may have it: the root's app, when the project has one. No label may be
+ones the scan proposes. Each label gets `.<project>.lodo`; an empty label gives the app the project's name alone,
+such as `flowy.lodo`, and only one row may have it: the root's app, when the project has one. No label may be
 another app's folder name, since a later scan ties each app to its folder's name. The toggle links the compose
 file; the scan's notes follow it. `tab` and `shift+tab` move, `space` turns the toggle on or off, `enter` saves
 everything in one change, and `esc` cancels. A field that breaks a rule says why under it when you press `enter`.
@@ -146,21 +146,23 @@ title, the status line and the keys stay put, a dim `↑ more` or `↓ more` sta
 with the focus stays in view. At the last stop, `tab` scrolls the lines under it into view before it goes back to
 the top.
 
-The project's name is yours: the form suggests the folder's, such as `flowy.test`, and the subdomains follow what
-you type. In a git worktree whose main checkout has a name, it suggests that name with the number of the address
-the worktree gets: `hugger12.test` on `127.0.1.12` for a worktree of `hugger.test`, at the lowest free address,
-or at one that holds only a deleted worktree's `hugger<n>.test`, which the new worktree takes over with its
+The project's name is yours: the form suggests the folder's, such as `flowy.lodo`, and the subdomains follow what
+you type. Typing a bare label appends `.lodo`; typing a dot, such as `flowy.custom`, uses that custom domain
+instead. `lodo dev --name flowy.custom` (or `lodo dev -y --name flowy.custom`) sets or changes it from the command
+line. In a git worktree whose main checkout has a name, it suggests that name with the number of the address
+the worktree gets: `hugger12.lodo` on `127.0.1.12` for a worktree of `hugger.lodo`, at the lowest free address,
+or at one that holds only a deleted worktree's `hugger<n>.lodo`, which the new worktree takes over with its
 settings and its compose containers and data. Each name gets the HTTPS its main checkout's name with the same
 label has. `lodo dev -y` in a new worktree saves all of this without the form. When the suggested name belongs to
-another folder that is still there, such as a second clone of the repo, it suggests the first of `flowy-2.test`,
-`flowy-3.test` … that no listed name uses, with an address of its own. Once
+another folder that is still there, such as a second clone of the repo, it suggests the first of `flowy-2.lodo`,
+`flowy-3.lodo` … that no listed name uses, with an address of its own. Once
 saved, the name keeps the project's folder as `root` in `domains.json`, so later scans know the project by it, even
 when you reach the folder by another path, such as with other capital letters. A name already listed that links a
 compose file in the project counts too, unless its project's folder is another one that is still there. A link to a
 compose file that is gone, after you rename the project's folder or move the file, counts as none, and the form
 offers the project's file again. Typing a listed name that has no folder, or whose folder is gone, takes that name
 over: it keeps its settings and gets this folder, and the project's old name goes with its names. A listed name
-whose folder is still there is refused: `flow.test belongs to ~/Projects/flow: give this project another name`. A
+whose folder is still there is refused: `flow.lodo belongs to ~/Projects/flow: give this project another name`. A
 later scan keeps a listed name of the project on an app's port and address as that app's.
 
 ### The dashboard
@@ -171,11 +173,11 @@ later scan keeps a listed name of the project on an app's port and address as th
  lodo   caddy ●   dnsmasq ●   loopback ●   resolvers ●
  ─────────────────────────────────────────────────────────────────────────────────────────────
  name                     enabled  address          port   compose                       check
- ● blog.test              ✓        127.0.1.1               ~/Code/blog/compose.dev.yaml  dns ✓
-   ○ api.blog.test        ✓        127.0.1.1        3001                                 dns ✓
-   ● dashboard.blog.test  ✓        127.0.1.1        3000                                 dns ✓
- ● media.test             ✓        127.0.1.3               –                             dns ✓
- ○ old.test                        127.0.0.1                                             –
+ ● blog.lodo              ✓        127.0.1.1               ~/Code/blog/compose.dev.yaml  dns ✓
+   ○ api.blog.lodo        ✓        127.0.1.1        3001                                 dns ✓
+   ● dashboard.blog.lodo  ✓        127.0.1.1        3000                                 dns ✓
+ ● media.lodo             ✓        127.0.1.3               –                             dns ✓
+ ○ old.lodo                        127.0.0.1                                             –
    Add new domain
 ```
 
@@ -183,12 +185,12 @@ The top line shows Caddy, dnsmasq, loopback and resolvers (doctor checks 8, 1, 3
 works, a dim `○` is off (turned off, or Caddy not running while no name has a port), and a red `○` needs
 `lodo doctor`. `tab` moves the keys to Caddy and dnsmasq: `←` `→` (or `h` `l`) pick one, `space` turns it on or
 off, `tab` goes back to the names. A service turned off stays off through every change until you turn it on; with
-dnsmasq off no `.test` name resolves, and lodo removes its `/etc/resolver` files, so no other account's process
-can answer `.test` lookups on dnsmasq's port. Turning dnsmasq on writes them again.
+dnsmasq off no `.lodo` name resolves, and lodo removes its `/etc/resolver` files, so no other account's process
+can answer `.lodo` lookups on dnsmasq's port. Turning dnsmasq on writes them again.
 
 `enabled` has a `✓` for a name that is on: lodo writes it into dnsmasq's config, the resolver files and, with a
 port, Caddy's sites. The mark before a name sums up its check column with the top line's marks: a green `●` when
-every check passed, a red `○` when one failed, like `api.blog.test`'s app above, and a dim `○` when nothing was
+every check passed, a red `○` when one failed, like `api.blog.lodo`'s app above, and a dim `○` when nothing was
 checked, because the name is off or a service you turned off explains it. The selected row draws its mark without
 color, which would cut the row's highlight. Each change saves `domains.json`, applies it and checks every name.
 The status line at the bottom, above the key help, says what failed, or why the selected name fails.
@@ -242,7 +244,7 @@ scan reads, and never writes:
 - the git repository's main checkout, from the root's `.git`: the root itself, or for a worktree the folder its
   `.git` file points into.
 
-It proposes the project's name, a subdomain per app, such as `admin.media.test` with its port, `mail.media.test`
+It proposes the project's name, a subdomain per app, such as `admin.media.lodo` with its port, `mail.media.lodo`
 for Mailpit's inbox, the compose file to link and the variables `lodo dev` sets. All of a project's apps share its
 address, and so does the inbox. Every app keeps its own port; when two apps share a port on the address, the scan
 adds a note and the setup form requires distinct ports, since `lodo dev` binds one app per port. The inbox is
@@ -259,7 +261,7 @@ started, or `none`.
 - A port with no address, or with `127.0.0.1`, binds `${DOCKER_HOST_IP:-127.0.0.1}`. Compose takes only an IP
   there, not a name, and a port with no address takes the port on every address, so projects collide.
 - A `localhost` URL in `environment` takes the project's name, or the subdomain Caddy serves on that port:
-  `http://localhost:3000` becomes `http://dashboard.blog.test`. A user and password in the URL stay.
+  `http://localhost:3000` becomes `http://dashboard.blog.lodo`. A user and password in the URL stay.
 - Healthchecks, commands and comments keep `localhost`: inside a container it is the container itself.
 
 `l` links the selected name to the project lodo started in, saving the compose path. The setup form's link toggle
@@ -291,35 +293,36 @@ setup`.
 An OAuth provider sends the browser back to a callback URL on your app. With HTTPS on, a local app gets the same
 shape of URL as production, and `Secure` cookies work:
 
-1. Turn HTTPS on for the name, say `app.blog.test`.
-2. Point the app at it: `BETTER_AUTH_URL=https://app.blog.test` for Better Auth, `AUTH_URL` (or `NEXTAUTH_URL`)
+1. Turn HTTPS on for the name, say `app.blog.lodo`.
+2. Point the app at it: `BETTER_AUTH_URL=https://app.blog.lodo` for Better Auth, `AUTH_URL` (or `NEXTAUTH_URL`)
    for Auth.js. A value left at `http://localhost:3000` sends the browser back to `localhost` after sign-in.
-3. Register the callback with the provider: `https://app.blog.test/api/auth/callback/github` for Better Auth
+3. Register the callback with the provider: `https://app.blog.lodo/api/auth/callback/github` for Better Auth
    and Auth.js; other libraries use their own path.
 
 Step 2 matters because Next builds `request.url` from its own host and port, not from the request: code that
 builds an absolute URL from it, such as an OAuth callback, gets `http://localhost:3000`. The `Host` and
-`X-Forwarded-Host` headers keep the `.test` name, so code and libraries that read them, such as Auth.js with
-`trustHost`, get it. Redirects within the app stay on the `.test` name: Next sends them as relative URLs.
+`X-Forwarded-Host` headers keep the `.lodo` name, so code and libraries that read them, such as Auth.js with
+`trustHost`, get it. Redirects within the app stay on the `.lodo` name: Next sends them as relative URLs.
 
-Providers check callback URLs differently. A GitHub OAuth app takes any URL, so the `.test` callback works.
+Providers check callback URLs differently. A GitHub OAuth app takes any URL, so the `.lodo` callback works.
 **Google refuses it:** its redirect URIs must use a host whose top-level domain is on the public suffix list,
-and `.test` never is. Only `localhost` is exempt. For Google sign-in, either:
+and `.lodo` never is. Only `localhost` is exempt. For Google sign-in, either:
 
 - run the sign-in on `localhost`: callback `http://localhost:3000/api/auth/callback/google`, the app's URL set
   to `http://localhost:3000`, and the app opened there while you work on sign-in. Start it with `pnpm dev`, not
   `lodo dev`, for that: it then listens on `127.0.0.1` and shares port 3000 with every other project;
-- or use a name under a domain you own, such as `app.dev.example.com`. Google only checks the URL's text and
-  never visits it, so the name doesn't need a public DNS record. lodo serves only `.test` names, so such a name
-  needs its own DNS and certificate setup.
+- or give the project a custom domain with a public suffix, such as `lodo dev --name blog.org` (which serves
+  `app.blog.org`). Google only checks the URL's text and never visits it, so the name doesn't need a public DNS
+  record; note that `/etc/resolver/blog.org` then routes `blog.org` locally on your Mac while enabled.
 
 ### Rules
 
-- **Names end in `.test`.** macOS sends a name like `media.local`, with one label before `.local`, to Bonjour
-  only. Labels use `a-z`, `0-9` and inner `-`, 1–63 characters each.
-- **A project is the last two labels.** `blog.test`, `api.blog.test` and `test.blog.test` are one project.
-- **A subdomain shares its project's address or takes its own.** The form fills in the parent's. While `blog.test`
-  is on, an unlisted `foo.blog.test` resolves to its address anyway, and so does a listed one you turn off.
+- **Names default to `.lodo` and allow custom domains.** Typing a single label appends `.lodo`; include a dot to
+  use another top-level domain. `.local` and `.localhost` are refused: macOS sends `.local` to Bonjour only, and
+  browsers hardcode `.localhost` to `127.0.0.1`. Labels use `a-z`, `0-9` and inner `-`, 1–63 characters each.
+- **A project is the last two labels.** `blog.lodo`, `api.blog.lodo` and `test.blog.lodo` are one project.
+- **A subdomain shares its project's address or takes its own.** The form fills in the parent's. While `blog.lodo`
+  is on, an unlisted `foo.blog.lodo` resolves to its address anyway, and so does a listed one you turn off.
 - **An own address belongs to one project.** The own block is `127.0.1.1`–`127.0.1.50`. `127.0.0.1`, or any
   other address in `127.0.0.0/8`, can be shared.
 - **A port makes `http://<name>` reach `<address>:<port>`** through Caddy on port 80, and `https://<name>` too,
@@ -346,8 +349,8 @@ fails. The dashboard and the setup form do the same after every change. A name w
 
 ```json
 {"version": 1, "domains": [
-  {"name": "blog.test", "address": "127.0.1.1", "enabled": true},
-  {"name": "dashboard.blog.test", "address": "127.0.1.1", "port": 3000, "enabled": true}
+  {"name": "blog.lodo", "address": "127.0.1.1", "enabled": true},
+  {"name": "dashboard.blog.lodo", "address": "127.0.1.1", "port": 3000, "enabled": true}
 ]}
 ```
 
@@ -372,9 +375,9 @@ fails. The dashboard and the setup form do the same after every change. A name w
 
 `lodo scan` prints what the project in the current folder lacks from the list, as the setup form shows it, and
 the variables `lodo dev` sets, and changes nothing. `--json` prints it for scripts,
-with the same `***` in URLs, and `--name hugger` proposes it under `hugger.test`. A listed `hugger.test` with no
-folder, or a gone one, becomes this folder's (`save  this folder as hugger.test's project`); one whose folder is
-still there gets only the note `hugger.test belongs to <folder>: give this project another name`. It exits 1
+with the same `***` in URLs, and `--name hugger` proposes it under `hugger.lodo`. A listed `hugger.lodo` with no
+folder, or a gone one, becomes this folder's (`save  this folder as hugger.lodo's project`); one whose folder is
+still there gets only the note `hugger.lodo belongs to <folder>: give this project another name`. It exits 1
 outside a project.
 
 `lodo uninstall` removes what setup installed; see [Uninstall](#uninstall). `lodo version` prints the version.
@@ -391,7 +394,7 @@ outside a project.
   has only `127.0.0.1` by default.
 - **Caddy** runs as you on port 80, and on 443 for HTTPS names. Homebrew's `Caddyfile` imports
   `~/.config/lodo/Caddyfile`, which has one `http://<name>` site per enabled name with a port, forwarding to
-  `<address>:<port>`; an HTTPS name's site also lists `https://<name>`. The app gets the `.test` name as `Host`,
+  `<address>:<port>`; an HTTPS name's site also lists `https://<name>`. The app gets the `.lodo` name as `Host`,
   so origin checks such as Mailpit's live inbox pass. On Next's dev paths, a site turns its own `Origin` into
   `http://localhost:<port>`, which Next's dev check accepts with no `allowedDevOrigins`; any other page's `Origin`
   passes unchanged, so Next still refuses its hot reload requests.
@@ -409,27 +412,27 @@ Start with `lodo doctor`: every failed check prints the command that fixes it.
 - **`can't assign requested address` from Docker, or `EADDRNOTAVAIL` from Node:** the loopback addresses are
   missing. Check 3; `lodo setup` adds them again.
 - **`sudo: a password is required`:** the sudoers rule is missing or the script changed. Check 4, then `lodo setup`.
-- **`dig media.test` finds nothing:** expected. `dig` and `nslookup` skip `/etc/resolver`; apps and browsers use
-  it. Test with `dscacheutil -q host -a name media.test`, or ask dnsmasq: `dig @127.0.0.1 -p 53535 media.test`.
+- **`dig media.lodo` finds nothing:** expected. `dig` and `nslookup` skip `/etc/resolver`; apps and browsers use
+  it. Test with `dscacheutil -q host -a name media.lodo`, or ask dnsmasq: `dig @127.0.0.1 -p 53535 media.lodo`.
 - **A name isn't found right after you add it, or the log view shows no queries:** the lookup never reached
   dnsmasq. Its resolver file is missing (check 4), or a VPN is capturing DNS.
 - **Check 4 says a resolver file is "not written by lodo":** someone made it by hand, and lodo never replaces such
   a file. Run the `sudo rm` that doctor prints, then `lodo apply`.
 - **A name resolves to the wrong address:** an `/etc/hosts` line for it wins over DNS. The name's check points
   at the line; remove it.
-- **`foo.blog.test` resolves although it isn't listed:** expected. dnsmasq's `address=` lines and the resolver
+- **`foo.blog.lodo` resolves although it isn't listed:** expected. dnsmasq's `address=` lines and the resolver
   files both match subdomains. Add a row only to give it another address or a port.
-- **`502 Bad Gateway` on `http://dashboard.blog.test`:** Caddy is up but nothing listens on `127.0.1.1:3000`. When
+- **`502 Bad Gateway` on `http://dashboard.blog.lodo`:** Caddy is up but nothing listens on `127.0.1.1:3000`. When
   the app isn't running, check 7 lists it as not running. When it listens on `localhost` instead, as Vite does
   when started without `lodo dev` (Node puts `localhost` on `::1`), the check says `an app listens on [::1]:3000,
   not on the name's address`: start it with `lodo dev`. An app that serves HTTPS itself gets the same 502; the
   check says it `gave Caddy no HTTP answer`. Docker ports bind `DOCKER_HOST_IP`.
 - **The wrong app answers:** a Node app listening on `*:3000` answers on every loopback address, so it shadows
   other projects' port 3000. Start each project with `lodo dev`, which puts its apps on its own address.
-- **`http://dashboard.blog.test` refuses the connection:** Caddy isn't running or another program holds port 80.
+- **`http://dashboard.blog.lodo` refuses the connection:** Caddy isn't running or another program holds port 80.
   Check 8 names it.
 - **Names resolve for one app but not another:** a VPN or Cloudflare WARP is capturing DNS.
-- **Containers can't reach `media.test`:** they don't need to. Inside Docker they use the service name.
+- **Containers can't reach `media.lodo`:** they don't need to. Inside Docker they use the service name.
 
 ## Uninstall
 

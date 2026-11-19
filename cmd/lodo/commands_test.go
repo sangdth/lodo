@@ -87,13 +87,13 @@ func TestApp_Apply(t *testing.T) {
 		t.Parallel()
 		p, r := paths.ForTest(t.TempDir()), run.NewFake()
 		setUpFakeMac(t, p, r)
-		if err := store.Save(p.DomainsJSON, []store.Domain{{Name: "crm.test", Address: "127.0.1.1", Enabled: true}}); err != nil {
+		if err := store.Save(p.DomainsJSON, []store.Domain{{Name: "crm.lodo", Address: "127.0.1.1", Enabled: true}}); err != nil {
 			t.Fatal(err)
 		}
 		var stdout, stderr strings.Builder
 		a := newApp(p, r, &stdout, &stderr)
 		a.env.DNS = "127.0.0.1:1"
-		if code := a.apply(t.Context()); code != 1 || !strings.Contains(stdout.String(), "crm.test") {
+		if code := a.apply(t.Context()); code != 1 || !strings.Contains(stdout.String(), "crm.lodo") {
 			t.Errorf("code %d, stdout %q; want 1 and probe line", code, stdout.String())
 		}
 	})
@@ -135,19 +135,19 @@ func TestFormatResults(t *testing.T) {
 	}{
 		{name: "none", results: nil},
 		{name: "mixed", results: []check.Result{
-			{Name: "crm.test", Address: "127.0.1.1", Direct: true, System: true},
+			{Name: "crm.lodo", Address: "127.0.1.1", Direct: true, System: true},
 			{
-				Name: "dashboard.crm.test", Address: "127.0.1.1", Port: 3000, Direct: true, System: true, Down: true,
+				Name: "dashboard.crm.lodo", Address: "127.0.1.1", Port: 3000, Direct: true, System: true, Down: true,
 				Detail: "app down: nothing answers on 127.0.1.1:3000",
 			},
 			{
-				Name: "docs.crm.test", Address: "127.0.1.1", Port: 3001, Direct: true, System: true,
+				Name: "docs.crm.lodo", Address: "127.0.1.1", Port: 3001, Direct: true, System: true,
 				Detail: "an app listens on 127.0.0.1:3001, not on the name's address: start it with lodo dev in its project",
 			},
-			{Name: "flowy.test", Address: "127.0.1.3", Direct: true, Detail: "macOS: no address"},
-			{Name: "secure.crm.test", Address: "127.0.1.1", Port: 3004, Direct: true, System: true, HTTP: true, Secure: true, HTTPS: true},
+			{Name: "flowy.lodo", Address: "127.0.1.3", Direct: true, Detail: "macOS: no address"},
+			{Name: "secure.crm.lodo", Address: "127.0.1.1", Port: 3004, Direct: true, System: true, HTTP: true, Secure: true, HTTPS: true},
 			{
-				Name: "shop.crm.test", Address: "127.0.1.1", Port: 3005, Direct: true, System: true, HTTP: true, Secure: true,
+				Name: "shop.crm.lodo", Address: "127.0.1.1", Port: 3005, Direct: true, System: true, HTTP: true, Secure: true,
 				Detail: "https: Caddy's certificate isn't trusted: run lodo setup",
 			},
 		}},
@@ -163,9 +163,9 @@ func TestFormatResults(t *testing.T) {
 func TestProbeCode(t *testing.T) {
 	t.Parallel()
 
-	up := check.Result{Name: "crm.test", Direct: true, System: true}
-	down := check.Result{Name: "dashboard.crm.test", Port: 3000, Direct: true, System: true, Down: true}
-	broken := check.Result{Name: "flowy.test", Direct: true}
+	up := check.Result{Name: "crm.lodo", Direct: true, System: true}
+	down := check.Result{Name: "dashboard.crm.lodo", Port: 3000, Direct: true, System: true, Down: true}
+	broken := check.Result{Name: "flowy.lodo", Direct: true}
 	tests := []struct {
 		name    string
 		results []check.Result
@@ -217,7 +217,7 @@ func TestApp_Scan(t *testing.T) {
 		t.Fatalf("exit code = %d, stderr %q", code, stderr.String())
 	}
 	got := strings.ReplaceAll(stdout.String(), root, "<root>")
-	for _, want := range []string{"env   DOCKER_HOST_IP=127.0.1.1\n", "env   API_URL=http://web.shop.test\n", "env   DATABASE_URL=postgres://***@shop.test:5432/shop\n"} {
+	for _, want := range []string{"env   DOCKER_HOST_IP=127.0.1.1\n", "env   API_URL=http://web.shop.lodo\n", "env   DATABASE_URL=postgres://***@shop.lodo:5432/shop\n"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("scan lacks %q:\n%s", want, got)
 		}
@@ -246,12 +246,20 @@ func TestApp_Scan(t *testing.T) {
 	if code := a.scan(t.Context(), root, options{json: true, name: "store"}); code != 0 {
 		t.Fatalf("--name: exit code = %d, stderr %q", code, stderr.String())
 	}
-	if err := json.Unmarshal([]byte(stdout.String()), &proposal); err != nil || proposal.Name != "store.test" ||
-		proposal.Add[0].Root != root || !strings.HasSuffix(proposal.Add[1].Name, ".store.test") {
-		t.Errorf("--name store gave %+v, %v; want store.test with its subdomains", proposal, err)
+	if err := json.Unmarshal([]byte(stdout.String()), &proposal); err != nil || proposal.Name != "store.lodo" ||
+		proposal.Add[0].Root != root || !strings.HasSuffix(proposal.Add[1].Name, ".store.lodo") {
+		t.Errorf("--name store gave %+v, %v; want store.lodo with its subdomains", proposal, err)
 	}
-	if code := a.scan(t.Context(), root, options{name: "web.store"}); code != 2 {
-		t.Errorf("--name web.store: exit code = %d, want 2", code)
+	stdout.Reset()
+	if code := a.scan(t.Context(), root, options{json: true, name: "store.custom"}); code != 0 {
+		t.Fatalf("--name custom: exit code = %d, stderr %q", code, stderr.String())
+	}
+	if err := json.Unmarshal([]byte(stdout.String()), &proposal); err != nil || proposal.Name != "store.custom" ||
+		!strings.HasSuffix(proposal.Add[1].Name, ".store.custom") {
+		t.Errorf("--name store.custom gave %+v, %v; want store.custom with its subdomains", proposal, err)
+	}
+	if code := a.scan(t.Context(), root, options{name: "web.store.lodo"}); code != 2 {
+		t.Errorf("--name web.store.lodo: exit code = %d, want 2", code)
 	}
 
 	stderr.Reset()
@@ -260,7 +268,7 @@ func TestApp_Scan(t *testing.T) {
 	}
 }
 
-// TestApp_ScanNameTaken scans shop under --name shop while shop.test is
+// TestApp_ScanNameTaken scans shop under --name shop while shop.lodo is
 // listed for another folder: the scan claims it only when that folder is
 // unset or gone, and otherwise says whose it is and offers nothing.
 func TestApp_ScanNameTaken(t *testing.T) {
@@ -269,18 +277,18 @@ func TestApp_ScanNameTaken(t *testing.T) {
 	root, other := writeTree(t, shopTree), writeTree(t, shopTree)
 	tests := []struct {
 		name string
-		root string // shop.test's folder
+		root string // shop.lodo's folder
 		want string
 	}{
-		{name: "another clone, still there", root: other, want: "note  shop.test belongs to " + other + ": give this project another name\n"},
-		{name: "a folder that is gone", root: filepath.Join(filepath.Dir(other), "moved"), want: "save  this folder as shop.test's project\n"},
-		{name: "no folder", want: "save  this folder as shop.test's project\n"},
+		{name: "another clone, still there", root: other, want: "note  shop.lodo belongs to " + other + ": give this project another name\n"},
+		{name: "a folder that is gone", root: filepath.Join(filepath.Dir(other), "moved"), want: "save  this folder as shop.lodo's project\n"},
+		{name: "no folder", want: "save  this folder as shop.lodo's project\n"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			p := paths.ForTest(t.TempDir())
-			if err := store.Save(p.DomainsJSON, []store.Domain{{Name: "shop.test", Address: "127.0.1.1", Enabled: true, Root: tt.root}}); err != nil {
+			if err := store.Save(p.DomainsJSON, []store.Domain{{Name: "shop.lodo", Address: "127.0.1.1", Enabled: true, Root: tt.root}}); err != nil {
 				t.Fatal(err)
 			}
 			var stdout, stderr strings.Builder

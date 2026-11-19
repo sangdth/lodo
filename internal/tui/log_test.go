@@ -15,8 +15,8 @@ import (
 	"github.com/sangdth/lodo/internal/run"
 )
 
-const queries = "Oct  8 18:27:22 dnsmasq[52611]: query[A] crm.test from 127.0.0.1\n" +
-	"Oct  8 18:27:22 dnsmasq[52611]: config crm.test is 127.0.1.1\n"
+const queries = "Oct  8 18:27:22 dnsmasq[52611]: query[A] crm.lodo from 127.0.0.1\n" +
+	"Oct  8 18:27:22 dnsmasq[52611]: config crm.lodo is 127.0.1.1\n"
 
 func TestLog_Open(t *testing.T) {
 	t.Parallel()
@@ -26,7 +26,7 @@ func TestLog_Open(t *testing.T) {
 	if m.mode != modeLog {
 		t.Fatalf("mode = %v after l, want the log", m.mode)
 	}
-	if !strings.Contains(m.logView(), "config crm.test is 127.0.1.1") {
+	if !strings.Contains(m.logView(), "config crm.lodo is 127.0.1.1") {
 		t.Errorf("log view lacks dnsmasq's lines:\n%s", m.logView())
 	}
 	golden.RequireEqual(t, m.View().Content)
@@ -37,9 +37,9 @@ func TestLog_Follows(t *testing.T) {
 
 	b := &fakeBackend{log: queries}
 	m := send(ready(b, sample), "g")
-	b.appendLog("Oct  8 18:28:00 dnsmasq[52611]: query[A] flowy.test from 127.0.0.1\n")
+	b.appendLog("Oct  8 18:28:00 dnsmasq[52611]: query[A] flowy.lodo from 127.0.0.1\n")
 	m = tick(m)
-	if !strings.Contains(m.logView(), "query[A] flowy.test") {
+	if !strings.Contains(m.logView(), "query[A] flowy.lodo") {
 		t.Errorf("the open log did not pick up the new line:\n%s", m.logView())
 	}
 	if len(m.logLines) != 3 {

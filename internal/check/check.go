@@ -167,7 +167,7 @@ func (e Env) checkDnsmasq(ctx context.Context, _ []store.Domain, _ []Result) Che
 	st := brew.Info(ctx, e.Runner, p, "dnsmasq")
 	switch {
 	case st.Off():
-		return off("turned off: no .test name resolves until it is on")
+		return off("turned off: no " + store.Suffix + " name resolves until it is on")
 	case st.User != "" && st.User != p.User:
 		return fail("runs as "+st.User, fixSetup)
 	case !st.Running:
@@ -459,7 +459,7 @@ func fail(detail, fix string) Check { return Check{Detail: detail, Fix: fix} }
 func skip(detail string) Check      { return Check{Skipped: true, Detail: detail} }
 func off(detail string) Check       { return Check{Skipped: true, Off: true, Detail: detail} }
 
-const caddyOff = "turned off: no http://name.test reaches its port until it is on"
+const caddyOff = "turned off: no http://name" + store.Suffix + " reaches its port until it is on"
 
 // enabled returns the enabled domains in store.Sort order.
 func enabled(domains []store.Domain) []store.Domain {

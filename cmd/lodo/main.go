@@ -1,4 +1,4 @@
-// Command lodo manages .test names on macOS through dnsmasq, /etc/resolver
+// Command lodo manages .lodo names on macOS through dnsmasq, /etc/resolver
 // files and Caddy.
 package main
 
@@ -19,12 +19,13 @@ import (
 // Version is set at build time with -ldflags "-X main.Version=v1.2.3".
 var Version = "dev"
 
-const usage = `lodo manages .test names on macOS through dnsmasq.
+const usage = `lodo manages .lodo names on macOS through dnsmasq.
 
 Usage:
   lodo dev        start the project in this folder on its names; the first run sets
-                  them up, --edit changes them, -y or --auto saves what lodo proposes
-                  without the form: a new worktree gets <main><n>.test on 127.0.1.<n>
+                  them up, --edit changes them, --name sets the project's name or
+                  custom domain, -y or --auto saves what lodo proposes without the
+                  form: a new worktree gets <main><n>.lodo on 127.0.1.<n>
   lodo exec CMD   run CMD here with the variables lodo dev sets, such as
                   lodo exec pnpm db:migrate
   lodo ps         open the dashboard: the list of names, their checks, and keys to
@@ -33,7 +34,7 @@ Usage:
   lodo apply      write the configs from domains.json, reload, and check every name
   lodo doctor     check every part and print what to fix
   lodo scan       print what the project in this folder needs; --json for scripts,
-                  --name hugger to name the project
+                  --name hugger or --name hugger.custom to name the project
   lodo uninstall  remove what setup installed; keeps domains.json
   lodo version    print the version
   lodo help       print this help
@@ -102,9 +103,9 @@ func parseFlags(command string, args []string) (options, error) {
 	var o options
 	fs := flag.NewFlagSet(command, flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
+	fs.StringVar(&o.name, "name", "", "")
 	if command == "scan" {
 		fs.BoolVar(&o.json, "json", false, "")
-		fs.StringVar(&o.name, "name", "", "")
 	} else {
 		fs.BoolVar(&o.edit, "edit", false, "")
 		fs.BoolVar(&o.auto, "y", false, "")

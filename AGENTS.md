@@ -1,8 +1,9 @@
 # CLAUDE.md
 
-`lodo` is a Go terminal app that manages `.test` names on macOS through dnsmasq, `/etc/resolver` files and
-Caddy. `docs/plan.md` holds the design, the settled decisions and the phases; `docs/setup-log.md` records
-the hand test on a real Mac. The README stays short; user-facing detail goes in `docs/reference.md`.
+`lodo` is a Go terminal app that manages `.lodo` and custom local domain names on macOS through dnsmasq,
+`/etc/resolver` files and Caddy. `docs/plan.md` holds the design, the settled decisions and the phases;
+`docs/setup-log.md` records the hand test on a real Mac. The README stays short; user-facing detail goes in
+`docs/reference.md`.
 
 ## Commands
 
@@ -34,8 +35,8 @@ stops the commit.
   records them in tests.
 - `internal/fsutil`: atomic writes that skip unchanged content.
 - `internal/store`: `domains.json` and every domain rule: names, addresses, ports, projects, the own block, order.
-  Other packages call its helpers (`Find`, `HasCompose`, `Domain.HasSite`, `ValidateProject`, `Suffix`) rather
-  than spell a rule out again.
+  Other packages call its helpers (`Find`, `HasCompose`, `Domain.HasSite`, `ValidateProject`, `ResolveName`,
+  `CutProject`, `TrimDefaultSuffix`, `Suffix`) rather than spell a rule out again.
 - `internal/brew`, `internal/dnsmasq`, `internal/caddy`: Homebrew's service jobs, the generated dnsmasq config
   and resolver list, the generated Caddyfile. `brew` reads a job's state with `launchctl print` and restarts a
   loaded job with `launchctl kickstart -k`, since each `brew` call costs 0.4s; only an unloaded job and `Stop`
@@ -50,8 +51,8 @@ stops the commit.
   (Mailpit's inbox), and proposes the names and compose link the list lacks, and the variables `lodo dev` sets
   (`Proposal.Env`, `scan.Var`). It also reads `PORT=` from an app's `.env` (NestJS, Create React App, unknown
   commands), the `KEY=value` lines of each app's `.env`, the git repository's main checkout (`repoRoot`), so a
-  worktree's variables swap another checkout's or an unlisted `.test` project's names for its own (`siblingNames`),
-  and the names Caddy serves per port (`ValuesFor`). Every app keeps its own port on the project's address; when
+  worktree's variables swap another checkout's or an unlisted `.lodo` or `.test` project's names for its own
+  (`siblingNames`), and the names Caddy serves per port (`ValuesFor`). Every app keeps its own port on the project's address; when
   two apps share a port, the scan adds a note and the setup form requires distinct ports, since `lodo dev` binds
   one app per port. Its notes point at `lodo dev --edit`. All dev server rules and the images lodo names
   (`webImages`) live here, and so does the rule for a listed name another project's folder still has (`Taken`,
@@ -98,7 +99,7 @@ stops the commit.
   Caddy rotated its CA, and skipping the prompt when already trusted); uninstall untrusts the copy.
   A trusted root signs certificates for any site. Nothing uses Caddy's admin API; lodo ensures `admin off` in
   Homebrew's Caddyfile (inside any existing global block too).
-- Every generated site passes `Host` through as the `.test` name, and turns `Origin` into
+- Every generated site passes `Host` through as the domain name, and turns `Origin` into
   `http://localhost:<port>` only on Next's dev paths and only when it is the site's own origin: a `Host` rewrite
   makes Mailpit's websocket answer 403, and a wider `Origin` rewrite breaks Server Actions and lets any web page
   open Next's hot reload socket (docs/plan.md, "Result of 11.0").
@@ -110,21 +111,22 @@ stops the commit.
 - Everything lodo prints from a `.env` masks a URL's user info as `***@`: a `scan.Var` holds the masked value in
   `Value` and the real one in an unexported field only `Var.Env` returns.
 - The user picks a project's name. The folder's name is only a suggestion: every flow that proposes a project name
-  (the setup form, `lodo scan --name`) lets the user change it before anything is added, and the subdomains follow
-  it (`<app>.<name>`). The chosen name keeps the project's folder as `Domain.Root`, so later scans use it and never
-  propose the folder's name next to it; paths compare with `scan.SameFolder`, since the same folder can come by
-  another case or symlink. A git worktree of a listed main checkout gets `<main><n>.test` on `127.0.1.<n>`, the
-  lowest `n` whose address is free or holds only a gone folder's `<main><n>.test` (`scan.worktreeSlot`), with the
+  (the setup form, `lodo dev --name`, `lodo scan --name`) lets the user change it before anything is added, and the
+  subdomains follow it (`<app>.<name>`). Typing a single label appends `.lodo` (`store.ResolveName`); typing a dot
+  uses that custom domain directly. The chosen name keeps the project's folder as `Domain.Root`, so later scans use it
+  and never propose the folder's name next to it; paths compare with `scan.SameFolder`, since the same folder can come
+  by another case or symlink. A git worktree of a listed main checkout gets `<main><n>.<tld>` on `127.0.1.<n>`, the
+  lowest `n` whose address is free or holds only a gone folder's `<main><n>.<tld>` (`scan.worktreeSlot`), with the
   main checkout's HTTPS per label; `lodo dev -y` saves that with no key pressed (`tui.Start.Auto`). A folder whose
-  name another project's folder still has gets `<name>-2.test`, the first of `-2`, `-3` … that no listed name uses.
+  name another project's folder still has gets `<name>-2.<tld>`, the first of `-2`, `-3` … that no listed name uses.
   A listed name, typed in or picked by the scan, whose `Root` is unset or gone is taken over (`Proposal.Claim`), and
   the project's old name goes with its names; one whose folder still exists is refused with the `scan.BelongsTo`
   note, in the form and in `lodo scan --name` alike (`scan.Taken`, with `Backend.Gone`). The setup form names each
   app itself: `<label>.<project>`, or `<project>` alone for one app, the root's when there is one, and no label
   another app's folder gives; the scan takes only the project's name. A later scan keeps a listed name of the
   project on an app's port and address as that app's name.
-- Names end in `.test`, from `store.TLD`. macOS sends a name with one label before `.local` to Bonjour only, so
-  `.local` can't serve project names like `media.local`.
+- Names default to `.lodo` (`store.TLD`, `store.Suffix`) and may use any valid top-level domain except `.local`
+  (which macOS sends to Bonjour only) and `.localhost` (which browsers hardcode to `127.0.0.1`).
 - Golden files live in each package's `testdata/` and use `github.com/charmbracelet/x/exp/golden`.
 - Charm v2 modules use the `charm.land/...` import paths, such as `charm.land/bubbletea/v2`.
 - Errors are wrapped with `fmt.Errorf("context: %w", err)`, lowercase, without trailing punctuation.

@@ -20,7 +20,7 @@ import (
 func (a app) scan(ctx context.Context, dir string, o options) int {
 	name := ""
 	if o.name != "" {
-		name = strings.TrimSuffix(o.name, store.Suffix) + store.Suffix
+		name = store.ResolveName(o.name)
 		if err := store.ValidateProject(name); err != nil {
 			a.fail(fmt.Errorf("--name %s: %w", o.name, err))
 			return 2

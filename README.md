@@ -1,15 +1,15 @@
 # lodo
 
 Run several projects on one Mac at once, each database and app on its usual port. Every project gets its own
-loopback address and a `.test` name, so media's Postgres listens on `127.0.1.3:5432` while blog's listens on
-`127.0.1.1:5432`. lodo drives dnsmasq, macOS's `/etc/resolver` files and Caddy for you.
+loopback address and a `.lodo` (or custom) domain name, so media's Postgres listens on `127.0.1.3:5432` while
+blog's listens on `127.0.1.1:5432`. lodo drives dnsmasq, macOS's `/etc/resolver` files and Caddy for you.
 
 ![lodo's terminal app listing two names, each with its address, port, compose file and checks](docs/images/lodo-screenshot.png)
 
 ```text
-media.test -> 127.0.1.3 -> 127.0.1.3:5432 (Postgres), 127.0.1.3:3000 (Next)
-blog.test  -> 127.0.1.1 -> 127.0.1.1:5432 (Postgres)
-http://dashboard.blog.test -> Caddy on port 80 -> 127.0.1.1:3000
+media.lodo -> 127.0.1.3 -> 127.0.1.3:5432 (Postgres), 127.0.1.3:3000 (Next)
+blog.lodo  -> 127.0.1.1 -> 127.0.1.1:5432 (Postgres)
+http://dashboard.blog.lodo -> Caddy on port 80 -> 127.0.1.1:3000
 ```
 
 Full details: [docs/reference.md](docs/reference.md).
@@ -36,7 +36,8 @@ safe. Run it again after you install Caddy, turn on the first HTTPS name, or whe
 cd ~/Projects/shop
 lodo dev          # first run opens the setup form; later runs start the apps on their names
 lodo dev --edit   # open the setup form again
-lodo dev -y       # save what lodo proposes with no form: a new worktree gets hugger12.test on 127.0.1.12
+lodo dev --name shop.custom  # set or change the project's custom domain
+lodo dev -y       # save what lodo proposes with no form: a new worktree gets hugger12.lodo on 127.0.1.12
 lodo exec pnpm db:migrate  # run a command with the variables lodo dev sets
 lodo ps           # the dashboard: every name with its checks
 ```
@@ -83,7 +84,7 @@ For Docker, publish ports as `"${DOCKER_HOST_IP:-127.0.0.1}:5432:5432"`.
 | `lodo version`   | print the version                                            |
 
 Something wrong? Run `lodo doctor` first, then see [Troubleshooting](docs/reference.md#troubleshooting).
-Google sign-in refuses `.test` callbacks; see [Sign-in callbacks](docs/reference.md#sign-in-callbacks).
+Google sign-in needs a public suffix TLD; see [Sign-in callbacks](docs/reference.md#sign-in-callbacks).
 
 ## Development
 
