@@ -17,7 +17,7 @@ import (
 func TestModel_View(t *testing.T) {
 	t.Parallel()
 
-	b := &fakeBackend{failing: map[string]string{"dashboard.crm.test": "app down: nothing answers on 127.0.1.1:3000"}}
+	b := &fakeBackend{failing: map[string]string{"dashboard.crm.lodo": "app down: nothing answers on 127.0.1.1:3000"}}
 	m := ready(b, sample)
 	v := m.View()
 	if !v.AltScreen {
@@ -38,12 +38,12 @@ func TestModel_StatusLine(t *testing.T) {
 		{name: "all good", backend: &fakeBackend{}, want: ""},
 		{
 			name:    "the selected name fails",
-			backend: &fakeBackend{failing: map[string]string{"crm.test": "macOS: no address"}},
-			want:    "crm.test: macOS: no address",
+			backend: &fakeBackend{failing: map[string]string{"crm.lodo": "macOS: no address"}},
+			want:    "crm.lodo: macOS: no address",
 		},
 		{
 			name:    "another name fails",
-			backend: &fakeBackend{failing: map[string]string{"flowy.test": "macOS: no address"}},
+			backend: &fakeBackend{failing: map[string]string{"flowy.lodo": "macOS: no address"}},
 			want:    "",
 		},
 		{
@@ -85,13 +85,13 @@ func TestModel_StatusLineSkipsWhatAServiceTurnedOffBreaks(t *testing.T) {
 		{
 			name:    "caddy off, a name on a port",
 			backend: &fakeBackend{off: map[string]bool{"caddy": true}},
-			keys:    []string{"down"}, // dashboard.crm.test, on port 3000
+			keys:    []string{"down"}, // dashboard.crm.lodo, on port 3000
 			want:    "",
 		},
 		{
 			name:    "caddy off, a name failing dns anyway",
-			backend: &fakeBackend{off: map[string]bool{"caddy": true}, failing: map[string]string{"crm.test": "macOS: no address"}},
-			want:    "crm.test: macOS: no address",
+			backend: &fakeBackend{off: map[string]bool{"caddy": true}, failing: map[string]string{"crm.lodo": "macOS: no address"}},
+			want:    "crm.lodo: macOS: no address",
 		},
 	}
 	for _, tt := range tests {
@@ -161,7 +161,7 @@ func TestModel_KeysFitAnEightyColumnTerminal(t *testing.T) {
 func TestModel_StatusLineFitsTheWidth(t *testing.T) {
 	t.Parallel()
 
-	b := &fakeBackend{failing: map[string]string{"crm.test": strings.Repeat("very long detail ", 20)}}
+	b := &fakeBackend{failing: map[string]string{"crm.lodo": strings.Repeat("very long detail ", 20)}}
 	m := ready(b, sample)
 	if w := ansi.StringWidth(m.statusLine()); w > m.innerWidth() {
 		t.Errorf("status line is %d wide, box %d inside", w, m.innerWidth())

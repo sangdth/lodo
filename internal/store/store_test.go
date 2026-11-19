@@ -21,27 +21,30 @@ func TestValidateName(t *testing.T) {
 		in      string
 		wantMsg string // empty means valid
 	}{
-		{name: "project", in: "flowy.test"},
-		{name: "hyphen and subdomain", in: "a-b.dev.test"},
-		{name: "deep subdomain", in: "a.test.crm.test"},
-		{name: "digits", in: "web2.test"},
-		{name: "63-char label", in: strings.Repeat("a", 63) + ".test"},
+		{name: "project", in: "flowy.lodo"},
+		{name: "custom tld", in: "flowy.custom"},
+		{name: "legacy test tld", in: "flowy.test"},
+		{name: "hyphen and subdomain", in: "a-b.dev.lodo"},
+		{name: "deep subdomain", in: "a.test.crm.lodo"},
+		{name: "digits", in: "web2.lodo"},
+		{name: "63-char label", in: strings.Repeat("a", 63) + ".lodo"},
 		{name: "empty", in: "", wantMsg: "name is empty"},
-		{name: "bare tld", in: "test", wantMsg: "name must end in .test"},
-		{name: "dot lodo", in: ".test", wantMsg: "name needs a label before .test"},
-		{name: "uppercase", in: "X.TEST", wantMsg: "name must be lowercase"},
-		{name: "other tld", in: "x.com", wantMsg: "name must end in .test"},
-		{name: "bonjour's tld", in: "flowy.local", wantMsg: "name must end in .test"},
-		{name: "path traversal", in: "../x.test", wantMsg: "name may use only a-z, 0-9 and '-' inside labels of 1-63 characters"},
-		{name: "embedded newline", in: "x.test\nfoo", wantMsg: "name must end in .test"},
-		{name: "newline before suffix", in: "x\n.test", wantMsg: "name may use only a-z, 0-9 and '-' inside labels of 1-63 characters"},
-		{name: "leading hyphen", in: "-x.test", wantMsg: "name may use only a-z, 0-9 and '-' inside labels of 1-63 characters"},
-		{name: "trailing hyphen", in: "x-.test", wantMsg: "name may use only a-z, 0-9 and '-' inside labels of 1-63 characters"},
-		{name: "empty label", in: "a..test", wantMsg: "name may use only a-z, 0-9 and '-' inside labels of 1-63 characters"},
-		{name: "64-char label", in: strings.Repeat("a", 64) + ".test", wantMsg: "name may use only a-z, 0-9 and '-' inside labels of 1-63 characters"},
-		{name: "space", in: "a b.test", wantMsg: "name may use only a-z, 0-9 and '-' inside labels of 1-63 characters"},
-		{name: "underscore", in: "a_b.test", wantMsg: "name may use only a-z, 0-9 and '-' inside labels of 1-63 characters"},
-		{name: "too long", in: strings.Repeat("abcdefgh.", 28) + "test", wantMsg: "name is longer than 253 characters"},
+		{name: "bare tld", in: "lodo", wantMsg: "name needs a domain suffix, like .lodo"},
+		{name: "dot lodo", in: ".lodo", wantMsg: "name needs a label before .lodo"},
+		{name: "uppercase", in: "X.LODO", wantMsg: "name must be lowercase"},
+		{name: "bonjour's tld", in: "flowy.local", wantMsg: "name cannot end in .local: macOS sends .local to Bonjour"},
+		{name: "localhost tld", in: "flowy.localhost", wantMsg: "name cannot end in .localhost: browsers send .localhost to 127.0.0.1"},
+		{name: "numeric tld", in: "127.0.0.1", wantMsg: "name may use only a-z, 0-9 and '-' inside labels of 1-63 characters"},
+		{name: "path traversal", in: "../x.lodo", wantMsg: "name may use only a-z, 0-9 and '-' inside labels of 1-63 characters"},
+		{name: "embedded newline", in: "x.lodo\nfoo", wantMsg: "name may use only a-z, 0-9 and '-' inside labels of 1-63 characters"},
+		{name: "newline before suffix", in: "x\n.lodo", wantMsg: "name may use only a-z, 0-9 and '-' inside labels of 1-63 characters"},
+		{name: "leading hyphen", in: "-x.lodo", wantMsg: "name may use only a-z, 0-9 and '-' inside labels of 1-63 characters"},
+		{name: "trailing hyphen", in: "x-.lodo", wantMsg: "name may use only a-z, 0-9 and '-' inside labels of 1-63 characters"},
+		{name: "empty label", in: "a..lodo", wantMsg: "name may use only a-z, 0-9 and '-' inside labels of 1-63 characters"},
+		{name: "64-char label", in: strings.Repeat("a", 64) + ".lodo", wantMsg: "name may use only a-z, 0-9 and '-' inside labels of 1-63 characters"},
+		{name: "space", in: "a b.lodo", wantMsg: "name may use only a-z, 0-9 and '-' inside labels of 1-63 characters"},
+		{name: "underscore", in: "a_b.lodo", wantMsg: "name may use only a-z, 0-9 and '-' inside labels of 1-63 characters"},
+		{name: "too long", in: strings.Repeat("abcdefgh.", 28) + "lodo", wantMsg: "name is longer than 253 characters"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -59,15 +62,50 @@ func TestValidateProject(t *testing.T) {
 		in      string
 		wantMsg string // empty means valid
 	}{
-		{name: "project", in: "flowy.test"},
-		{name: "subdomain", in: "api.flowy.test", wantMsg: "a project's name has one label before .test"},
-		{name: "invalid name", in: "Flowy.test", wantMsg: "name must be lowercase"},
+		{name: "project", in: "flowy.lodo"},
+		{name: "custom domain", in: "flowy.custom"},
+		{name: "subdomain", in: "api.flowy.lodo", wantMsg: "a project's name has two labels, like flowy.lodo"},
+		{name: "invalid name", in: "Flowy.lodo", wantMsg: "name must be lowercase"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			assertFieldErr(t, store.ValidateProject(tt.in), store.FieldName, tt.wantMsg)
 		})
+	}
+}
+
+func TestResolveName(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		in, want string
+	}{
+		{"", ""},
+		{"flowy", "flowy.lodo"},
+		{"flowy.lodo", "flowy.lodo"},
+		{"flowy.custom", "flowy.custom"},
+		{"api.flowy.custom", "api.flowy.custom"},
+	} {
+		if got := store.ResolveName(tt.in); got != tt.want {
+			t.Errorf("ResolveName(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}
+
+func TestCutProject(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		in, label, suffix string
+	}{
+		{"flowy.lodo", "flowy", ".lodo"},
+		{"flowy.custom", "flowy", ".custom"},
+		{"api.flowy.custom", "flowy", ".custom"},
+	} {
+		if label, suffix := store.CutProject(tt.in); label != tt.label || suffix != tt.suffix {
+			t.Errorf("CutProject(%q) = %q, %q; want %q, %q", tt.in, label, suffix, tt.label, tt.suffix)
+		}
 	}
 }
 
@@ -538,7 +576,7 @@ func TestLoad(t *testing.T) {
 		{name: "bad json", content: new(`{`), wantErrs: "parse "},
 		{name: "unknown field", content: new(`{"version":1,"domains":[{"name":"crm.test","addr":"127.0.1.1"}]}`), wantErrs: `unknown field "addr"`},
 		{name: "wrong version", content: new(`{"version":2,"domains":[]}`), wantErrs: "format version 2, this lodo reads version 1"},
-		{name: "invalid domain", content: new(`{"version":1,"domains":[{"name":"crm.com","address":"127.0.1.1","enabled":true}]}`), wantErrs: `"crm.com": name must end in .test`},
+		{name: "invalid domain", content: new(`{"version":1,"domains":[{"name":"crm.local","address":"127.0.1.1","enabled":true}]}`), wantErrs: `"crm.local": name cannot end in .local`},
 		{name: "relative compose path", content: new(`{"version":1,"domains":[{"name":"crm.test","address":"127.0.1.1","compose":"compose.yml"}]}`), wantErrs: `"crm.test": compose file must be an absolute path`},
 	}
 	for _, tt := range tests {

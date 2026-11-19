@@ -35,6 +35,12 @@ skipped=$(/usr/bin/grep -a -c -v -E -x -e "$pattern" "$work/list" || [ $? -eq 1 
 
 written=0
 while IFS= read -r name; do
+	case "$name" in
+	*.local | *.localhost)
+		skipped=$((skipped + 1))
+		continue
+		;;
+	esac
 	if [ "${#name}" -gt {{.MaxLen}} ]; then
 		skipped=$((skipped + 1))
 		continue

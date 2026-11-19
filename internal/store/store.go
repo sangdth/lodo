@@ -21,20 +21,22 @@ import (
 	"github.com/sangdth/lodo/internal/fsutil"
 )
 
-// TLD is the top-level domain every name ends in. RFC 6761 reserves .test
-// for testing, so no public name ends in it. .local can't serve: macOS sends a
-// name with one label before .local to Bonjour only.
-const TLD = "test"
+// TLD is the default top-level domain a name ends in when none is given.
+const TLD = "lodo"
 
-// Suffix ends every name.
+// Suffix is the default domain suffix.
 const Suffix = "." + TLD
 
 // label matches one DNS label: a-z, 0-9 and inner '-', 1-63 characters.
 const label = `[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?`
 
+// tldLabel matches a top-level domain label: starts with a letter, 1-63
+// characters, so an IPv4 address never matches.
+const tldLabel = `[a-z]([a-z0-9-]{0,61}[a-z0-9])?`
+
 // NamePattern matches a valid name, without anchors. The root script runs it
 // through grep -E -x, so it must mean the same in POSIX ERE and in Go's RE2.
-const NamePattern = label + `(\.` + label + `)*\.` + TLD
+const NamePattern = label + `(\.` + label + `)*\.` + tldLabel
 
 // MaxNameLen is the longest name DNS allows.
 const MaxNameLen = 253
@@ -109,7 +111,8 @@ func (e *FieldError) Error() string { return e.Msg }
 func fieldErr(field, msg string) error { return &FieldError{Field: field, Msg: msg} }
 
 // ValidateName checks a name: lowercase labels of a-z, 0-9 and inner '-',
-// ending in .test, with at least one label before it.
+// ending in a top-level domain label (not .local or .localhost), with at least
+// one label before it.
 func ValidateName(name string) error {
 	switch {
 	case name == "":
@@ -118,10 +121,14 @@ func ValidateName(name string) error {
 		return fieldErr(FieldName, fmt.Sprintf("name is longer than %d characters", MaxNameLen))
 	case strings.ToLower(name) != name:
 		return fieldErr(FieldName, "name must be lowercase")
-	case !strings.HasSuffix(name, Suffix):
-		return fieldErr(FieldName, "name must end in "+Suffix)
-	case name == Suffix:
-		return fieldErr(FieldName, "name needs a label before "+Suffix)
+	case strings.HasPrefix(name, ".") && nameRE.MatchString("a"+name):
+		return fieldErr(FieldName, "name needs a label before "+name)
+	case !strings.Contains(name, "."):
+		return fieldErr(FieldName, "name needs a domain suffix, like "+Suffix)
+	case strings.HasSuffix(name, ".local"):
+		return fieldErr(FieldName, "name cannot end in .local: macOS sends .local to Bonjour")
+	case strings.HasSuffix(name, ".localhost"):
+		return fieldErr(FieldName, "name cannot end in .localhost: browsers send .localhost to 127.0.0.1")
 	case !nameRE.MatchString(name):
 		return fieldErr(FieldName, "name may use only a-z, 0-9 and '-' inside labels of 1-63 characters")
 	}
@@ -129,15 +136,49 @@ func ValidateName(name string) error {
 }
 
 // ValidateProject checks a name the user chose for a project: a valid name
-// with one label before .test, since a project is its last two labels.
+// with two labels, since a project is its last two labels.
 func ValidateProject(name string) error {
 	if err := ValidateName(name); err != nil {
 		return err
 	}
 	if Project(name) != name {
-		return fieldErr(FieldName, "a project's name has one label before "+Suffix)
+		return fieldErr(FieldName, "a project's name has two labels, like flowy"+Suffix)
 	}
 	return nil
+}
+
+// ResolveName returns name with Suffix appended when name has no dot, or name
+// as-is when it already contains a dot or is empty.
+func ResolveName(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" || strings.Contains(name, ".") {
+		return name
+	}
+	return name + Suffix
+}
+
+// TrimDefaultSuffix strips Suffix from a two-label name that ends in it, so a
+// form field shows "flowy" with ".lodo" dimmed and keeps a custom domain like
+// "flowy.custom" intact.
+func TrimDefaultSuffix(name string) string {
+	if Project(name) == name {
+		if label, ok := strings.CutSuffix(name, Suffix); ok && !strings.Contains(label, ".") {
+			return label
+		}
+	}
+	return name
+}
+
+// CutProject splits a project's name into its first label and its TLD suffix
+// (with the leading dot): "flowy", ".lodo" for "flowy.lodo" or "api.flowy.lodo",
+// and "flowy", ".custom" for "flowy.custom".
+func CutProject(name string) (label, suffix string) {
+	proj := Project(name)
+	before, after, ok := strings.Cut(proj, ".")
+	if !ok {
+		return proj, Suffix
+	}
+	return before, "." + after
 }
 
 // ValidateAddress checks an address: IPv4 inside 127.0.0.0/8, written the

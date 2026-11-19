@@ -1,12 +1,12 @@
 scan of <root>
-add   shop.test      127.0.1.1
-add   api.shop.test  127.0.1.1
-add   web.shop.test  127.0.1.1  port 3001
+add   shop.lodo      127.0.1.1
+add   api.shop.lodo  127.0.1.1
+add   web.shop.lodo  127.0.1.1  port 3001
 link  ./docker/compose.dev.yaml
 env   DOCKER_HOST_IP=127.0.1.1
-env   API_URL=http://web.shop.test
-env   DATABASE_URL=postgres://***@shop.test:5432/shop
-note  api.shop.test: lodo can't tell its port; set it in lodo dev --edit
+env   API_URL=http://web.shop.lodo
+env   DATABASE_URL=postgres://***@shop.lodo:5432/shop
+note  api.shop.lodo: lodo can't tell its port; set it in lodo dev --edit
 
 run lodo dev --edit here to add and link these
 

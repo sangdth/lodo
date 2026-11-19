@@ -166,9 +166,9 @@ func projectName(p Project, domains []store.Domain, gone func(path string) bool)
 	if d, ok := store.Find(domains, p.Name); !ok || !Taken(d, p.Root, gone) {
 		return p.Name
 	}
-	base := strings.TrimSuffix(p.Name, store.Suffix)
+	base, suffix := store.CutProject(p.Name)
 	for n := 2; ; n++ {
-		name := base + "-" + strconv.Itoa(n) + store.Suffix
+		name := base + "-" + strconv.Itoa(n) + suffix
 		if !slices.ContainsFunc(domains, func(d store.Domain) bool { return store.Project(d.Name) == name }) {
 			return name
 		}

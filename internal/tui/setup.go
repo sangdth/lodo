@@ -198,6 +198,15 @@ func (s Setup) setScan(msg setupScanMsg) (Setup, tea.Cmd) {
 		s.refill = false
 		s.fill()
 	}
+	if first && s.origin.Name != "" && s.origin.Name != s.proposal.Name {
+		s.name.SetValue(store.TrimDefaultSuffix(s.origin.Name))
+		s.submitting = s.origin.Auto
+		s, cmd := s.rescan()
+		s.focusOn(min(s.focus, s.stops()-1))
+		if cmd != nil {
+			return s, cmd
+		}
+	}
 	s.focusOn(min(s.focus, s.stops()-1)) // the toggles shown may have changed
 	if first && s.found && s.origin.Auto {
 		return s.submit() // a field that breaks a rule leaves the form open, as enter would
@@ -226,7 +235,7 @@ func (s *Setup) fill() {
 	inputs := newInputs(store.Suffix)
 	s.name, s.address = inputs[fieldName], inputs[fieldAddress]
 	s.name.Placeholder = "flowy"
-	s.name.SetValue(strings.TrimSuffix(p.Name, store.Suffix))
+	s.name.SetValue(store.TrimDefaultSuffix(p.Name))
 	s.address.SetValue(p.Address)
 
 	var rows []setupRow
@@ -274,9 +283,22 @@ func (s Setup) row(d store.Domain, listed bool) setupRow {
 	return r
 }
 
-// projectName is the project's label as typed, with .test.
+// projectSuffix is the dimmed suffix drawn after the project's name field:
+// .lodo until a dot is typed for a custom domain.
+func (s Setup) projectSuffix() string {
+	if strings.Contains(s.name.Value(), ".") {
+		return ""
+	}
+	return store.Suffix
+}
+
+// projectName is the project's name as typed, with .lodo when no dot is typed.
 func (s Setup) projectName() string {
-	return strings.TrimSuffix(strings.TrimSpace(s.name.Value()), store.Suffix) + store.Suffix
+	v := strings.TrimSpace(s.name.Value())
+	if strings.Contains(v, ".") {
+		return v
+	}
+	return v + store.Suffix
 }
 
 // build returns the list as saving would leave it and the project's own
@@ -607,6 +629,9 @@ func (s Setup) saveSetup(next []store.Domain, owner store.Domain, link bool) tea
 					}
 					cur.project, cur.proposal = proj, prop
 					cur.fill()
+					if cur.origin.Name != "" {
+						cur.name.SetValue(store.TrimDefaultSuffix(cur.origin.Name))
+					}
 					link = !cur.unlink && cur.proposal.Compose != ""
 				}
 				built, builtOwner, _, err := cur.build(link)
@@ -756,7 +781,7 @@ func (s Setup) middle() ([]string, int, int) {
 // and returns the first and last line of the focused field and its error.
 func (s Setup) formLines() ([]string, int, int) {
 	project := s.projectName()
-	lines := []string{" Project   " + s.styles.suffixed(s.name, store.Suffix) + "   address " + s.styles.suffixed(s.address, "")}
+	lines := []string{" Project   " + s.styles.suffixed(s.name, s.projectSuffix()) + "   address " + s.styles.suffixed(s.address, "")}
 	lines = append(lines, s.errLine(11, stopName, stopAddress)...)
 	first, last := 0, len(lines)-1 // the name and the address's, unless a row or toggle has the focus
 

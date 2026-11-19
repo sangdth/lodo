@@ -37,12 +37,12 @@ func TestNew(t *testing.T) {
 	if got := m.rows()[0][5]; got != "…" {
 		t.Errorf("check cell before the first report = %q, want …", got)
 	}
-	spinning := m.spinner.View() + " crm.test"
+	spinning := m.spinner.View() + " crm.lodo"
 	if got := m.table.Rows()[0][0]; got != spinning {
 		t.Errorf("enabled row before the first report = %q, want %q", got, spinning)
 	}
-	if got := ansi.Strip(m.table.Rows()[3][0]); got != "○ old.test" {
-		t.Errorf("disabled row before the first report = %q, want ○ old.test", got)
+	if got := ansi.Strip(m.table.Rows()[3][0]); got != "○ old.lodo" {
+		t.Errorf("disabled row before the first report = %q, want ○ old.lodo", got)
 	}
 	if got := strings.TrimSpace(m.statusLine()); got != "" {
 		t.Errorf("status line while busy = %q, want empty", got)
@@ -51,8 +51,8 @@ func TestNew(t *testing.T) {
 	if m.busy || b.reports != 1 || len(m.checks) != 8 || len(m.results) != 3 {
 		t.Errorf("after Init: busy %v, %d reports, %d checks, %d results", m.busy, b.reports, len(m.checks), len(m.results))
 	}
-	if got := m.table.Rows()[0][0]; got != "● crm.test" {
-		t.Errorf("enabled row after the first report = %q, want ● crm.test", got)
+	if got := m.table.Rows()[0][0]; got != "● crm.lodo" {
+		t.Errorf("enabled row after the first report = %q, want ● crm.lodo", got)
 	}
 }
 
@@ -61,10 +61,10 @@ func TestModel_Toggle(t *testing.T) {
 
 	b := &fakeBackend{}
 	m := ready(b, sample)
-	m = send(m, "down") // dashboard.crm.test
+	m = send(m, "down") // dashboard.crm.lodo
 	m = send(m, "space")
 
-	want, err := store.Toggle(sample, "dashboard.crm.test")
+	want, err := store.Toggle(sample, "dashboard.crm.lodo")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,9 +91,9 @@ func TestModel_SpinnerOnTheChangedRow(t *testing.T) {
 		row   int
 		label string
 	}{
-		{name: "turn a name off", keys: []string{"space"}, row: 0, label: "crm.test"},
-		{name: "turn a name on", keys: []string{"down", "down", "down", "space"}, row: 3, label: "old.test"},
-		{name: "delete a name", keys: []string{"down", "down", "d", "y"}, row: 2, label: "flowy.test"},
+		{name: "turn a name off", keys: []string{"space"}, row: 0, label: "crm.lodo"},
+		{name: "turn a name on", keys: []string{"down", "down", "down", "space"}, row: 3, label: "old.lodo"},
+		{name: "delete a name", keys: []string{"down", "down", "d", "y"}, row: 2, label: "flowy.lodo"},
 		{name: "reload", keys: []string{"r"}, row: -1},
 	}
 	for _, tt := range tests {
@@ -255,7 +255,7 @@ func TestModel_AddRow(t *testing.T) {
 	}
 	for _, k := range []string{"space", "enter", "a"} {
 		got := send(m, k)
-		if got.mode != modeForm || got.form.parent != "" || got.form.suffix != ".test" {
+		if got.mode != modeForm || got.form.parent != "" || got.form.suffix != ".lodo" {
 			t.Errorf("%s on the add row: mode %v, parent %q; want the plain add form", k, got.mode, got.form.parent)
 		}
 	}
@@ -269,14 +269,14 @@ func TestModel_AddKeys(t *testing.T) {
 		{Code: 'a', ShiftedCode: 'A', Text: "A", Mod: tea.ModShift},
 		{Code: 'a', Mod: tea.ModShift}, // a terminal that reports keys without their text
 	} {
-		next, _ := ready(&fakeBackend{}, sample).Update(k) // the cursor is on crm.test
+		next, _ := ready(&fakeBackend{}, sample).Update(k) // the cursor is on crm.lodo
 		if m := next.(Model); m.mode != modeForm || m.form.parent != "" {
 			t.Errorf("%s: mode %v, parent %q; want the plain add form", k, m.mode, m.form.parent)
 		}
 	}
 	m := send(ready(&fakeBackend{}, sample), "a")
-	if m.mode != modeForm || m.form.parent != "crm.test" {
-		t.Errorf("a on crm.test: mode %v, parent %q; want a subdomain of crm.test", m.mode, m.form.parent)
+	if m.mode != modeForm || m.form.parent != "crm.lodo" {
+		t.Errorf("a on crm.lodo: mode %v, parent %q; want a subdomain of crm.lodo", m.mode, m.form.parent)
 	}
 }
 
@@ -284,7 +284,7 @@ func TestModel_RowsIndentTheMark(t *testing.T) {
 	t.Parallel()
 
 	m := ready(&fakeBackend{}, sample)
-	for i, want := range []string{"● crm.test", "  ● dashboard.crm.test", "● flowy.test", "○ old.test"} {
+	for i, want := range []string{"● crm.lodo", "  ● dashboard.crm.lodo", "● flowy.lodo", "○ old.lodo"} {
 		if got := ansi.Strip(m.table.Rows()[i][0]); got != want {
 			t.Errorf("row %d = %q, want %q", i, got, want)
 		}
@@ -296,7 +296,7 @@ func TestModel_NameMark(t *testing.T) {
 
 	s := newStyles()
 	green, red, dim := s.ok.Render("●"), s.bad.Render("○"), s.dim.Render("○")
-	appDown := &fakeBackend{failing: map[string]string{"dashboard.crm.test": "app down: nothing answers on 127.0.1.1:3000"}}
+	appDown := &fakeBackend{failing: map[string]string{"dashboard.crm.lodo": "app down: nothing answers on 127.0.1.1:3000"}}
 	caddyOff := &fakeBackend{off: map[string]bool{"caddy": true}}
 	tests := []struct {
 		name    string
@@ -304,14 +304,14 @@ func TestModel_NameMark(t *testing.T) {
 		row     int // row 0 is under the cursor
 		want    string
 	}{
-		{name: "every check passed", backend: &fakeBackend{}, row: 1, want: "  " + green + " dashboard.crm.test"},
-		{name: "a check failed", backend: appDown, row: 1, want: "  " + red + " dashboard.crm.test"},
-		{name: "no port: dns alone", backend: &fakeBackend{}, row: 2, want: green + " flowy.test"},
-		{name: "turned off", backend: &fakeBackend{}, row: 3, want: dim + " old.test"},
-		{name: "caddy turned off", backend: caddyOff, row: 1, want: "  " + dim + " dashboard.crm.test"},
-		{name: "caddy off, no port", backend: caddyOff, row: 2, want: green + " flowy.test"},
-		{name: "dnsmasq turned off", backend: &fakeBackend{off: map[string]bool{"dnsmasq": true}}, row: 2, want: dim + " flowy.test"},
-		{name: "under the cursor", backend: &fakeBackend{failing: map[string]string{"crm.test": "dnsmasq: no answer"}}, row: 0, want: "○ crm.test"},
+		{name: "every check passed", backend: &fakeBackend{}, row: 1, want: "  " + green + " dashboard.crm.lodo"},
+		{name: "a check failed", backend: appDown, row: 1, want: "  " + red + " dashboard.crm.lodo"},
+		{name: "no port: dns alone", backend: &fakeBackend{}, row: 2, want: green + " flowy.lodo"},
+		{name: "turned off", backend: &fakeBackend{}, row: 3, want: dim + " old.lodo"},
+		{name: "caddy turned off", backend: caddyOff, row: 1, want: "  " + dim + " dashboard.crm.lodo"},
+		{name: "caddy off, no port", backend: caddyOff, row: 2, want: green + " flowy.lodo"},
+		{name: "dnsmasq turned off", backend: &fakeBackend{off: map[string]bool{"dnsmasq": true}}, row: 2, want: dim + " flowy.lodo"},
+		{name: "under the cursor", backend: &fakeBackend{failing: map[string]string{"crm.lodo": "dnsmasq: no answer"}}, row: 0, want: "○ crm.lodo"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -324,16 +324,16 @@ func TestModel_NameMark(t *testing.T) {
 	t.Run("no result yet", func(t *testing.T) {
 		t.Parallel()
 		m := ready(&fakeBackend{}, sample)
-		delete(m.results, "flowy.test")
-		if got, want := m.rows()[2][0], dim+" flowy.test"; got != want {
+		delete(m.results, "flowy.lodo")
+		if got, want := m.rows()[2][0], dim+" flowy.lodo"; got != want {
 			t.Errorf("name cell = %q, want %q", got, want)
 		}
 	})
 	t.Run("keys on the services", func(t *testing.T) {
 		t.Parallel()
-		m := ready(&fakeBackend{failing: map[string]string{"crm.test": "dnsmasq: no answer"}}, sample)
+		m := ready(&fakeBackend{failing: map[string]string{"crm.lodo": "dnsmasq: no answer"}}, sample)
 		next, _ := m.Update(press("tab"))
-		if got, want := next.(Model).table.Rows()[0][0], red+" crm.test"; got != want {
+		if got, want := next.(Model).table.Rows()[0][0], red+" crm.lodo"; got != want {
 			t.Errorf("row under the cursor without its highlight = %q, want %q", got, want)
 		}
 	})
@@ -345,10 +345,10 @@ func TestModel_MarkFollowsTheCursor(t *testing.T) {
 	m := ready(&fakeBackend{}, sample)
 	next, _ := m.Update(press("down"))
 	rows := next.(Model).table.Rows()
-	if want := newStyles().ok.Render("●") + " crm.test"; rows[0][0] != want {
+	if want := newStyles().ok.Render("●") + " crm.lodo"; rows[0][0] != want {
 		t.Errorf("row left behind = %q, want %q", rows[0][0], want)
 	}
-	if want := "  ● dashboard.crm.test"; rows[1][0] != want {
+	if want := "  ● dashboard.crm.lodo"; rows[1][0] != want {
 		t.Errorf("row under the cursor = %q, want %q", rows[1][0], want)
 	}
 }
@@ -366,15 +366,15 @@ func TestModel_EnabledColumn(t *testing.T) {
 
 // lastProject ends with a project and its subdomain.
 var lastProject = []store.Domain{
-	{Name: "aaa.test", Address: "127.0.1.2", Enabled: true},
-	{Name: "crm.test", Address: "127.0.1.1", Enabled: true},
-	{Name: "dashboard.crm.test", Address: "127.0.1.1", Port: 3000, Enabled: true},
+	{Name: "aaa.lodo", Address: "127.0.1.2", Enabled: true},
+	{Name: "crm.lodo", Address: "127.0.1.1", Enabled: true},
+	{Name: "dashboard.crm.lodo", Address: "127.0.1.1", Port: 3000, Enabled: true},
 }
 
 func TestDelete_TakesItsSubdomains(t *testing.T) {
 	t.Parallel()
 
-	many := append(slices.Clone(sample), store.Domain{Name: "api.crm.test", Address: "127.0.1.1", Enabled: true})
+	many := append(slices.Clone(sample), store.Domain{Name: "api.crm.lodo", Address: "127.0.1.1", Enabled: true})
 	tests := []struct {
 		name     string
 		domains  []store.Domain
@@ -382,9 +382,9 @@ func TestDelete_TakesItsSubdomains(t *testing.T) {
 		wantAsk  string
 		wantLeft []string
 	}{
-		{name: "one subdomain, named", domains: sample, wantAsk: "delete crm.test and dashboard.crm.test? y/N", wantLeft: []string{"flowy.test", "old.test"}},
-		{name: "several, counted", domains: many, wantAsk: "delete crm.test and its 2 subdomains? y/N", wantLeft: []string{"flowy.test", "old.test"}},
-		{name: "a subdomain alone", domains: sample, downs: 1, wantAsk: "delete dashboard.crm.test? y/N", wantLeft: []string{"crm.test", "flowy.test", "old.test"}},
+		{name: "one subdomain, named", domains: sample, wantAsk: "delete crm.lodo and dashboard.crm.lodo? y/N", wantLeft: []string{"flowy.lodo", "old.lodo"}},
+		{name: "several, counted", domains: many, wantAsk: "delete crm.lodo and its 2 subdomains? y/N", wantLeft: []string{"flowy.lodo", "old.lodo"}},
+		{name: "a subdomain alone", domains: sample, downs: 1, wantAsk: "delete dashboard.crm.lodo? y/N", wantLeft: []string{"crm.lodo", "flowy.lodo", "old.lodo"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -422,11 +422,11 @@ func TestModel_DeleteMovesToANeighbor(t *testing.T) {
 		downs   int
 		want    string // the name under the cursor after the delete; empty for the add row
 	}{
-		{name: "a middle name", domains: sample, downs: 1, want: "flowy.test"},
-		{name: "the last name", domains: sample, downs: 3, want: "flowy.test"},
+		{name: "a middle name", domains: sample, downs: 1, want: "flowy.lodo"},
+		{name: "the last name", domains: sample, downs: 3, want: "flowy.lodo"},
 		{name: "the only name", domains: sample[2:3], want: ""},
-		{name: "a project with its subdomain: past them", domains: sample, downs: 0, want: "flowy.test"},
-		{name: "the last project with its subdomain: back up", domains: lastProject, downs: 1, want: "aaa.test"},
+		{name: "a project with its subdomain: past them", domains: sample, downs: 0, want: "flowy.lodo"},
+		{name: "the last project with its subdomain: back up", domains: lastProject, downs: 1, want: "aaa.lodo"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -460,20 +460,20 @@ func TestModel_CursorMovedDuringAChangeStays(t *testing.T) {
 			name:  "toggle, then move down",
 			start: func(m Model) (tea.Model, tea.Cmd) { return m.Update(press("space")) },
 			moves: []string{"down"},
-			want:  "dashboard.crm.test",
+			want:  "dashboard.crm.lodo",
 		},
 		{
 			name:  "toggle, no move",
 			start: func(m Model) (tea.Model, tea.Cmd) { return m.Update(press("space")) },
-			want:  "crm.test",
+			want:  "crm.lodo",
 		},
 		{
 			name: "add above the row moved to",
 			start: func(m Model) (tea.Model, tea.Cmd) {
-				return typeText(send(m, "a"), "api").Update(press("enter")) // api.crm.test is listed right under crm.test
+				return typeText(send(m, "a"), "api").Update(press("enter")) // api.crm.lodo is listed right under crm.lodo
 			},
 			moves: []string{"down", "down", "down"},
-			want:  "flowy.test",
+			want:  "flowy.lodo",
 		},
 		{
 			name: "move onto the name being added",
@@ -481,14 +481,14 @@ func TestModel_CursorMovedDuringAChangeStays(t *testing.T) {
 				return typeText(send(m, "a"), "api").Update(press("enter"))
 			},
 			moves: []string{"down", "down", "up"},
-			want:  "api.crm.test",
+			want:  "api.crm.lodo",
 		},
 		{
 			name: "add, no move",
 			start: func(m Model) (tea.Model, tea.Cmd) {
 				return typeText(send(m, "a"), "api").Update(press("enter"))
 			},
-			want: "api.crm.test",
+			want: "api.crm.lodo",
 		},
 		{
 			name:  "move to the add row",
@@ -522,12 +522,12 @@ func TestModel_CursorMovedDuringAChangeStays(t *testing.T) {
 func TestModel_AddingShowsTheRowAtOnce(t *testing.T) {
 	t.Parallel()
 
-	m := send(ready(&fakeBackend{}, sample), "a") // a subdomain of crm.test
+	m := send(ready(&fakeBackend{}, sample), "a") // a subdomain of crm.lodo
 	next, cmd := typeText(m, "api").Update(press("enter"))
 	m = next.(Model)
 	rows := m.table.Rows()
-	if len(rows) != len(sample)+2 || rows[1][0] != "  "+m.spinner.View()+" api.crm.test" {
-		t.Fatalf("rows while saving = %q, want api.crm.test under crm.test with the spinner", rows)
+	if len(rows) != len(sample)+2 || rows[1][0] != "  "+m.spinner.View()+" api.crm.lodo" {
+		t.Fatalf("rows while saving = %q, want api.crm.lodo under crm.lodo with the spinner", rows)
 	}
 	if got := m.table.Height(); got != len(sample)+2 {
 		t.Errorf("table shows %d rows, want room for the new one", got)
@@ -536,7 +536,7 @@ func TestModel_AddingShowsTheRowAtOnce(t *testing.T) {
 	if len(m.adding) != 0 || len(m.table.Rows()) != len(sample)+2 {
 		t.Fatalf("rows after saving = %q, adding %v; want the saved row once", m.table.Rows(), m.adding)
 	}
-	if want := "  \u25cf api.crm.test"; m.table.Rows()[1][0] != want {
+	if want := "  \u25cf api.crm.lodo"; m.table.Rows()[1][0] != want {
 		t.Errorf("row 1 = %q, want %q", m.table.Rows()[1][0], want)
 	}
 }
@@ -586,12 +586,12 @@ func TestModel_Reload(t *testing.T) {
 
 	b := &fakeBackend{}
 	m := ready(b, sample)
-	b.onDisk = []store.Domain{{Name: "new.test", Address: "127.0.1.9", Enabled: true}}
+	b.onDisk = []store.Domain{{Name: "new.lodo", Address: "127.0.1.9", Enabled: true}}
 	m = send(m, "r")
-	if len(b.applied) != 1 || b.applied[0][0].Name != "new.test" {
+	if len(b.applied) != 1 || b.applied[0][0].Name != "new.lodo" {
 		t.Errorf("applied %v, want the list on disk", b.applied)
 	}
-	if len(m.domains) != 1 || m.domains[0].Name != "new.test" {
+	if len(m.domains) != 1 || m.domains[0].Name != "new.lodo" {
 		t.Errorf("domains = %v, want the list on disk", m.domains)
 	}
 }
@@ -638,14 +638,14 @@ func TestModel_ToggleMultipleRowsInParallel(t *testing.T) {
 	b := &fakeBackend{}
 	m := ready(b, sample)
 
-	// Toggle row 0 (crm.test -> off), then before it finishes move to row 2
-	// (flowy.test -> off) and row 3 (old.test -> on).
+	// Toggle row 0 (crm.lodo -> off), then before it finishes move to row 2
+	// (flowy.lodo -> off) and row 3 (old.lodo -> on).
 	next, cmd1 := m.Update(press("space"))
 	m = next.(Model)
-	m = send(send(m, "down"), "down") // flowy.test
+	m = send(send(m, "down"), "down") // flowy.lodo
 	next, cmd2 := m.Update(press("space"))
 	m = next.(Model)
-	m = send(m, "down") // old.test
+	m = send(m, "down") // old.lodo
 	next, cmd3 := m.Update(press("space"))
 	m = next.(Model)
 
@@ -682,22 +682,22 @@ func TestModel_ToggleMultipleRowsInParallel(t *testing.T) {
 	}
 
 	// Toggling the same row twice before the first save finishes restores its state.
-	next, undoCmd := m.Update(press("space")) // old.test -> off
+	next, undoCmd := m.Update(press("space")) // old.lodo -> off
 	m = next.(Model)
-	next, _ = m.Update(press("space")) // old.test -> back on
+	next, _ = m.Update(press("space")) // old.lodo -> back on
 	m = settle(next.(Model), undoCmd)
 	if !m.domains[3].Enabled {
-		t.Errorf("old.test Enabled = false after double-toggle undo, want true")
+		t.Errorf("old.lodo Enabled = false after double-toggle undo, want true")
 	}
 
 	// Toggling a row before the startup Init() report finishes is not blocked or overwritten.
 	b2 := &fakeBackend{onDisk: slices.Clone(sample)}
 	m2 := New(t.Context(), b2, sample, Start{})
 	initCmd := m2.Init()
-	next2, toggleCmd := m2.Update(press("space")) // crm.test -> off before initCmd settles
+	next2, toggleCmd := m2.Update(press("space")) // crm.lodo -> off before initCmd settles
 	m2 = settle(next2.(Model), tea.Batch(initCmd, toggleCmd))
 	if m2.domains[0].Enabled {
-		t.Errorf("crm.test Enabled = true after toggling during startup probe, want false")
+		t.Errorf("crm.lodo Enabled = true after toggling during startup probe, want false")
 	}
 }
 
@@ -715,7 +715,7 @@ func TestModel_WindowSize(t *testing.T) {
 	t.Parallel()
 
 	m := ready(&fakeBackend{}, sample)
-	longest := ansi.StringWidth("  ● dashboard.crm.test")
+	longest := ansi.StringWidth("  ● dashboard.crm.lodo")
 	fixed := enabledWidth + addressWidth + portWidth + checkWidth + 2*columns
 	tests := []struct {
 		terminal, box, name int
@@ -752,7 +752,7 @@ func TestModel_BoxFitsTheNames(t *testing.T) {
 
 	many := make([]store.Domain, 40)
 	for i := range many {
-		many[i] = store.Domain{Name: "n" + strconv.Itoa(i) + ".test", Address: "127.0.0.1"}
+		many[i] = store.Domain{Name: "n" + strconv.Itoa(i) + ".lodo", Address: "127.0.0.1"}
 	}
 	tests := []struct {
 		name    string
@@ -793,11 +793,11 @@ func TestModel_HTTPSKey(t *testing.T) {
 	t.Parallel()
 
 	b := &fakeBackend{}
-	m := send(ready(b, sample), "down") // dashboard.crm.test, on port 3000
+	m := send(ready(b, sample), "down") // dashboard.crm.lodo, on port 3000
 	next, _ := m.Update(press("s"))     // the change has started, not landed
 	started := next.(Model)
 	if !started.busy || !strings.HasPrefix(strings.TrimLeft(started.table.Rows()[1][0], " "), started.spinner.View()) {
-		t.Errorf("after s: busy %v, row %q; want the spinner on dashboard.crm.test", started.busy, started.table.Rows()[1][0])
+		t.Errorf("after s: busy %v, row %q; want the spinner on dashboard.crm.lodo", started.busy, started.table.Rows()[1][0])
 	}
 
 	m = send(m, "s")
@@ -830,7 +830,7 @@ func TestModel_HTTPSKeyNeedsAPort(t *testing.T) {
 	t.Parallel()
 
 	b := &fakeBackend{}
-	m := send(ready(b, sample), "s") // crm.test has no port
+	m := send(ready(b, sample), "s") // crm.lodo has no port
 	if m.busy || len(b.saved) != 0 || m.domains[0].HTTPS {
 		t.Errorf("s without a port: busy %v, saved %d, %+v; want nothing changed", m.busy, len(b.saved), m.domains[0])
 	}
@@ -850,7 +850,7 @@ func TestModel_HTTPSCheckCell(t *testing.T) {
 		want    string
 	}{
 		{name: "passes", backend: &fakeBackend{}, want: "dns ✓  https ✓"},
-		{name: "fails", backend: &fakeBackend{failing: map[string]string{"dashboard.crm.test": "https: bad certificate"}}, want: "dns ✗  https ✗"},
+		{name: "fails", backend: &fakeBackend{failing: map[string]string{"dashboard.crm.lodo": "https: bad certificate"}}, want: "dns ✗  https ✗"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

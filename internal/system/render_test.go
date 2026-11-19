@@ -63,8 +63,8 @@ func TestScript_Run(t *testing.T) {
 		},
 		{
 			name:       "skips invalid lines",
-			list:       "test\n../x.test\nX.TEST\nx.com\n\nx.test \n-x.test\nflowy.test\na/b.test\n" + long + "\n",
-			after:      map[string]string{"flowy.test": resolver},
+			list:       "lodo\n../x.lodo\nX.LODO\nx.local\n\nx.lodo \n-x.lodo\nflowy.lodo\na/b.lodo\n" + long + "\n",
+			after:      map[string]string{"flowy.lodo": resolver},
 			wantStdout: "lodo: 1 resolver files written, 0 removed, 9 lines skipped\n",
 		},
 		{

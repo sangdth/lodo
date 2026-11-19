@@ -39,9 +39,9 @@ func mainProject(p Project, domains []store.Domain, gone func(path string) bool)
 // worktree's, which the worktree takes over (Proposal.Claim). ok is false when
 // every address is taken.
 func worktreeSlot(p Project, domains []store.Domain, main store.Domain, gone func(path string) bool) (name, address string, ok bool) {
-	label := strings.TrimSuffix(main.Name, store.Suffix)
+	label, suffix := store.CutProject(main.Name)
 	for n := store.OwnFirst; n <= store.OwnLast; n++ {
-		name, address := label+strconv.Itoa(n)+store.Suffix, store.OwnAddress(n)
+		name, address := label+strconv.Itoa(n)+suffix, store.OwnAddress(n)
 		if store.ValidateProject(name) != nil {
 			return "", "", false // too long for a label: every n is
 		}

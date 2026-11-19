@@ -35,14 +35,14 @@ var shopTree = map[string]string{
 	"apps/api/package.json": `{"scripts": {"dev": "nest start --watch"}}`,
 }
 
-// listedShop lists shop.test with root as its folder, web's name with HTTPS,
+// listedShop lists shop.lodo with root as its folder, web's name with HTTPS,
 // a name that is off, and another project on web's port.
 func listedShop(root string) []store.Domain {
 	return []store.Domain{
-		{Name: "shop.test", Address: "127.0.1.1", Enabled: true, Root: root},
-		{Name: "web.shop.test", Address: "127.0.1.1", Port: 3001, Enabled: true, HTTPS: true},
-		{Name: "docs.shop.test", Address: "127.0.1.1", Port: 3002},
-		{Name: "crm.test", Address: "127.0.1.2", Port: 3001, Enabled: true},
+		{Name: "shop.lodo", Address: "127.0.1.1", Enabled: true, Root: root},
+		{Name: "web.shop.lodo", Address: "127.0.1.1", Port: 3001, Enabled: true, HTTPS: true},
+		{Name: "docs.shop.lodo", Address: "127.0.1.1", Port: 3002},
+		{Name: "crm.lodo", Address: "127.0.1.2", Port: 3001, Enabled: true},
 	}
 }
 
@@ -53,7 +53,7 @@ func newDevApp(t *testing.T) (a app, p paths.Paths, r *run.Fake, out *strings.Bu
 	p, r, out = paths.ForTest(t.TempDir()), run.NewFake(), &strings.Builder{}
 	a = newApp(p, r, out, out)
 	a.lookPath = func(file string) (string, error) { return "/opt/bin/" + file, nil }
-	a.form = func(context.Context, []store.Domain, string, bool) (bool, error) {
+	a.form = func(context.Context, []store.Domain, string, options) (bool, error) {
 		t.Error("the setup form opened")
 		return false, nil
 	}
@@ -129,10 +129,10 @@ func TestApp_StartDev(t *testing.T) {
 	}
 	golden.RequireEqual(t, out.String())
 
-	hook := filepath.Join(p.DevDir, "shop.test.cjs")
+	hook := filepath.Join(p.DevDir, "shop.lodo.cjs")
 	data, err := os.ReadFile(hook)
 	if err != nil || !strings.Contains(string(data), `{"3001":"127.0.1.1"}`) {
-		t.Errorf("hook file = %q, %v; want web's port on shop.test's address", data, err)
+		t.Errorf("hook file = %q, %v; want web's port on shop.lodo's address", data, err)
 	}
 	if _, err := os.Stat(p.BindHook); err != nil {
 		t.Errorf("listen hook: %v", err)
@@ -140,7 +140,7 @@ func TestApp_StartDev(t *testing.T) {
 	checkStarted(t, r, root, hook)
 	_, env := r.Replaced()
 	if !slices.Contains(env, "DOCKER_HOST_IP=127.0.1.1") {
-		t.Errorf("env lacks DOCKER_HOST_IP=127.0.1.1, shop.test's address: %q", env)
+		t.Errorf("env lacks DOCKER_HOST_IP=127.0.1.1, shop.lodo's address: %q", env)
 	}
 	if slices.ContainsFunc(env, func(kv string) bool { return strings.HasPrefix(kv, "COMPOSE_PROJECT_NAME=") }) {
 		t.Errorf("env sets COMPOSE_PROJECT_NAME outside a worktree: %q", env)
@@ -190,16 +190,31 @@ func TestApp_DevAutoRealForm(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := store.Find(saved, "shop.test"); !ok {
-		t.Errorf("saved = %+v, want shop.test", saved)
+	if _, ok := store.Find(saved, "shop.lodo"); !ok {
+		t.Errorf("saved = %+v, want shop.lodo", saved)
 	}
-	if _, ok := store.Find(saved, "web.shop.test"); !ok {
-		t.Errorf("saved = %+v, want web.shop.test", saved)
+	if _, ok := store.Find(saved, "web.shop.lodo"); !ok {
+		t.Errorf("saved = %+v, want web.shop.lodo", saved)
 	}
-	if _, ok := store.Find(saved, "api.shop.test"); !ok {
-		t.Errorf("saved = %+v, want api.shop.test", saved)
+	if _, ok := store.Find(saved, "api.shop.lodo"); !ok {
+		t.Errorf("saved = %+v, want api.shop.lodo", saved)
 	}
-	checkStarted(t, r, root, filepath.Join(p.DevDir, "shop.test.cjs"))
+	checkStarted(t, r, root, filepath.Join(p.DevDir, "shop.lodo.cjs"))
+
+	// Re-running with -y --name custom.domain renames the project and starts on the new hook.
+	if err := a.startDev(t.Context(), root, saved, options{auto: true, name: "custom.domain"}); err != nil {
+		t.Fatalf("startDev(-y --name custom.domain): %v\n%s", err, out.String())
+	}
+	saved, err = store.Load(p.DomainsJSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := store.Find(saved, "web.custom.domain"); !ok {
+		t.Errorf("saved = %+v, want web.custom.domain", saved)
+	}
+	if _, ok := store.Find(saved, "shop.lodo"); ok {
+		t.Errorf("saved = %+v, want old shop.lodo removed", saved)
+	}
 }
 
 func TestApp_StartDevAuto(t *testing.T) {
@@ -209,8 +224,8 @@ func TestApp_StartDevAuto(t *testing.T) {
 		root := writeTree(t, shopTree)
 		a, p, _, _ := newDevApp(t)
 		got := !auto
-		a.form = func(_ context.Context, _ []store.Domain, _ string, a bool) (bool, error) {
-			got = a
+		a.form = func(_ context.Context, _ []store.Domain, _ string, o options) (bool, error) {
+			got = o.auto
 			return true, store.Save(p.DomainsJSON, listedShop(root))
 		}
 		if err := a.startDev(t.Context(), root, nil, options{auto: auto}); err != nil {
@@ -232,12 +247,12 @@ func TestApp_StartDevWorktree(t *testing.T) {
 	tree := maps.Clone(shopTree)
 	delete(tree, ".git/HEAD")
 	tree[".git"] = "gitdir: " + filepath.Join(main, ".git", "worktrees", "wt") + "\n"
-	const dotenv = "DATABASE_URL=postgres://u:hunter2@shop.test:5432/shop\nAPI_URL=http://web.shop.test\nSECRET=abc\n"
+	const dotenv = "DATABASE_URL=postgres://u:hunter2@shop.lodo:5432/shop\nAPI_URL=http://web.shop.lodo\nSECRET=abc\n"
 	tree["apps/web/.env"] = dotenv
 	worktree := writeTree(t, tree)
 	domains := append(listedShop(main),
-		store.Domain{Name: "shop2.test", Address: "127.0.1.3", Enabled: true, Root: worktree},
-		store.Domain{Name: "web.shop2.test", Address: "127.0.1.3", Port: 3001, Enabled: true},
+		store.Domain{Name: "shop2.lodo", Address: "127.0.1.3", Enabled: true, Root: worktree},
+		store.Domain{Name: "web.shop2.lodo", Address: "127.0.1.3", Port: 3001, Enabled: true},
 	)
 
 	a, _, r, out := newDevApp(t)
@@ -248,8 +263,8 @@ func TestApp_StartDevWorktree(t *testing.T) {
 	for _, want := range []string{
 		"DOCKER_HOST_IP=127.0.1.3",
 		"COMPOSE_PROJECT_NAME=shop2",
-		"DATABASE_URL=postgres://u:hunter2@shop2.test:5432/shop",
-		"API_URL=http://web.shop2.test",
+		"DATABASE_URL=postgres://u:hunter2@shop2.lodo:5432/shop",
+		"API_URL=http://web.shop2.lodo",
 	} {
 		if !slices.Contains(env, want) {
 			t.Errorf("env lacks %q", want)
@@ -271,7 +286,7 @@ func TestProjectEnv(t *testing.T) {
 		"package.json": `{"scripts": {"dev": "next dev"}}`,
 		".env":         "API_URL=http://localhost:3000\n",
 	})
-	domains := []store.Domain{{Name: "shop.test", Address: "127.0.1.1", Port: 3000, Enabled: true, Root: root}}
+	domains := []store.Domain{{Name: "shop.lodo", Address: "127.0.1.1", Port: 3000, Enabled: true, Root: root}}
 	a, _, _, _ := newDevApp(t)
 	_, proposal, ok := tui.NewBackend(a.paths, a.runner).Scan(t.Context(), root, "", domains)
 	if !ok {
@@ -279,7 +294,7 @@ func TestProjectEnv(t *testing.T) {
 	}
 	env := []string{"PATH=/bin", "DOCKER_HOST_IP=127.0.0.9", "API_URL=http://old"}
 	got := projectEnv(env, proposal)
-	if want := []string{"PATH=/bin", "DOCKER_HOST_IP=127.0.1.1", "API_URL=http://shop.test"}; !slices.Equal(got, want) {
+	if want := []string{"PATH=/bin", "DOCKER_HOST_IP=127.0.1.1", "API_URL=http://shop.lodo"}; !slices.Equal(got, want) {
 		t.Errorf("projectEnv = %q, want %q", got, want)
 	}
 	if env[1] != "DOCKER_HOST_IP=127.0.0.9" {
@@ -319,7 +334,7 @@ func TestApp_StartExec(t *testing.T) {
 				t.Errorf("env lacks DOCKER_HOST_IP=127.0.1.1: %q", env)
 			}
 			hooked := func(kv string) bool {
-				return strings.HasPrefix(kv, "NODE_OPTIONS=") && strings.Contains(kv, "shop.test.cjs")
+				return strings.HasPrefix(kv, "NODE_OPTIONS=") && strings.Contains(kv, "shop.lodo.cjs")
 			}
 			if slices.ContainsFunc(env, hooked) {
 				t.Errorf("lodo exec loaded the listen hook: %q", env)
@@ -334,8 +349,8 @@ func TestApp_StartDevForm(t *testing.T) {
 	errApply := errors.New("update /etc/resolver: sudo: a password is required")
 	tests := []struct {
 		name      string
-		listed    bool  // shop.test is listed before lodo dev
-		other     bool  // shop.test belongs to another clone of shop, still on disk
+		listed    bool  // shop.lodo is listed before lodo dev
+		other     bool  // shop.lodo belongs to another clone of shop, still on disk
 		edit      bool  // lodo dev --edit
 		saved     bool  // the form saves listedShop
 		formErr   error // the form's Err
@@ -363,7 +378,7 @@ func TestApp_StartDevForm(t *testing.T) {
 				domains = listedShop(writeTree(t, shopTree))
 			}
 			opened := 0
-			a.form = func(_ context.Context, got []store.Domain, dir string, _ bool) (bool, error) {
+			a.form = func(_ context.Context, got []store.Domain, dir string, _ options) (bool, error) {
 				opened++
 				if len(got) != len(domains) || dir != root {
 					t.Errorf("form got %d names in %s, want %d in %s", len(got), dir, len(domains), root)
@@ -386,7 +401,7 @@ func TestApp_StartDevForm(t *testing.T) {
 				t.Errorf("output lacks %q:\n%s", tt.wantOut, out.String())
 			}
 			if tt.wantStart {
-				checkStarted(t, r, root, filepath.Join(p.DevDir, "shop.test.cjs"))
+				checkStarted(t, r, root, filepath.Join(p.DevDir, "shop.lodo.cjs"))
 			} else if dir, _ := r.Replaced(); dir != "" {
 				t.Errorf("Replace ran in %s", dir)
 			}
@@ -433,7 +448,7 @@ func TestApp_StartDevNodeOptions(t *testing.T) {
 				}
 			}
 			options, configVar := got["NODE_OPTIONS"], got[tt.pm+"_config_node_options"]
-			hook := `--require "` + filepath.Join(p.DevDir, "shop.test.cjs") + `"`
+			hook := `--require "` + filepath.Join(p.DevDir, "shop.lodo.cjs") + `"`
 			if len(options) != 1 || !slices.Equal(configVar, options) || !strings.Contains(options[0], hook) ||
 				!strings.HasPrefix(options[0], tt.want) || strings.Contains(options[0], "null") || strings.Contains(options[0], "undefined") {
 				t.Errorf("NODE_OPTIONS = %q, %s_config_node_options = %q; want one value in both, starting with %q and requiring the hook",

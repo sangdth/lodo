@@ -285,8 +285,8 @@ func sameRepo(list []store.Domain, owner store.Domain, repo string) bool {
 	})
 }
 
-// testHostRE matches a .test name inside a .env value.
-var testHostRE = regexp.MustCompile(`(?i)` + store.NamePattern)
+// testHostRE matches a .lodo or .test name inside a .env value.
+var testHostRE = regexp.MustCompile(`(?i)[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*\.(?:` + store.TLD + `|test)`)
 
 // envHosts returns the .test host names in lines' readable values, lowercase,
 // in the order they appear.

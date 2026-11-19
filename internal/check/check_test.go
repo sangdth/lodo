@@ -160,7 +160,7 @@ func TestEnv_Run_Dnsmasq(t *testing.T) {
 		{
 			name:   "turned off",
 			change: func(t *testing.T, m *mac) { t.Helper(); setService(t, m, "dnsmasq", off) },
-			want:   dnsmasqCheck.off("turned off: no .test name resolves until it is on"),
+			want:   dnsmasqCheck.off("turned off: no .lodo name resolves until it is on"),
 		},
 		{
 			name:   "runs as root",
@@ -626,12 +626,12 @@ func TestEnv_Run_Caddy(t *testing.T) {
 				{Name: "crm.test", Address: "127.0.1.1", Enabled: true},
 			},
 			change: func(t *testing.T, m *mac) { t.Helper(); setService(t, m, "caddy", off) },
-			want:   caddyCheck.off("turned off: no http://name.test reaches its port until it is on"),
+			want:   caddyCheck.off("turned off: no http://name.lodo reaches its port until it is on"),
 		},
 		{
 			name:   "turned off",
 			change: func(t *testing.T, m *mac) { t.Helper(); setService(t, m, "caddy", off) },
-			want:   caddyCheck.off("turned off: no http://name.test reaches its port until it is on"),
+			want:   caddyCheck.off("turned off: no http://name.lodo reaches its port until it is on"),
 		},
 		{
 			name:   "not installed",

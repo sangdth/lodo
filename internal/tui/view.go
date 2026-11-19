@@ -459,7 +459,9 @@ func (m Model) logView() string {
 
 // nameInput draws the name field as wide as its text, or its placeholder, and
 // the form's dimmed suffix after it, which can't be edited.
-func (m Model) nameInput() string { return m.styles.suffixed(m.form.inputs[fieldName], m.form.suffix) }
+func (m Model) nameInput() string {
+	return m.styles.suffixed(m.form.inputs[fieldName], m.form.shownSuffix())
+}
 
 // suffixed draws a field at its text's width with its suffix, dimmed, right
 // after it.

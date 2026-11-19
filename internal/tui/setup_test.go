@@ -18,8 +18,8 @@ import (
 	"github.com/sangdth/lodo/internal/store"
 )
 
-// unlisted is sample without flowy.test.
-var unlisted = slices.DeleteFunc(slices.Clone(sample), func(d store.Domain) bool { return d.Name == "flowy.test" })
+// unlisted is sample without flowy.lodo.
+var unlisted = slices.DeleteFunc(slices.Clone(sample), func(d store.Domain) bool { return d.Name == "flowy.lodo" })
 
 // inFlowyApps is a backend for flowy as in the plan: a Next app in apps/web
 // on 3000, a NestJS app in apps/api on 4000, an app in apps/docs whose port
@@ -42,8 +42,8 @@ func inFlowyApps() *fakeBackend {
 // flowyListed is unlisted with flowy set up: its name with the folder and the
 // compose file, and its web app's name with HTTPS on.
 var flowyListed = append(slices.Clone(unlisted),
-	store.Domain{Name: "flowy.test", Address: "127.0.1.2", Enabled: true, Compose: flowyDev, Root: flowyRoot},
-	store.Domain{Name: "web.flowy.test", Address: "127.0.1.2", Port: 3000, Enabled: true, HTTPS: true},
+	store.Domain{Name: "flowy.lodo", Address: "127.0.1.2", Enabled: true, Compose: flowyDev, Root: flowyRoot},
+	store.Domain{Name: "web.flowy.lodo", Address: "127.0.1.2", Port: 3000, Enabled: true, HTTPS: true},
 )
 
 // setupIn returns the setup form, on its own, for an lodo dev started in
@@ -95,14 +95,14 @@ func TestSetup_FirstRun(t *testing.T) {
 		t.Fatalf("saved %v, err %v after enter; want saved", s.Saved(), s.Err())
 	}
 	want := []store.Domain{
-		{Name: "crm.test", Address: "127.0.1.1", Enabled: true},
-		{Name: "dashboard.crm.test", Address: "127.0.1.1", Port: 3000, Enabled: true},
-		{Name: "flowy.test", Address: "127.0.1.2", Enabled: true, Compose: flowyDev, Root: flowyRoot},
-		{Name: "api.flowy.test", Address: "127.0.1.2", Port: 4000, Enabled: true},
-		{Name: "docs.flowy.test", Address: "127.0.1.2", Enabled: true},
-		{Name: "mail.flowy.test", Address: "127.0.1.2", Port: 8025, Enabled: true},
-		{Name: "web.flowy.test", Address: "127.0.1.2", Port: 3000, Enabled: true},
-		{Name: "old.test", Address: "127.0.0.1"},
+		{Name: "crm.lodo", Address: "127.0.1.1", Enabled: true},
+		{Name: "dashboard.crm.lodo", Address: "127.0.1.1", Port: 3000, Enabled: true},
+		{Name: "flowy.lodo", Address: "127.0.1.2", Enabled: true, Compose: flowyDev, Root: flowyRoot},
+		{Name: "api.flowy.lodo", Address: "127.0.1.2", Port: 4000, Enabled: true},
+		{Name: "docs.flowy.lodo", Address: "127.0.1.2", Enabled: true},
+		{Name: "mail.flowy.lodo", Address: "127.0.1.2", Port: 8025, Enabled: true},
+		{Name: "web.flowy.lodo", Address: "127.0.1.2", Port: 3000, Enabled: true},
+		{Name: "old.lodo", Address: "127.0.0.1"},
 	}
 	if got := lastSaved(t, b); !slices.Equal(got, want) {
 		t.Errorf("saved\n%+v\nwant\n%+v", got, want)
@@ -111,7 +111,7 @@ func TestSetup_FirstRun(t *testing.T) {
 		t.Errorf("saved %d times, applied %d times, %d doctor runs; want one save and apply and no doctor run: lodo dev starts the apps",
 			len(b.saved), len(b.applied), b.reports)
 	}
-	if got := ansi.Strip(s.View().Content); !strings.Contains(got, "linked flowy.test to ~/Projects/flowy/compose.dev.yaml") {
+	if got := ansi.Strip(s.View().Content); !strings.Contains(got, "linked flowy.lodo to ~/Projects/flowy/compose.dev.yaml") {
 		t.Errorf("the last view lacks what the change did:\n%s", got)
 	}
 }
@@ -123,20 +123,20 @@ func TestSetup_Edit(t *testing.T) {
 	s := setupIn(b, flowyListed)
 	golden.RequireEqual(t, s.View().Content)
 
-	s = send(retype(tabTo(s, rowStop(0)), "site"), "enter") // web.flowy.test is the first row
+	s = send(retype(tabTo(s, rowStop(0)), "site"), "enter") // web.flowy.lodo is the first row
 	if !s.Saved() {
 		t.Fatalf("not saved: %v", s.Err())
 	}
 	saved := lastSaved(t, b)
-	want := store.Domain{Name: "site.flowy.test", Address: "127.0.1.2", Port: 3000, Enabled: true, HTTPS: true}
+	want := store.Domain{Name: "site.flowy.lodo", Address: "127.0.1.2", Port: 3000, Enabled: true, HTTPS: true}
 	if !slices.Contains(saved, want) {
 		t.Errorf("saved %+v, want it to hold %+v: a renamed name keeps HTTPS", saved, want)
 	}
-	if _, ok := store.Find(saved, "web.flowy.test"); ok {
-		t.Errorf("saved %+v, want web.flowy.test gone", saved)
+	if _, ok := store.Find(saved, "web.flowy.lodo"); ok {
+		t.Errorf("saved %+v, want web.flowy.lodo gone", saved)
 	}
-	if d, _ := store.Find(saved, "flowy.test"); d.Compose != flowyDev {
-		t.Errorf("flowy.test's compose = %q, want %q kept", d.Compose, flowyDev)
+	if d, _ := store.Find(saved, "flowy.lodo"); d.Compose != flowyDev {
+		t.Errorf("flowy.lodo's compose = %q, want %q kept", d.Compose, flowyDev)
 	}
 }
 
@@ -145,8 +145,8 @@ func TestSetup_Edit(t *testing.T) {
 func TestSetup_BareNameKeepsHTTPS(t *testing.T) {
 	t.Parallel()
 
-	ownApp := append(slices.Clone(unlisted), // flowy.test itself serves the web app, with HTTPS
-		store.Domain{Name: "flowy.test", Address: "127.0.1.2", Port: 3000, Enabled: true, HTTPS: true, Compose: flowyDev, Root: flowyRoot})
+	ownApp := append(slices.Clone(unlisted), // flowy.lodo itself serves the web app, with HTTPS
+		store.Domain{Name: "flowy.lodo", Address: "127.0.1.2", Port: 3000, Enabled: true, HTTPS: true, Compose: flowyDev, Root: flowyRoot})
 	tests := []struct {
 		name    string
 		domains []store.Domain
@@ -156,12 +156,12 @@ func TestSetup_BareNameKeepsHTTPS(t *testing.T) {
 	}{
 		{
 			name: "web gives up its name", domains: flowyListed, label: "",
-			want: store.Domain{Name: "flowy.test", Address: "127.0.1.2", Port: 3000, Enabled: true, HTTPS: true, Compose: flowyDev, Root: flowyRoot},
-			gone: "web.flowy.test",
+			want: store.Domain{Name: "flowy.lodo", Address: "127.0.1.2", Port: 3000, Enabled: true, HTTPS: true, Compose: flowyDev, Root: flowyRoot},
+			gone: "web.flowy.lodo",
 		},
 		{
 			name: "the project's name gives up its app", domains: ownApp, label: "web",
-			want: store.Domain{Name: "web.flowy.test", Address: "127.0.1.2", Port: 3000, Enabled: true, HTTPS: true},
+			want: store.Domain{Name: "web.flowy.lodo", Address: "127.0.1.2", Port: 3000, Enabled: true, HTTPS: true},
 		},
 	}
 	for _, tt := range tests {
@@ -212,8 +212,8 @@ func TestSetup_ToggleOff(t *testing.T) {
 	if s = send(s, "enter"); !s.Saved() {
 		t.Errorf("not saved: %v", s.Err())
 	}
-	if d, _ := store.Find(lastSaved(t, b), "flowy.test"); d.Compose != "" {
-		t.Errorf("flowy.test's compose = %q, want none: the link was off", d.Compose)
+	if d, _ := store.Find(lastSaved(t, b), "flowy.lodo"); d.Compose != "" {
+		t.Errorf("flowy.lodo's compose = %q, want none: the link was off", d.Compose)
 	}
 }
 
@@ -254,7 +254,7 @@ func TestSetup_ScrollFollowsTheFocus(t *testing.T) {
 	s = tabTo(s, rowStop(len(s.rows))) // the link toggle, the last stop: the lines under it show
 	golden.RequireEqual(t, s.View().Content)
 
-	if got := ansi.Strip(s.View().Content); !strings.Contains(got, "note  docs.flowy.test") || strings.Contains(got, "↓ more") {
+	if got := ansi.Strip(s.View().Content); !strings.Contains(got, "note  docs.flowy.lodo") || strings.Contains(got, "↓ more") {
 		t.Errorf("the last stop doesn't show the end of the form:\n%s", got)
 	}
 	top := s.top
@@ -289,12 +289,12 @@ func TestSetup_Errors(t *testing.T) {
 		at    int // the stop the error shows at
 		want  string
 	}{
-		{name: "two labels in the project", stop: stopName, typed: "web.x", want: "a project's name has one label before .test"},
-		{name: "no project", stop: stopName, typed: "", want: "name needs a label before .test"},
+		{name: "three labels in the project", stop: stopName, typed: "web.flowy.lodo", want: "a project's name has two labels, like flowy.lodo"},
+		{name: "no project", stop: stopName, typed: "", want: "name needs a label before .lodo"},
 		{name: "a bad address", stop: stopAddress, typed: "10.0.0.1", at: stopAddress, want: "address must be an IPv4 address in 127.0.0.0/8, like 127.0.1.3"},
-		{name: "another project's address", stop: stopAddress, typed: "127.0.1.1", at: stopAddress, want: "127.0.1.1 belongs to crm.test"},
-		{name: "a name twice", stop: rowStop(1), typed: "mail", at: rowStop(3), want: "mail.flowy.test is already listed"},
-		{name: "another app's folder", stop: rowStop(0), typed: "api", at: rowStop(0), want: "apps/api has api.flowy.test"},
+		{name: "another project's address", stop: stopAddress, typed: "127.0.1.1", at: stopAddress, want: "127.0.1.1 belongs to crm.lodo"},
+		{name: "a name twice", stop: rowStop(1), typed: "mail", at: rowStop(3), want: "mail.flowy.lodo is already listed"},
+		{name: "another app's folder", stop: rowStop(0), typed: "api", at: rowStop(0), want: "apps/api has api.flowy.lodo"},
 		{name: "not a port", stop: rowStop(0) + 1, typed: "web", at: rowStop(0) + 1, want: "port must be a number"},
 	}
 	for _, tt := range tests {
@@ -314,7 +314,7 @@ func TestSetup_Errors(t *testing.T) {
 func TestSetup_NoPortNoName(t *testing.T) {
 	t.Parallel()
 
-	docsListed := append(slices.Clone(flowyListed), store.Domain{Name: "docs.flowy.test", Address: "127.0.1.2", Enabled: true})
+	docsListed := append(slices.Clone(flowyListed), store.Domain{Name: "docs.flowy.lodo", Address: "127.0.1.2", Enabled: true})
 	tests := []struct {
 		name    string
 		domains []store.Domain
@@ -348,23 +348,23 @@ func TestSetup_TakeOver(t *testing.T) {
 	moved := home + "/Projects/flow" // flowy's folder before it was renamed
 	tests := []struct {
 		name   string
-		root   string // flow.test's folder
+		root   string // flow.lodo's folder
 		exists bool   // whether that folder is still there
 		app    string // the label of flow's listed name on the web app's port
-		want   string // the error; empty when flowy takes flow.test over
+		want   string // the error; empty when flowy takes flow.lodo over
 	}{
 		{name: "a folder that is gone", root: moved, app: "web"},
 		{name: "no folder", root: "", app: "web"},
 		{name: "the web app's own name", root: moved, app: "site"},
-		{name: "another project's folder", root: moved, exists: true, app: "web", want: "flow.test belongs to ~/Projects/flow: give this project another name"},
+		{name: "another project's folder", root: moved, exists: true, app: "web", want: "flow.lodo belongs to ~/Projects/flow: give this project another name"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			domains := append(slices.Clone(unlisted),
-				store.Domain{Name: "flow.test", Address: "127.0.1.2", Enabled: true, Root: tt.root},
-				store.Domain{Name: "admin.flow.test", Address: "127.0.1.2", Port: 5000, Enabled: true},
-				store.Domain{Name: tt.app + ".flow.test", Address: "127.0.1.2", Port: 3000, Enabled: true, HTTPS: true},
+				store.Domain{Name: "flow.lodo", Address: "127.0.1.2", Enabled: true, Root: tt.root},
+				store.Domain{Name: "admin.flow.lodo", Address: "127.0.1.2", Port: 5000, Enabled: true},
+				store.Domain{Name: tt.app + ".flow.lodo", Address: "127.0.1.2", Port: 3000, Enabled: true, HTTPS: true},
 			)
 			b := inFlowyApps()
 			b.folders = map[string]bool{moved: tt.exists}
@@ -383,52 +383,52 @@ func TestSetup_TakeOver(t *testing.T) {
 				t.Fatalf("not saved: %q %v", s.errMsg, s.Err())
 			}
 			saved := lastSaved(t, b)
-			got := slices.DeleteFunc(slices.Clone(saved), func(d store.Domain) bool { return store.Project(d.Name) != "flow.test" })
-			want := store.Sort([]store.Domain{ // every name keeps flow.test's address, and the web app its listed name
-				{Name: "flow.test", Address: "127.0.1.2", Enabled: true, Compose: flowyDev, Root: flowyRoot},
-				{Name: "admin.flow.test", Address: "127.0.1.2", Port: 5000, Enabled: true},
-				{Name: "api.flow.test", Address: "127.0.1.2", Port: 4000, Enabled: true},
-				{Name: "docs.flow.test", Address: "127.0.1.2", Enabled: true},
-				{Name: "mail.flow.test", Address: "127.0.1.2", Port: 8025, Enabled: true},
-				{Name: tt.app + ".flow.test", Address: "127.0.1.2", Port: 3000, Enabled: true, HTTPS: true},
+			got := slices.DeleteFunc(slices.Clone(saved), func(d store.Domain) bool { return store.Project(d.Name) != "flow.lodo" })
+			want := store.Sort([]store.Domain{ // every name keeps flow.lodo's address, and the web app its listed name
+				{Name: "flow.lodo", Address: "127.0.1.2", Enabled: true, Compose: flowyDev, Root: flowyRoot},
+				{Name: "admin.flow.lodo", Address: "127.0.1.2", Port: 5000, Enabled: true},
+				{Name: "api.flow.lodo", Address: "127.0.1.2", Port: 4000, Enabled: true},
+				{Name: "docs.flow.lodo", Address: "127.0.1.2", Enabled: true},
+				{Name: "mail.flow.lodo", Address: "127.0.1.2", Port: 8025, Enabled: true},
+				{Name: tt.app + ".flow.lodo", Address: "127.0.1.2", Port: 3000, Enabled: true, HTTPS: true},
 			})
 			if !slices.Equal(got, want) {
-				t.Errorf("saved flow.test's names\n%+v\nwant\n%+v", got, want)
+				t.Errorf("saved flow.lodo's names\n%+v\nwant\n%+v", got, want)
 			}
-			if _, ok := store.Find(saved, "flowy.test"); ok {
-				t.Errorf("saved %+v, want no flowy.test", saved)
+			if _, ok := store.Find(saved, "flowy.lodo"); ok {
+				t.Errorf("saved %+v, want no flowy.lodo", saved)
 			}
 		})
 	}
 }
 
 // TestSetup_TakeOverDropsTheOldName renames listed flowy to site, a listed
-// name with no folder: flowy.test and its names go, so a later scan names the
-// project site.test.
+// name with no folder: flowy.lodo and its names go, so a later scan names the
+// project site.lodo.
 func TestSetup_TakeOverDropsTheOldName(t *testing.T) {
 	t.Parallel()
 
 	b := inFlowyApps()
-	domains := append(slices.Clone(flowyListed), store.Domain{Name: "site.test", Address: "127.0.1.3", Enabled: true})
+	domains := append(slices.Clone(flowyListed), store.Domain{Name: "site.lodo", Address: "127.0.1.3", Enabled: true})
 	s := send(retype(setupIn(b, domains), "site"), "enter")
 	if !s.Saved() {
 		t.Fatalf("not saved: %q %v", s.errMsg, s.Err())
 	}
 	saved := lastSaved(t, b)
-	for _, name := range []string{"flowy.test", "web.flowy.test"} {
+	for _, name := range []string{"flowy.lodo", "web.flowy.lodo"} {
 		if _, ok := store.Find(saved, name); ok {
 			t.Errorf("saved %+v, want %s gone", saved, name)
 		}
 	}
-	if got := scan.Propose(b.project, saved, "", b.Gone).Name; got != "site.test" {
-		t.Errorf("a later scan names the project %s, want site.test", got)
+	if got := scan.Propose(b.project, saved, "", b.Gone).Name; got != "site.lodo" {
+		t.Errorf("a later scan names the project %s, want site.lodo", got)
 	}
 }
 
-// TestSetup_SameFolderName opens the form in ~/Work/flowy while flowy.test
+// TestSetup_SameFolderName opens the form in ~/Work/flowy while flowy.lodo
 // belongs to ~/Projects/flowy, which is still there: the form offers
-// flowy-2.test on a free address with every app, refuses flowy.test typed in
-// without a scan and keeps its rows, and saves flowy-2.test leaving the other
+// flowy-2.lodo on a free address with every app, refuses flowy.lodo typed in
+// without a scan and keeps its rows, and saves flowy-2.lodo leaving the other
 // project's names alone.
 func TestSetup_SameFolderName(t *testing.T) {
 	t.Parallel()
@@ -444,11 +444,11 @@ func TestSetup_SameFolderName(t *testing.T) {
 	}
 
 	s = send(send(retype(s, "flowy"), "tab"), "enter")
-	if want := "flowy.test belongs to ~/Projects/flowy: give this project another name"; s.errMsg != want || s.errAt != stopName || len(b.saved) != 0 {
+	if want := "flowy.lodo belongs to ~/Projects/flowy: give this project another name"; s.errMsg != want || s.errAt != stopName || len(b.saved) != 0 {
 		t.Fatalf("error %q at %d, saved %v; want %q at the name and nothing saved", s.errMsg, s.errAt, b.saved, want)
 	}
 	if b.scans != 1 || len(s.rows) != 4 {
-		t.Fatalf("%d scans, %d rows; want no scan of flowy.test and the rows kept", b.scans, len(s.rows))
+		t.Fatalf("%d scans, %d rows; want no scan of flowy.lodo and the rows kept", b.scans, len(s.rows))
 	}
 
 	s = send(retype(s, "flowy-2"), "enter")
@@ -461,11 +461,11 @@ func TestSetup_SameFolderName(t *testing.T) {
 			t.Errorf("saved %+v, want %+v unchanged", saved, want)
 		}
 	}
-	if d, _ := store.Find(saved, "flowy-2.test"); d.Root != other || d.Address != "127.0.1.3" {
-		t.Errorf("flowy-2.test = %+v, want it on 127.0.1.3 with %s as its folder", d, other)
+	if d, _ := store.Find(saved, "flowy-2.lodo"); d.Root != other || d.Address != "127.0.1.3" {
+		t.Errorf("flowy-2.lodo = %+v, want it on 127.0.1.3 with %s as its folder", d, other)
 	}
-	if d, _ := store.Find(saved, "web.flowy-2.test"); d.Port != 3000 || d.Address != "127.0.1.3" {
-		t.Errorf("web.flowy-2.test = %+v, want it on 127.0.1.3 port 3000", d)
+	if d, _ := store.Find(saved, "web.flowy-2.lodo"); d.Port != 3000 || d.Address != "127.0.1.3" {
+		t.Errorf("web.flowy-2.lodo = %+v, want it on 127.0.1.3 port 3000", d)
 	}
 }
 
@@ -478,7 +478,7 @@ func TestSetup_OneBareName(t *testing.T) {
 	if s = send(s, "enter"); !s.Saved() {
 		t.Fatalf("not saved with web's label empty: %s", s.errMsg)
 	}
-	want := store.Domain{Name: "flowy.test", Address: "127.0.1.2", Port: 3000, Enabled: true, Compose: flowyDev, Root: flowyRoot}
+	want := store.Domain{Name: "flowy.lodo", Address: "127.0.1.2", Port: 3000, Enabled: true, Compose: flowyDev, Root: flowyRoot}
 	if saved := lastSaved(t, b); !slices.Contains(saved, want) {
 		t.Errorf("saved %+v, want it to hold %+v: the empty label takes the project's name", saved, want)
 	}
@@ -487,13 +487,13 @@ func TestSetup_OneBareName(t *testing.T) {
 	s = setupIn(b, unlisted)
 	s = retype(tabTo(retype(tabTo(s, rowStop(0)), ""), rowStop(1)), "")
 	s = send(s, "enter")
-	if want := "only one app can be flowy.test alone: give this one a label"; s.errMsg != want || s.errAt != rowStop(1) || len(b.saved) != 0 {
+	if want := "only one app can be flowy.lodo alone: give this one a label"; s.errMsg != want || s.errAt != rowStop(1) || len(b.saved) != 0 {
 		t.Errorf("error %q at %d, saved %v; want %q at the second label", s.errMsg, s.errAt, b.saved, want)
 	}
 }
 
 // TestSetup_RootAppKeepsTheName gives flowy an app in its root: a later scan
-// ties that app to flowy.test, so the form refuses a label on its row and the
+// ties that app to flowy.lodo, so the form refuses a label on its row and the
 // project's name alone on another.
 func TestSetup_RootAppKeepsTheName(t *testing.T) {
 	t.Parallel()
@@ -509,7 +509,7 @@ func TestSetup_RootAppKeepsTheName(t *testing.T) {
 			t.Fatalf("the first row is %q's, want the root's", s.rows[0].what)
 		}
 		s = send(retype(tabTo(s, rowStop(tt.row)), tt.label), "enter")
-		if want := "the root's app has flowy.test"; s.errMsg != want || s.errAt != rowStop(tt.row) || len(b.saved) != 0 {
+		if want := "the root's app has flowy.lodo"; s.errMsg != want || s.errAt != rowStop(tt.row) || len(b.saved) != 0 {
 			t.Errorf("label %q on row %d: error %q at %d, saved %v; want %q there and nothing saved",
 				tt.label, tt.row, s.errMsg, s.errAt, b.saved, want)
 		}
@@ -525,14 +525,14 @@ func TestSetup_RenameScansAgain(t *testing.T) {
 	if b.scans != 2 {
 		t.Fatalf("%d scans, want a second one once the name changed", b.scans)
 	}
-	if got := ansi.Strip(s.View().Content); !strings.Contains(got, "api.shop.test") {
-		t.Errorf("the form lacks api.shop.test after the rename:\n%s", got)
+	if got := ansi.Strip(s.View().Content); !strings.Contains(got, "api.shop.lodo") {
+		t.Errorf("the form lacks api.shop.lodo after the rename:\n%s", got)
 	}
 	var vars []string
 	for _, v := range s.proposal.Env {
 		vars = append(vars, v.Key+"="+v.Value)
 	}
-	if want := []string{"DATABASE_URL=postgres://***@shop.test:5432/flowy", "WEB_URL=http://web.shop.test"}; !slices.Equal(vars, want) {
+	if want := []string{"DATABASE_URL=postgres://***@shop.lodo:5432/flowy", "WEB_URL=http://web.shop.lodo"}; !slices.Equal(vars, want) {
 		t.Errorf("variables %q after the rename, want %q", vars, want)
 	}
 	if send(s, "tab"); b.scans != 2 {
@@ -549,11 +549,11 @@ func TestSetup_EnterScansFirst(t *testing.T) {
 	if !s.Saved() || b.scans != 2 {
 		t.Fatalf("saved %v after %d scans; want saved after a second scan", s.Saved(), b.scans)
 	}
-	if _, ok := store.Find(lastSaved(t, b), "site.flowy.test"); !ok {
-		t.Errorf("saved %+v, want site.flowy.test", lastSaved(t, b))
+	if _, ok := store.Find(lastSaved(t, b), "site.flowy.lodo"); !ok {
+		t.Errorf("saved %+v, want site.flowy.lodo", lastSaved(t, b))
 	}
-	if got := s.proposal.Env; len(got) != 2 || got[1].Env() != "WEB_URL=http://site.flowy.test" {
-		t.Errorf("variables %+v, want WEB_URL on site.flowy.test", got)
+	if got := s.proposal.Env; len(got) != 2 || got[1].Env() != "WEB_URL=http://site.flowy.lodo" {
+		t.Errorf("variables %+v, want WEB_URL on site.flowy.lodo", got)
 	}
 }
 
@@ -572,10 +572,10 @@ func TestSetup_EnterWaitsForTheScan(t *testing.T) {
 	if s = settle(s, rescan); !s.Saved() {
 		t.Fatalf("not saved once the scan came back: %q %v", s.errMsg, s.Err())
 	}
-	if _, ok := store.Find(lastSaved(t, b), "web.shop.test"); !ok {
-		t.Errorf("saved %+v; want web.shop.test", lastSaved(t, b))
+	if _, ok := store.Find(lastSaved(t, b), "web.shop.lodo"); !ok {
+		t.Errorf("saved %+v; want web.shop.lodo", lastSaved(t, b))
 	}
-	if got := s.proposal.Env; len(got) != 2 || !strings.Contains(got[1].Value, "web.shop.test") {
+	if got := s.proposal.Env; len(got) != 2 || !strings.Contains(got[1].Value, "web.shop.lodo") {
 		t.Errorf("variables %+v, want them on shop's names", got)
 	}
 }
@@ -617,8 +617,8 @@ func TestSetup_Auto(t *testing.T) {
 	if s = settle(s, s.Init()); !s.Saved() || s.Err() != nil {
 		t.Fatalf("saved %v, err %v with Auto; want saved with no key", s.Saved(), s.Err())
 	}
-	if d, ok := store.Find(lastSaved(t, b), "flowy.test"); !ok || d.Compose != flowyDev {
-		t.Errorf("flowy.test = %+v, %v; want it saved with its compose file", d, ok)
+	if d, ok := store.Find(lastSaved(t, b), "flowy.lodo"); !ok || d.Compose != flowyDev {
+		t.Errorf("flowy.lodo = %+v, %v; want it saved with its compose file", d, ok)
 	}
 
 	b = inFlowyApps()
@@ -645,7 +645,7 @@ func TestSetup_NotSetUp(t *testing.T) {
 		{name: "not in a project", backend: &fakeBackend{}, want: "✗ not in a project", wantErr: scan.ErrNoProject},
 		{
 			name:    "nothing to serve",
-			backend: &fakeBackend{project: scan.Project{Root: flowyRoot, Name: "flowy.test"}},
+			backend: &fakeBackend{project: scan.Project{Root: flowyRoot, Name: "flowy.lodo"}},
 			want:    "scan found no dev server or compose file in ~/Projects/flowy",
 		},
 	}
@@ -688,14 +688,14 @@ func TestDashboard_I(t *testing.T) {
 	if m.mode != modeList || m.err != nil {
 		t.Fatalf("mode %v, err %v after enter; want the list", m.mode, m.err)
 	}
-	if _, ok := store.Find(m.domains, "web.flowy.test"); !ok || len(b.applied) != 1 || b.reports != 2 {
-		t.Errorf("listed %+v, applied %d times, %d doctor runs; want web.flowy.test applied once and checked after the first run",
+	if _, ok := store.Find(m.domains, "web.flowy.lodo"); !ok || len(b.applied) != 1 || b.reports != 2 {
+		t.Errorf("listed %+v, applied %d times, %d doctor runs; want web.flowy.lodo applied once and checked after the first run",
 			m.domains, len(b.applied), b.reports)
 	}
-	if got := m.cursorName(); got != "flowy.test" {
+	if got := m.cursorName(); got != "flowy.lodo" {
 		t.Errorf("cursor on %q, want the project's name", got)
 	}
-	if !strings.HasPrefix(m.note, "linked flowy.test") {
+	if !strings.HasPrefix(m.note, "linked flowy.lodo") {
 		t.Errorf("note = %q, want what the change did", m.note)
 	}
 }
@@ -711,7 +711,7 @@ func TestDashboard_IScrollsInTheBox(t *testing.T) {
 		t.Fatalf("the form doesn't scroll in a %d-line terminal:\n%s", defaultHeight, got)
 	}
 	next, _ := m.Update(tea.WindowSizeMsg{Width: defaultWidth, Height: 40})
-	if got := ansi.Strip(next.(Model).View().Content); strings.Contains(got, "↓ more") || !strings.Contains(got, "note  docs.flowy.test") {
+	if got := ansi.Strip(next.(Model).View().Content); strings.Contains(got, "↓ more") || !strings.Contains(got, "note  docs.flowy.lodo") {
 		t.Errorf("the form doesn't show whole in a 40-line terminal:\n%s", got)
 	}
 }
@@ -731,17 +731,17 @@ func TestDashboard_ISavesWhileAChangeRuns(t *testing.T) {
 
 	b := inFlowyApps()
 	m := readyIn(b, unlisted, flowyOrigin)
-	next, cmd1 := m.Update(press("space")) // crm.test starts turning off
+	next, cmd1 := m.Update(press("space")) // crm.lodo starts turning off
 	m = send(next.(Model), "i")
-	m = send(m, "enter") // queues flowy.test's setup behind crm.test's toggle
+	m = send(m, "enter") // queues flowy.lodo's setup behind crm.lodo's toggle
 	if m.mode != modeList || m.err != nil {
 		t.Fatalf("mode %v, err %v; want the setup form closed and queued", m.mode, m.err)
 	}
 	m = settle(m, cmd1)
-	if d, ok := store.Find(m.domains, "crm.test"); !ok || d.Enabled {
-		t.Errorf("crm.test = %+v, %v; want it turned off", d, ok)
+	if d, ok := store.Find(m.domains, "crm.lodo"); !ok || d.Enabled {
+		t.Errorf("crm.lodo = %+v, %v; want it turned off", d, ok)
 	}
-	if _, ok := store.Find(m.domains, "web.flowy.test"); !ok {
+	if _, ok := store.Find(m.domains, "web.flowy.lodo"); !ok {
 		t.Errorf("domains = %+v; want flowy's names added", m.domains)
 	}
 }
@@ -776,7 +776,7 @@ func TestSetup_EditRootAppWithoutPort(t *testing.T) {
 	b := inFlowy()
 	b.project.Apps = []scan.App{{Dir: "."}}
 	domains := append(slices.Clone(unlisted),
-		store.Domain{Name: "flowy.test", Address: "127.0.1.2", Enabled: true, Compose: flowyDev, Root: flowyRoot},
+		store.Domain{Name: "flowy.lodo", Address: "127.0.1.2", Enabled: true, Compose: flowyDev, Root: flowyRoot},
 	)
 	s := setupIn(b, domains)
 	if len(s.rows) != 1 || s.rows[0].what != "." {
@@ -786,8 +786,8 @@ func TestSetup_EditRootAppWithoutPort(t *testing.T) {
 	if !s.Saved() || s.Err() != nil {
 		t.Fatalf("saved %v, err %v (%q)", s.Saved(), s.Err(), s.errMsg)
 	}
-	if d, ok := store.Find(lastSaved(t, b), "flowy.test"); !ok || d.Port != 4000 {
-		t.Errorf("flowy.test = %+v, %v; want port 4000", d, ok)
+	if d, ok := store.Find(lastSaved(t, b), "flowy.lodo"); !ok || d.Port != 4000 {
+		t.Errorf("flowy.lodo = %+v, %v; want port 4000", d, ok)
 	}
 }
 
@@ -817,17 +817,51 @@ func TestSetup_AutoConcurrentReconciles(t *testing.T) {
 	s := NewSetup(context.Background(), b, unlisted, auto)
 	next, cmd := s.Update(settleMsg(s.Init()))
 	// Simulate another process saving 127.0.1.2 before s's submit acquires the lock.
-	b.onDisk = append(slices.Clone(unlisted), store.Domain{Name: "other.test", Address: "127.0.1.2", Enabled: true})
+	b.onDisk = append(slices.Clone(unlisted), store.Domain{Name: "other.lodo", Address: "127.0.1.2", Enabled: true})
 	s2 := settle(next.(Setup), cmd)
 	if !s2.Saved() || s2.Err() != nil {
 		t.Fatalf("saved %v, err %v", s2.Saved(), s2.Err())
 	}
 	saved := lastSaved(t, b)
-	if _, ok := store.Find(saved, "other.test"); !ok {
-		t.Errorf("other.test was clobbered: %+v", saved)
+	if _, ok := store.Find(saved, "other.lodo"); !ok {
+		t.Errorf("other.lodo was clobbered: %+v", saved)
 	}
-	if d, ok := store.Find(saved, "flowy.test"); !ok || d.Address != "127.0.1.3" {
-		t.Errorf("flowy.test = %+v, %v; want it moved to 127.0.1.3", d, ok)
+	if d, ok := store.Find(saved, "flowy.lodo"); !ok || d.Address != "127.0.1.3" {
+		t.Errorf("flowy.lodo = %+v, %v; want it moved to 127.0.1.3", d, ok)
+	}
+}
+
+func TestSetup_CustomDomain(t *testing.T) {
+	t.Parallel()
+
+	b := inFlowyApps()
+	s := setupIn(b, unlisted)
+	s = send(retype(s, "shop.custom"), "enter")
+	if !s.Saved() || s.Err() != nil {
+		t.Fatalf("saved %v, err %v (%q); want saved", s.Saved(), s.Err(), s.errMsg)
+	}
+	saved := lastSaved(t, b)
+	for _, want := range []string{"shop.custom", "web.shop.custom", "api.shop.custom", "docs.shop.custom", "mail.shop.custom"} {
+		if _, ok := store.Find(saved, want); !ok {
+			t.Errorf("saved %+v, want %s", saved, want)
+		}
+	}
+
+	// Start.Name with Auto (-y --name) renames an already-listed project and preserves HTTPS.
+	b2 := inFlowyApps()
+	b2.onDisk = slices.Clone(flowyListed)
+	origin := flowyOrigin
+	origin.Name, origin.Auto = "shop.custom", true
+	s2 := NewSetup(context.Background(), b2, flowyListed, origin)
+	if s2 = settle(s2, s2.Init()); !s2.Saved() || s2.Err() != nil {
+		t.Fatalf("Auto with Name: saved %v, err %v (%q)", s2.Saved(), s2.Err(), s2.errMsg)
+	}
+	saved2 := lastSaved(t, b2)
+	if d, ok := store.Find(saved2, "web.shop.custom"); !ok || !d.HTTPS {
+		t.Errorf("web.shop.custom = %+v, %v; want HTTPS preserved", d, ok)
+	}
+	if _, ok := store.Find(saved2, "flowy.lodo"); ok {
+		t.Errorf("old flowy.lodo kept in %+v", saved2)
 	}
 }
 

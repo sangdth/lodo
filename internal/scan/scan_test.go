@@ -186,9 +186,9 @@ func TestName(t *testing.T) {
 	t.Parallel()
 
 	for root, want := range map[string]string{
-		"/Users/sang/Projects/flowy":      "flowy.test",
-		"/Users/sang/Projects/My_App":     "my-app.test",
-		"/Users/sang/Projects/opscom.web": "opscom-web.test",
+		"/Users/sang/Projects/flowy":      "flowy.lodo",
+		"/Users/sang/Projects/My_App":     "my-app.lodo",
+		"/Users/sang/Projects/opscom.web": "opscom-web.lodo",
 		"/Users/sang/Projects/__":         "",
 	} {
 		if got := Name(root); got != want {
@@ -438,7 +438,20 @@ func TestPropose(t *testing.T) {
 			name:    "a name with two labels",
 			project: Project{Root: "/p/shop", Name: "shop.test", Apps: []App{{Dir: ".", Port: 3000}}},
 			chosen:  "web.shop.test",
-			want:    Proposal{Name: "", Notes: []string{"web.shop.test: a project's name has one label before .test"}},
+			want:    Proposal{Name: "", Notes: []string{"web.shop.test: a project's name has two labels, like flowy.lodo"}},
+		},
+		{
+			name:    "custom domain",
+			project: Project{Root: "/p/shop", Name: "shop.lodo", Apps: []App{{Dir: "apps/web", Port: 3000}}},
+			chosen:  "shop.custom",
+			want: Proposal{
+				Name:    "shop.custom",
+				Address: "127.0.1.1",
+				Add: []store.Domain{
+					{Name: "shop.custom", Address: "127.0.1.1", Enabled: true, Root: "/p/shop"},
+					{Name: "web.shop.custom", Address: "127.0.1.1", Port: 3000, Enabled: true},
+				},
+			},
 		},
 		{
 			name:    "nest gets its port",

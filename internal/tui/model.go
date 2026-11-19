@@ -63,7 +63,8 @@ const (
 type Start struct {
 	Dir  string
 	Home string
-	Auto bool // the setup form saves what its first scan proposes without waiting for enter: lodo dev -y
+	Name string // the project name --name gave; empty lets the scan pick it
+	Auto bool   // the setup form saves what its first scan proposes without waiting for enter: lodo dev -y
 }
 
 // deps is what the dashboard and the setup form run backend calls with: the

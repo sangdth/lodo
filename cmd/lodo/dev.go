@@ -20,6 +20,12 @@ import (
 // dev starts the Node apps of the project dir is in on the project's
 // addresses, once ready.
 func (a app) dev(ctx context.Context, dir string, o options) int {
+	if o.name != "" {
+		if err := store.ValidateProject(store.ResolveName(o.name)); err != nil {
+			a.fail(fmt.Errorf("--name %s: %w", o.name, err))
+			return 2
+		}
+	}
 	domains, ok := a.ready(ctx, "lodo dev starts")
 	if !ok {
 		return 1
@@ -32,21 +38,29 @@ func (a app) dev(ctx context.Context, dir string, o options) int {
 }
 
 // startDev opens the setup form when no listed name has the project's folder
-// as its Root, or with o.edit, then replaces lodo with the project's `<pm> run
-// dev`, whose NODE_OPTIONS load the hook that binds each of the project's
-// ports to its address, with the project's variables (projectEnv). It returns
-// on an error, after a cancel, and in tests.
+// as its Root, or with o.edit or a new o.name, then replaces lodo with the
+// project's `<pm> run dev`, whose NODE_OPTIONS load the hook that binds each
+// of the project's ports to its address, with the project's variables
+// (projectEnv). It returns on an error, after a cancel, and in tests.
 // With o.auto the form saves what the scan proposes with no key pressed: a
-// new worktree of a listed project gets <main><n>.test on 127.0.1.<n>.
+// new worktree of a listed project gets <main><n>.lodo on 127.0.1.<n>.
 func (a app) startDev(ctx context.Context, dir string, domains []store.Domain, o options) error {
+	if o.name != "" {
+		o.name = store.ResolveName(o.name)
+		if err := store.ValidateProject(o.name); err != nil {
+			return fmt.Errorf("--name %s: %w", o.name, err)
+		}
+	}
 	backend := tui.NewBackend(a.paths, a.runner)
-	_, proposal, ok := backend.Scan(ctx, dir, "", domains)
+	_, proposal, ok := backend.Scan(ctx, dir, o.name, domains)
 	if !ok {
 		return scan.ErrNoProject
 	}
-	listed := slices.ContainsFunc(domains, func(d store.Domain) bool { return scan.SameFolder(d.Root, proposal.Root) })
+	listed := slices.ContainsFunc(domains, func(d store.Domain) bool {
+		return scan.SameFolder(d.Root, proposal.Root) && (o.name == "" || d.Name == o.name)
+	})
 	if o.edit || !listed {
-		saved, err := a.form(ctx, domains, dir, o.auto)
+		saved, err := a.form(ctx, domains, dir, o)
 		if err != nil {
 			return err
 		}
@@ -158,7 +172,8 @@ func composeVars(proposal scan.Proposal) []string {
 		vars = append(vars, compose.EnvVar+"="+proposal.Address)
 	}
 	if proposal.Worktree && proposal.Name != "" {
-		vars = append(vars, compose.ProjectVar+"="+strings.TrimSuffix(proposal.Name, store.Suffix))
+		label, _ := store.CutProject(proposal.Name)
+		vars = append(vars, compose.ProjectVar+"="+label)
 	}
 	return vars
 }
@@ -215,8 +230,8 @@ func (a app) devEnv(ctx context.Context, pm, pmPath, root, hook string) ([]strin
 }
 
 // setupForm is app.form: it runs the setup form inline on the terminal.
-func (a app) setupForm(ctx context.Context, domains []store.Domain, dir string, auto bool) (bool, error) {
-	s := tui.NewSetup(ctx, tui.NewBackend(a.paths, a.runner), domains, tui.Start{Dir: dir, Home: a.paths.Home, Auto: auto})
+func (a app) setupForm(ctx context.Context, domains []store.Domain, dir string, o options) (bool, error) {
+	s := tui.NewSetup(ctx, tui.NewBackend(a.paths, a.runner), domains, tui.Start{Dir: dir, Home: a.paths.Home, Name: o.name, Auto: o.auto})
 	opts := append([]tea.ProgramOption{tea.WithContext(ctx)}, a.teaOpts...)
 	final, err := tea.NewProgram(s, opts...).Run()
 	if err != nil {

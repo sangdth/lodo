@@ -28,10 +28,10 @@ type app struct {
 	stderr io.Writer
 
 	// form runs the setup form for the project dir is in on the terminal,
-	// saving what the scan proposes with no key pressed when auto is set;
+	// saving what the scan proposes with no key pressed when o.auto is set;
 	// saved reports whether domains.json holds the project's names. Tests
 	// replace it, and lookPath, which finds a command on PATH.
-	form     func(ctx context.Context, domains []store.Domain, dir string, auto bool) (saved bool, err error)
+	form     func(ctx context.Context, domains []store.Domain, dir string, o options) (saved bool, err error)
 	lookPath func(file string) (string, error)
 	teaOpts  []tea.ProgramOption
 }

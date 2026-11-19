@@ -66,7 +66,11 @@ func newEditForm(domains []store.Domain, d store.Domain, start Start) form {
 		f.parent, f.suffix = parent.Name, "."+parent.Name
 	}
 	f.inputs = newInputs(f.suffix)
-	f.inputs[fieldName].SetValue(strings.TrimSuffix(d.Name, f.suffix))
+	val := store.TrimDefaultSuffix(d.Name)
+	if f.parent != "" {
+		val = strings.TrimSuffix(d.Name, f.suffix)
+	}
+	f.inputs[fieldName].SetValue(val)
 	f.inputs[fieldAddress].SetValue(d.Address)
 	if d.Port > 0 {
 		f.inputs[fieldPort].SetValue(strconv.Itoa(d.Port))
@@ -83,7 +87,11 @@ func newInputs(suffix string) [fieldCount]textinput.Model {
 	styles := textinput.DefaultDarkStyles()
 	styles.Cursor.Blink = false
 	var inputs [fieldCount]textinput.Model
-	for i, limit := range [fieldCount]int{store.MaxNameLen - len(suffix), len("127.255.255.255"), len("65535"), maxPathLen} {
+	nameLimit := store.MaxNameLen
+	if suffix != store.Suffix {
+		nameLimit = store.MaxNameLen - len(suffix)
+	}
+	for i, limit := range [fieldCount]int{nameLimit, len("127.255.255.255"), len("65535"), maxPathLen} {
 		inputs[i] = textinput.New()
 		inputs[i].Prompt = ""
 		inputs[i].CharLimit = limit
@@ -177,14 +185,30 @@ func (f form) compose() string {
 	return filepath.Clean(v)
 }
 
-// name is the typed labels with the suffix, or empty when none are typed. A
-// suffix typed out of habit is not doubled.
-func (f form) name() string {
-	labels := strings.TrimSuffix(strings.TrimSpace(f.inputs[fieldName].Value()), f.suffix)
-	if labels == "" {
+// shownSuffix is the dimmed suffix drawn after the name field: the parent for
+// a subdomain form, or .lodo until a dot is typed for a custom domain.
+func (f form) shownSuffix() string {
+	if f.parent != "" {
+		return f.suffix
+	}
+	if strings.Contains(f.inputs[fieldName].Value(), ".") {
 		return ""
 	}
-	return labels + f.suffix
+	return f.suffix
+}
+
+// name is the typed domain: under f.parent for a subdomain form, or resolved
+// with .lodo when no dot is typed.
+func (f form) name() string {
+	v := strings.TrimSpace(f.inputs[fieldName].Value())
+	if f.parent != "" {
+		labels := strings.TrimSuffix(v, f.suffix)
+		if labels == "" {
+			return ""
+		}
+		return labels + f.suffix
+	}
+	return store.ResolveName(v)
 }
 
 // setError shows err under the field it concerns and moves the cursor there.
