@@ -28,8 +28,9 @@ stops the commit.
 ## Layout
 
 - `cmd/lodo`: subcommand dispatch and output. The only code that builds `paths.Default()` and `run.Exec`. Bare
-  `lodo` prints the help, `lodo ps` opens the dashboard, `lodo dev` (`dev.go`) starts a project, and `lodo exec`
-  runs a command with the project's variables.
+  `lodo` prints the help, `lodo ps` opens the dashboard, `lodo dev` (`dev.go`) starts a project, `lodo exec`
+  runs a command with the project's variables, and `lodo prune` (`prune.go`) removes names whose folder is gone
+  (and the current git worktree's with `--worktree`).
 - `internal/paths`: every file, tool and system path. `paths.ForTest(root)` moves all of them under `root`.
 - `internal/run`: the only code that runs commands. `Replace` execs one in lodo's place, for `lodo dev`. `run.Fake`
   records them in tests.
@@ -74,10 +75,9 @@ stops the commit.
   and nothing runs `sudo` or starts a service. Tests build paths with `paths.ForTest(t.TempDir())` and run lodo's
   commands through `run.Fake`. A few run `dnsmasq --test`, `caddy validate`, `visudo -c` and `plutil -lint`
   read-only on generated files, and `node --test` on the bind hook (`TestBind`), and skip when the tool is missing.
-- `lodo apply`, `lodo setup`, `lodo uninstall`, `lodo ps`'s keys and `lodo dev` change this Mac's DNS and
-  services, `lodo dev` starts a project's dev servers, and `lodo exec` runs whatever it is given: run them only when
-  the task asks for it. `lodo doctor`,
-  `lodo scan`, `lodo version`, bare `lodo` and the tests are safe.
+- `lodo apply`, `lodo setup`, `lodo uninstall`, `lodo prune`, `lodo ps`'s keys and `lodo dev` change this Mac's
+  DNS and services, `lodo dev` starts a project's dev servers, and `lodo exec` runs whatever it is given: run them
+  only when the task asks for it. `lodo doctor`, `lodo scan`, `lodo version`, bare `lodo` and the tests are safe.
 - Every external command goes through `run.Runner`, with the absolute tool path from `paths.Paths` and each
   argument passed separately. Nothing builds a shell command line from data. The `PATH` lookups are the package
   manager `lodo dev` runs and the command `lodo exec` runs, in `cmd/lodo`; each then execs through

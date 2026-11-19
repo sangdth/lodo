@@ -66,6 +66,8 @@ func (a app) command(ctx context.Context, command string, o options) int {
 		return a.scan(ctx, dir, o)
 	case "exec":
 		return a.exec(ctx, dir, o.args)
+	case "prune":
+		return a.prune(ctx, dir, o.worktree)
 	}
 	return a.dev(ctx, dir, o)
 }

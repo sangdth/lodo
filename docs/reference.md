@@ -380,6 +380,19 @@ folder, or a gone one, becomes this folder's (`save  this folder as hugger.lodo'
 still there gets only the note `hugger.lodo belongs to <folder>: give this project another name`. It exits 1
 outside a project.
 
+`lodo prune` removes every listed name whose project folder is gone on disk, with the names under it and its
+`~/.config/lodo/dev/<project>.cjs` hook file, and applies the list. With `--worktree`, it also removes the git
+worktree the current folder is in, before a tool deletes the worktree folder; in the main checkout `--worktree`
+leaves the checkout's names alone. It locks `domains.json`, so parallel runs wait their turn, and does nothing
+when no name matches. In a worktree cleanup hook:
+
+```sh
+if [ -f .git ]; then
+  lodo exec docker compose down -v --remove-orphans 2>/dev/null || true
+fi
+lodo prune --worktree
+```
+
 `lodo uninstall` removes what setup installed; see [Uninstall](#uninstall). `lodo version` prints the version.
 
 ## How it works

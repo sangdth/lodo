@@ -27,6 +27,8 @@ func TestDispatch(t *testing.T) {
 		{name: "dev with a command", args: []string{"dev", "--", "next", "dev"}, wantCode: 2, wantStderr: `lodo: dev: unexpected argument "next"`},
 		{name: "dev --edit -y", args: []string{"dev", "--edit", "-y"}, wantCode: 2, wantStderr: "lodo: dev: --edit opens the form and -y skips it: pick one"},
 		{name: "dev with invalid --name", args: []string{"dev", "--name", "a.b.c"}, wantCode: 2, wantStderr: "✗ --name a.b.c: a project's name has two labels"},
+		{name: "prune with an argument", args: []string{"prune", "now"}, wantCode: 2, wantStderr: `lodo: prune: unexpected argument "now"`},
+		{name: "prune with an unknown flag", args: []string{"prune", "--all"}, wantCode: 2, wantStderr: "lodo: prune: flag provided but not defined: -all"},
 		{name: "exec without a command", args: []string{"exec"}, wantCode: 2, wantStderr: "lodo: exec needs a command to run"},
 		{name: "exec with only --", args: []string{"exec", "--"}, wantCode: 2, wantStderr: "lodo: exec needs a command to run"},
 	}

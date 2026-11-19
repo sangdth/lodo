@@ -80,6 +80,7 @@ For Docker, publish ports as `"${DOCKER_HOST_IP:-127.0.0.1}:5432:5432"`.
 | `lodo apply`     | apply `domains.json` after a hand edit, then check each name |
 | `lodo doctor`    | run eight checks; each failure prints its fix                |
 | `lodo scan`      | show what this project lacks; `--json`, `--name`             |
+| `lodo prune`     | remove names whose folder is gone; `--worktree`              |
 | `lodo uninstall` | undo setup; keeps `~/.config/lodo`                           |
 | `lodo version`   | print the version                                            |
 
