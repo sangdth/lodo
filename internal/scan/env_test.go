@@ -435,4 +435,14 @@ func TestPropose_WorktreeSlot(t *testing.T) {
 	if len(got.Env) != 1 || got.Env[0].Env() != "DATABASE_URL=postgresql://postgres:hunter2@hugger3.test:5432/postgres" {
 		t.Errorf("unlisted main in .env: Env = %+v, want DATABASE_URL on hugger3.test", got.Env)
 	}
+
+	// Public URLs in .env are ignored while .lodo hosts still name the main checkout.
+	p.Env = []EnvLine{
+		{File: ".env", Line: 1, Key: "STRIPE_URL", Text: "STRIPE_URL=https://api.stripe.com"},
+		{File: ".env", Line: 2, Key: "DATABASE_URL", Text: "DATABASE_URL=postgresql://postgres:hunter2@hugger.lodo:5432/postgres"},
+	}
+	got = Propose(p, base[2:], "", gone)
+	if got.Name != "hugger3.lodo" || got.Main != "hugger.lodo" {
+		t.Errorf("unlisted .lodo main with public URL: Propose = %s, main %q; want hugger3.lodo, main hugger.lodo", got.Name, got.Main)
+	}
 }

@@ -98,7 +98,7 @@ func newInputs(suffix string) [fieldCount]textinput.Model {
 		inputs[i].SetStyles(styles)
 	}
 	inputs[fieldName].SetWidth(store.MaxNameLen) // never scrolls; formView draws it at the text's width
-	inputs[fieldName].Placeholder = "app.flowy"
+	inputs[fieldName].Placeholder = "flowy"
 	if suffix != store.Suffix {
 		inputs[fieldName].Placeholder = "api"
 	}

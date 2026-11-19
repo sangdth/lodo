@@ -863,6 +863,37 @@ func TestSetup_CustomDomain(t *testing.T) {
 	if _, ok := store.Find(saved2, "flowy.lodo"); ok {
 		t.Errorf("old flowy.lodo kept in %+v", saved2)
 	}
+
+	// Start.Name with Auto (-y --name) on a taken domain leaves the form editable, not frozen.
+	b3 := inFlowyApps()
+	b3.folders = map[string]bool{home + "/Projects/crm": true}
+	taken := slices.Clone(unlisted)
+	taken[0].Root = home + "/Projects/crm"
+	b3.onDisk = slices.Clone(taken)
+	origin3 := flowyOrigin
+	origin3.Name, origin3.Auto = "crm.lodo", true
+	s3 := NewSetup(context.Background(), b3, taken, origin3)
+	s3 = settle(s3, s3.Init())
+	if s3.Saved() || s3.done || !strings.Contains(s3.errMsg, "belongs to") {
+		t.Fatalf("Auto on taken name: saved %v, done %v, errMsg %q", s3.Saved(), s3.done, s3.errMsg)
+	}
+	s3 = send(retype(s3, "shop.custom"), "enter")
+	if !s3.Saved() || s3.Err() != nil {
+		t.Fatalf("typing a new name after taken Auto error: saved %v, err %v (%q)", s3.Saved(), s3.Err(), s3.errMsg)
+	}
+
+	// Start.Name in a folder whose name makes no label (~/Projects/__) still sets up the project.
+	b4 := inFlowyApps()
+	b4.project.Root, b4.project.Name = home+"/Projects/__", ""
+	b4.onDisk = slices.Clone(unlisted)
+	origin4 := Start{Dir: b4.project.Root, Home: home, Name: "shop.custom", Auto: true}
+	s4 := NewSetup(context.Background(), b4, unlisted, origin4)
+	if s4 = settle(s4, s4.Init()); !s4.Saved() || s4.Err() != nil {
+		t.Fatalf("unnameable folder with --name: saved %v, err %v (%q)", s4.Saved(), s4.Err(), s4.errMsg)
+	}
+	if _, ok := store.Find(lastSaved(t, b4), "web.shop.custom"); !ok {
+		t.Errorf("saved %+v, want web.shop.custom", lastSaved(t, b4))
+	}
 }
 
 func settleMsg(cmd tea.Cmd) tea.Msg {

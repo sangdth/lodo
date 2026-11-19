@@ -93,6 +93,24 @@ func TestResolveName(t *testing.T) {
 	}
 }
 
+func TestTrimDefaultSuffix(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		in, want string
+	}{
+		{"", ""},
+		{".lodo", ".lodo"},
+		{"flowy.lodo", "flowy"},
+		{"flowy.custom", "flowy.custom"},
+		{"api.flowy.lodo", "api.flowy.lodo"},
+	} {
+		if got := store.TrimDefaultSuffix(tt.in); got != tt.want {
+			t.Errorf("TrimDefaultSuffix(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}
+
 func TestCutProject(t *testing.T) {
 	t.Parallel()
 

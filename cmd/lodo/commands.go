@@ -193,6 +193,19 @@ func (a app) fail(err error) {
 	fmt.Fprintf(a.stderr, "✗ %v\n", err)
 }
 
+// projectFlag resolves and checks --name; ok is false once it printed why.
+func (a app) projectFlag(raw string) (string, bool) {
+	if raw == "" {
+		return "", true
+	}
+	name := store.ResolveName(raw)
+	if err := store.ValidateProject(name); err != nil {
+		a.fail(fmt.Errorf("--name %s: %w", raw, err))
+		return "", false
+	}
+	return name, true
+}
+
 // formatChecks renders the doctor table: one line per check, plus a fix line
 // under each failure.
 func formatChecks(checks []check.Check) string {
