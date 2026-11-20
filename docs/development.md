@@ -42,6 +42,7 @@ go install ./cmd/lodo   # replaces ~/go/bin/lodo
 | ----------------------------------------------------- | ------------------------------------------ |
 | TUI, messages, checks, the CLI                        | nothing, just run `lodo ps` or `lodo dev`  |
 | The listen hook, `internal/dev/bind.cjs`              | nothing: the next `lodo dev` writes it     |
+| The menu bar helper, `internal/menubar/menubar.swift` | `lodo apply` (or `lodo menubar`)           |
 | What goes into the generated dnsmasq or Caddy files   | `lodo apply`                               |
 | The root script, the sudoers rule or the loopback job | `lodo setup`, which asks for your password |
 

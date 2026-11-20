@@ -206,6 +206,10 @@ func (a app) menubar(ctx context.Context, stop bool) int {
 		fmt.Fprintln(a.stdout, "menubar stopped")
 		return 0
 	}
+	if !system.SetupDone(a.paths) {
+		a.fail(system.ErrNotSetUp)
+		return 1
+	}
 	if err := menubar.Start(ctx, a.paths, a.runner); err != nil {
 		a.fail(err)
 		return 1

@@ -77,7 +77,7 @@ func (b backend) SetService(ctx context.Context, service string, on bool) error 
 }
 
 func (b backend) MenubarOn(ctx context.Context) bool {
-	return menubar.Info(ctx, b.runner, b.paths).Running
+	return menubar.Running(ctx, b.runner, b.paths)
 }
 
 func (b backend) Report(ctx context.Context, domains []store.Domain) ([]check.Check, []check.Result) {

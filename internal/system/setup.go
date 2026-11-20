@@ -17,6 +17,7 @@ import (
 	"github.com/sangdth/lodo/internal/brew"
 	"github.com/sangdth/lodo/internal/dnsmasq"
 	"github.com/sangdth/lodo/internal/fsutil"
+	"github.com/sangdth/lodo/internal/menubar"
 	"github.com/sangdth/lodo/internal/paths"
 	"github.com/sangdth/lodo/internal/run"
 	"github.com/sangdth/lodo/internal/store"
@@ -71,6 +72,14 @@ func Setup(ctx context.Context, p paths.Paths, r run.Runner, out io.Writer) erro
 		{"sudo runs the resolver script without a password", "lodo setup", func() (string, error) { return "", proveScript(ctx, p, r) }},
 	} {
 		if err := s.do(step.name, step.fix, step.fn); err != nil {
+			return err
+		}
+	}
+
+	if fsutil.Exists(p.MenubarPlist) {
+		if err := s.do("menu bar icon up to date", "lodo menubar", func() (string, error) {
+			return "", menubar.Refresh(ctx, p, r)
+		}); err != nil {
 			return err
 		}
 	}
