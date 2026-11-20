@@ -68,8 +68,10 @@ func TestSystemE2E(t *testing.T) {
 	resultFile := filepath.Join(t.TempDir(), "result.json")
 	serverJS := fmt.Sprintf(`const http = require("node:http");
 const fs = require("node:fs");
-const { execFileSync } = require("node:child_process");
+const { execFile } = require("node:child_process");
+const { promisify } = require("node:util");
 
+const execFileAsync = promisify(execFile);
 const bin = %q;
 const resultFile = %q;
 
@@ -86,13 +88,14 @@ const srv = http.createServer((req, res) => {
 });
 
 srv.listen(%d, "127.0.0.1", async () => {
-  for (let i = 0; i < 40; i++) {
+  let lastErr = "";
+  for (let i = 0; i < 30; i++) {
     try {
       const resp = await fetch("http://web.shop.lodo/");
       if (resp.ok) {
         const body = await resp.json();
-        const doctorOut = execFileSync(bin, ["doctor"], { encoding: "utf8" });
-        const applyOut = execFileSync(bin, ["apply"], { encoding: "utf8" });
+        const { stdout: doctorOut } = await execFileAsync(bin, ["doctor"]);
+        const { stdout: applyOut } = await execFileAsync(bin, ["apply"]);
         fs.writeFileSync(resultFile, JSON.stringify({
           status: resp.status,
           via: resp.headers.get("via") || "",
@@ -103,9 +106,13 @@ srv.listen(%d, "127.0.0.1", async () => {
         srv.close(() => process.exit(0));
         return;
       }
-    } catch {}
+      lastErr = "HTTP " + resp.status;
+    } catch (err) {
+      lastErr = [err && err.message, err && err.cause && err.cause.message, err && err.stdout, err && err.stderr].filter(Boolean).join("\n");
+    }
     await new Promise((r) => setTimeout(r, 100));
   }
+  console.error("server.js failed:", lastErr);
   process.exit(1);
 });
 `, bin, resultFile, appPort)
