@@ -28,10 +28,12 @@ stops the commit.
 ## Layout
 
 - `cmd/lodo`: subcommand dispatch and output. The only code that builds `paths.Default()` and `run.Exec`. Bare
-  `lodo` prints the help, `lodo ps` opens the dashboard, `lodo dev` (`dev.go`) starts a project, `lodo exec`
-  runs a command with the project's variables, `lodo update` (`update.go`) installs the latest release through
-  `go install`, and `lodo prune` (`prune.go`) removes names whose folder is gone (and the current git worktree's
-  with `--worktree`).
+  `lodo` prints the help, `lodo ps` opens the dashboard, `lodo menubar` (`--stop`) starts or stops the macOS menu
+  bar icon, `lodo dev` (`dev.go`) starts a project, `lodo exec` runs a command with the project's variables,
+  `lodo update` (`update.go`) installs the latest release through `go install`, and `lodo prune` (`prune.go`)
+  removes names whose folder is gone (and the current git worktree's with `--worktree`).
+- `internal/menubar`: the embedded Swift macOS menu bar app (`menubar.swift`, compiled on demand to
+  `~/.config/lodo/lodo-menubar`) and its `io.lodo.menubar` user LaunchAgent (`Start`, `Stop`, `Info`).
 - `internal/paths`: every file, tool and system path. `paths.ForTest(root)` moves all of them under `root`.
 - `internal/run`: the only code that runs commands. `Replace` execs one in lodo's place, for `lodo dev`. `run.Fake`
   records them in tests.

@@ -35,6 +35,9 @@ func TestDefault(t *testing.T) {
 		"TrustedCA":      filepath.Join(p.Home, ".config/lodo/caddy-root.crt"),
 		"BindHook":       filepath.Join(p.Home, ".config/lodo/bind.cjs"),
 		"DevDir":         filepath.Join(p.Home, ".config/lodo/dev"),
+		"MenubarBin":     filepath.Join(p.Home, ".config/lodo/lodo-menubar"),
+		"MenubarPlist":   filepath.Join(p.Home, "Library/LaunchAgents/io.lodo.menubar.plist"),
+		"Swiftc":         "/usr/bin/swiftc",
 	}
 	v := reflect.ValueOf(p)
 	for field, path := range want {

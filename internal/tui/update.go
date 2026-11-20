@@ -24,7 +24,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		here, before := m.cursorName(), m.listed()
 		if m.checks == nil || msg.seq >= m.reportSeq {
 			m.reportSeq = msg.seq
-			m.setReport(msg.checks, msg.results)
+			m.setReport(msg.checks, msg.results, msg.menubarOn)
 		}
 		m.layout()
 		m.placeCursor(here, before, !m.applying)
@@ -48,7 +48,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if msg.checks != nil && msg.seq >= m.reportSeq {
 			m.reportSeq = msg.seq
-			m.setReport(msg.checks, msg.results)
+			m.setReport(msg.checks, msg.results, msg.menubarOn)
 		}
 		if len(m.queue) > 0 {
 			batch := m.queue
@@ -335,17 +335,21 @@ func (m Model) serviceKey(k string) (tea.Model, tea.Cmd) {
 		m.service = min(m.service+1, len(services)-1)
 	case "space":
 		service := services[m.service]
-		if m.pending[service] > 0 {
+		if m.pending[service] > 0 || m.checks == nil {
 			return m, nil
 		}
-		c, ok := m.check(serviceCheck(service))
-		if !ok {
-			return m, nil // no report yet, so on or off is unknown
+		wantOn := !m.menubarOn
+		if id := serviceCheck(service); id > 0 {
+			c, ok := m.check(id)
+			if !ok {
+				return m, nil // no report yet, so on or off is unknown
+			}
+			wantOn = c.Off
 		}
 		return m.enqueue(queuedOp{
 			names:     []string{service},
 			service:   service,
-			serviceOn: c.Off,
+			serviceOn: wantOn,
 		}, "")
 	}
 	return m, nil

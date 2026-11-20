@@ -174,7 +174,7 @@ later scan keeps a listed name of the project on an app's port and address as th
 `lodo ps` opens the list of names.
 
 ```text
- lodo   caddy ●   dnsmasq ●   loopback ●   resolvers ●
+ lodo   caddy ●   dnsmasq ●   menubar ○   loopback ●   resolvers ●
  ─────────────────────────────────────────────────────────────────────────────────────────────
  name                     enabled  address          port   compose                       check
  ● blog.lodo              ✓        127.0.1.1               ~/Code/blog/compose.dev.yaml  dns ✓
@@ -185,12 +185,16 @@ later scan keeps a listed name of the project on an app's port and address as th
    Add new domain
 ```
 
-The top line shows Caddy, dnsmasq, loopback and resolvers (doctor checks 8, 1, 3 and 4): a green `●` is on and
+The top line shows Caddy, dnsmasq, menubar, loopback and resolvers (doctor checks 8, 1, 3 and 4, plus the optional
+macOS menu bar icon): a green `●` is on and
 works, a dim `○` is off (turned off, or Caddy not running while no name has a port), and a red `○` needs
-`lodo doctor`. `tab` moves the keys to Caddy and dnsmasq: `←` `→` (or `h` `l`) pick one, `space` turns it on or
+`lodo doctor`. `tab` moves the keys to Caddy, dnsmasq and menubar: `←` `→` (or `h` `l`) pick one, `space` turns it on or
 off, `tab` goes back to the names. A service turned off stays off through every change until you turn it on; with
 dnsmasq off no `.lodo` name resolves, and lodo removes its `/etc/resolver` files, so no other account's process
-can answer `.lodo` lookups on dnsmasq's port. Turning dnsmasq on writes them again.
+can answer `.lodo` lookups on dnsmasq's port. Turning dnsmasq on writes them again. Turning `menubar` on (or running
+`lodo menubar`) shows a network icon in the macOS menu bar that lists currently running services grouped by project
+(clicking a service opens its URL in the browser, `⌥`-click copies the URL, and `Hide Menu Bar Icon` or
+`lodo menubar --stop` hides it).
 
 `enabled` has a `✓` for a name that is on: lodo writes it into dnsmasq's config, the resolver files and, with a
 port, Caddy's sites. The mark before a name sums up its check column with the top line's marks: a green `●` when
@@ -344,6 +348,7 @@ and `.lodo` never is. Only `localhost` is exempt. For Google sign-in, either:
 | `lodo dev`       | start the project in this folder on its names                |
 | `lodo exec`      | run a command with the variables `lodo dev` sets             |
 | `lodo ps`        | open the dashboard                                           |
+| `lodo menubar`   | show the macOS menu bar icon; `--stop` hides it              |
 | `lodo setup`     | install or repair lodo on this Mac                           |
 | `lodo apply`     | apply `domains.json` after a hand edit, then check each name |
 | `lodo doctor`    | run eight checks; each failure prints its fix                |

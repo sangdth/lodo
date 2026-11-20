@@ -97,6 +97,25 @@ func TestApp_Apply(t *testing.T) {
 			t.Errorf("code %d, stdout %q; want 1 and probe line", code, stdout.String())
 		}
 	})
+	t.Run("menubar", func(t *testing.T) {
+		t.Parallel()
+		p, r := paths.ForTest(t.TempDir()), run.NewFake()
+		if err := os.MkdirAll(filepath.Dir(p.Swiftc), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p.Swiftc, nil, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		var stdout, stderr strings.Builder
+		a := newApp(p, r, &stdout, &stderr)
+		if code := a.command(t.Context(), "menubar", options{}); code != 0 || stdout.String() != "menubar running\n" {
+			t.Errorf("menubar start: code %d, stdout %q, stderr %q", code, stdout.String(), stderr.String())
+		}
+		stdout.Reset()
+		if code := a.command(t.Context(), "menubar", options{stop: true}); code != 0 || stdout.String() != "menubar stopped\n" {
+			t.Errorf("menubar --stop: code %d, stdout %q, stderr %q", code, stdout.String(), stderr.String())
+		}
+	})
 }
 
 func setUpFakeMac(t *testing.T, p paths.Paths, r *run.Fake) {

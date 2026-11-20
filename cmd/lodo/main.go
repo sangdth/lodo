@@ -30,6 +30,7 @@ Usage:
                   lodo exec pnpm db:migrate
   lodo ps         open the dashboard: the list of names, their checks, and keys to
                   change them
+  lodo menubar    show the macOS menu bar icon (--stop hides it)
   lodo setup      one-time system setup; asks for your password
   lodo apply      write the configs from domains.json, reload, and check every name
   lodo doctor     check every part and print what to fix
@@ -68,7 +69,7 @@ func dispatch(args []string, stdout, stderr io.Writer) int {
 			return 2
 		}
 		return runApp(command, options{}, stdout, stderr)
-	case "scan", "dev", "prune":
+	case "scan", "dev", "prune", "menubar":
 		o, err := parseFlags(command, args[1:])
 		if err != nil {
 			fmt.Fprintf(stderr, "lodo: %s: %v\n\n%s", command, err, usage)
@@ -100,10 +101,11 @@ type options struct {
 	edit     bool
 	auto     bool
 	worktree bool
+	stop     bool
 	args     []string
 }
 
-// parseFlags reads the flags of command: scan, dev or prune.
+// parseFlags reads the flags of command: scan, dev, prune or menubar.
 func parseFlags(command string, args []string) (options, error) {
 	var o options
 	fs := flag.NewFlagSet(command, flag.ContinueOnError)
@@ -119,6 +121,8 @@ func parseFlags(command string, args []string) (options, error) {
 		fs.BoolVar(&o.auto, "auto", false, "")
 	case "prune":
 		fs.BoolVar(&o.worktree, "worktree", false, "")
+	case "menubar":
+		fs.BoolVar(&o.stop, "stop", false, "")
 	}
 	if err := fs.Parse(args); err != nil {
 		return o, err

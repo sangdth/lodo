@@ -31,6 +31,8 @@ func TestDispatch(t *testing.T) {
 		{name: "prune with an unknown flag", args: []string{"prune", "--all"}, wantCode: 2, wantStderr: "lodo: prune: flag provided but not defined: -all"},
 		{name: "exec without a command", args: []string{"exec"}, wantCode: 2, wantStderr: "lodo: exec needs a command to run"},
 		{name: "exec with only --", args: []string{"exec", "--"}, wantCode: 2, wantStderr: "lodo: exec needs a command to run"},
+		{name: "menubar with an argument", args: []string{"menubar", "now"}, wantCode: 2, wantStderr: `lodo: menubar: unexpected argument "now"`},
+		{name: "menubar with an unknown flag", args: []string{"menubar", "--start"}, wantCode: 2, wantStderr: "lodo: menubar: flag provided but not defined: -start"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

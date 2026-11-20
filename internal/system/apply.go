@@ -16,6 +16,7 @@ import (
 	"github.com/sangdth/lodo/internal/caddy"
 	"github.com/sangdth/lodo/internal/dnsmasq"
 	"github.com/sangdth/lodo/internal/fsutil"
+	"github.com/sangdth/lodo/internal/menubar"
 	"github.com/sangdth/lodo/internal/paths"
 	"github.com/sangdth/lodo/internal/run"
 	"github.com/sangdth/lodo/internal/store"
@@ -119,8 +120,8 @@ func restartCaddy(ctx context.Context, p paths.Paths, r run.Runner) error {
 	return fmt.Errorf("caddy stopped right after it started; see %s", p.CaddyLog)
 }
 
-// Services are the brew services SetService turns on and off.
-var Services = []string{"dnsmasq", "caddy"}
+// Services are the services SetService turns on and off.
+var Services = []string{"dnsmasq", "caddy", "menubar"}
 
 // SetService turns a service on or off. On starts the service and registers it
 // to start at login, Caddy through restartCaddy; off stops and
@@ -136,6 +137,12 @@ func SetService(ctx context.Context, p paths.Paths, r run.Runner, service string
 	}
 	if service == "dnsmasq" {
 		return setDnsmasq(ctx, p, r, on)
+	}
+	if service == "menubar" {
+		if on {
+			return menubar.Start(ctx, p, r)
+		}
+		return menubar.Stop(ctx, p, r)
 	}
 	if !on {
 		return brew.Stop(ctx, r, p, service)

@@ -38,7 +38,7 @@ Something broken? Run `lodo doctor` first.
 
 - [Setup & how it works](docs/reference.md#setup) — what one-time setup changes, rules, and uninstall
 - [Using lodo & the dashboard](docs/reference.md#using-lodo) — `lodo dev`, `lodo exec`, worktrees, and dashboard keys
-- [Commands](docs/reference.md#commands) — full CLI reference (`dev`, `exec`, `ps`, `scan`, `prune`, `doctor`, `update`)
+- [Commands](docs/reference.md#commands) — full CLI reference (`dev`, `exec`, `ps`, `menubar`, `scan`, `prune`, `doctor`, `update`)
 - [HTTPS & sign-in callbacks](docs/reference.md#https) — local TLS certificates and OAuth (including Google sign-in)
 - [Troubleshooting](docs/reference.md#troubleshooting) — common errors and fixes
 - [Development](docs/development.md) — running tests, linting, building from source, and reinstalling locally

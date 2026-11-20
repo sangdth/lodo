@@ -12,6 +12,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/sangdth/lodo/internal/check"
+	"github.com/sangdth/lodo/internal/menubar"
 	"github.com/sangdth/lodo/internal/paths"
 	"github.com/sangdth/lodo/internal/run"
 	"github.com/sangdth/lodo/internal/store"
@@ -63,6 +64,8 @@ func (a app) command(ctx context.Context, command string, o options) int {
 		return a.uninstall(ctx)
 	case "update":
 		return a.update(ctx)
+	case "menubar":
+		return a.menubar(ctx, o.stop)
 	}
 	dir, err := os.Getwd()
 	if err != nil {
@@ -191,6 +194,23 @@ func (a app) uninstall(ctx context.Context) int {
 		a.fail(err)
 		return 1
 	}
+	return 0
+}
+
+func (a app) menubar(ctx context.Context, stop bool) int {
+	if stop {
+		if err := menubar.Stop(ctx, a.paths, a.runner); err != nil {
+			a.fail(err)
+			return 1
+		}
+		fmt.Fprintln(a.stdout, "menubar stopped")
+		return 0
+	}
+	if err := menubar.Start(ctx, a.paths, a.runner); err != nil {
+		a.fail(err)
+		return 1
+	}
+	fmt.Fprintln(a.stdout, "menubar running")
 	return 0
 }
 
