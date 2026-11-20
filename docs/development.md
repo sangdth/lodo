@@ -6,10 +6,18 @@ start and [docs/reference.md](reference.md) for user-facing behavior.
 ## Run tests and checks
 
 ```sh
-go test -race ./...                       # all tests
+go test -race ./...                       # all unit + hermetic E2E tests (safe, temp dir only)
 go vet ./... && golangci-lint run ./...   # lint, config in .golangci.yml
 go test ./internal/tui -update            # rewrite that package's golden files after an intended change
 go run ./cmd/lodo doctor                  # run lodo from source
+```
+
+`TestE2E_DataPlane` in `cmd/lodo/e2e_test.go` runs automatically as part of `go test -race ./...` when `dnsmasq`, `caddy`, and `node` are installed, starting real daemons on free ports inside `t.TempDir()` without `sudo`.
+
+`TestSystemE2E` in `cmd/lodo/e2e_system_test.go` (`//go:build e2e`) exercises the full `lodo setup` -> `lodo dev -y` -> `lodo doctor` -> `lodo exec` -> `lodo prune` -> `lodo uninstall` lifecycle against the real macOS host. Because it overwrites `~/.config/lodo`, `/etc/resolver`, and `lo0` before uninstalling, run it only on a disposable macOS VM or in CI:
+
+```sh
+LODO_E2E_DESTRUCTIVE=1 go test -v -race -tags=e2e ./cmd/lodo -run TestSystemE2E
 ```
 
 Set the version printed by `lodo version`:

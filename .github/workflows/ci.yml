@@ -36,3 +36,28 @@ jobs:
         uses: golangci/golangci-lint-action@v9
         with:
           version: v2.14
+
+  e2e:
+    name: System E2E
+    runs-on: macos-latest
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install dnsmasq and caddy
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+          HOMEBREW_NO_INSTALL_CLEANUP: "1"
+        run: brew install dnsmasq caddy
+
+      - name: Run full macOS E2E lifecycle
+        env:
+          LODO_E2E_DESTRUCTIVE: "1"
+        run: go test -v -race -tags=e2e ./cmd/lodo -run TestSystemE2E
