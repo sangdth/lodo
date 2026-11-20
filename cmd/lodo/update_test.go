@@ -33,8 +33,9 @@ func goRun(args ...string) string {
 	return run.Line("/opt/bin/go", append([]string{"-C", os.TempDir()}, args...)...)
 }
 
-// listLodo is the command line that reads the latest published version.
-func listLodo() string { return goRun("list", "-m", "-f", "{{.Version}}", latestTarget()) }
+// listLodo is the command line that reads the latest version on master,
+// lodo's release branch, rather than GitHub's default branch.
+func listLodo() string { return goRun("list", "-m", "-f", "{{.Version}}", module+"@master") }
 
 // installLodo is the command line that builds version v.
 func installLodo(v string) string { return goRun("install", installTarget(v)) }

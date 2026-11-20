@@ -14,10 +14,11 @@ import (
 )
 
 // module is what lodo is published as; latestTarget asks the toolchain for the
-// newest version, and installTarget builds it at v.
+// newest commit on master, the release branch. @latest would follow GitHub's
+// default branch instead. installTarget builds the version go list reports.
 const module = "github.com/sangdth/lodo"
 
-func latestTarget() string          { return module + "@latest" }
+func latestTarget() string          { return module + "@master" }
 func installTarget(v string) string { return module + "/cmd/lodo@" + v }
 
 // updateTimeout bounds go list and go install: on a cold module cache they

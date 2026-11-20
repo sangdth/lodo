@@ -246,6 +246,22 @@ func TestSetup_RepairsABackupLodoHadChanged(t *testing.T) {
 	assertFile(t, p.SystemConfBackup, "# dnsmasq\n")
 }
 
+func TestSetup_RepairsAMarkerlessCaddyBackup(t *testing.T) {
+	t.Parallel()
+
+	p, r := newMac(t, true)
+	lodoOnly := "import \"" + p.Caddyfile + "\"\n"
+	writeFile(t, p.SystemCaddyfile, system.CaddyGlobalBlock+"\n"+lodoOnly+"\n"+system.CaddyBlock(p))
+	writeFile(t, p.SystemCaddyfileBackup, lodoOnly)
+	if err := system.Setup(context.Background(), p, r, &strings.Builder{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(p.SystemCaddyfileBackup); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("a backup with only lodo's import is kept: %v", err)
+	}
+	assertFile(t, p.SystemCaddyfile, system.CaddyGlobalBlock+"\n"+system.CaddyBlock(p))
+}
+
 // snapshot reads every regular file under root, by path.
 func snapshot(t *testing.T, root string) map[string]string {
 	t.Helper()
