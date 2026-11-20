@@ -131,7 +131,7 @@ func systemConf(p paths.Paths) (string, error) {
 	if !fsutil.Exists(p.SystemConfBackup) {
 		note = "backup in " + filepath.Base(p.SystemConfBackup)
 	}
-	if err := backUp(p.SystemConfBackup, old, StripSystemConf); err != nil {
+	if err := backUp(p.SystemConfBackup, old, StripSystemConf, false); err != nil {
 		return "", err
 	}
 	if _, err := fsutil.WriteFile(p.SystemConf, []byte(RewriteSystemConf(string(old), p)), 0o644); err != nil {
@@ -228,7 +228,7 @@ func setupCaddy(ctx context.Context, p paths.Paths, r run.Runner) error {
 	}
 	if err == nil || fsutil.Exists(p.SystemCaddyfileBackup) {
 		strip := func(s string) string { return StripSystemCaddyfile(s, p) }
-		if err := backUp(p.SystemCaddyfileBackup, old, strip); err != nil {
+		if err := backUp(p.SystemCaddyfileBackup, old, strip, true); err != nil {
 			return err
 		}
 	}
@@ -335,15 +335,17 @@ var trustWait = 400 * time.Millisecond
 // backUp keeps the first backup of a system file, or makes it from current.
 // A backup that holds lodo's marker was made after lodo had changed the file,
 // so it loses lodo's lines; one with nothing else left is removed, since the
-// file held nothing of the user's.
-func backUp(backup string, current []byte, strip func(string) string) error {
+// file held nothing of the user's. stripUnmarked repairs Caddy backups whose
+// import lost its marker; dnsmasq's original options must stay in its backup.
+func backUp(backup string, current []byte, strip func(string) string, stripUnmarked bool) error {
 	content := current
 	if b, err := os.ReadFile(backup); err == nil { //nolint:gosec // G304: callers pass paths from paths.Paths
 		content = b
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("read %s: %w", backup, err)
 	}
-	if !slices.ContainsFunc(strings.Split(string(content), "\n"), func(l string) bool { return strings.TrimSpace(l) == Marker }) {
+	marked := slices.ContainsFunc(strings.Split(string(content), "\n"), func(l string) bool { return strings.TrimSpace(l) == Marker })
+	if !marked && !stripUnmarked {
 		_, err := fsutil.WriteFile(backup, content, 0o644)
 		return err
 	}

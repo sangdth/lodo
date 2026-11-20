@@ -396,8 +396,8 @@ lodo prune --worktree
 ```
 
 `lodo uninstall` removes what setup installed; see [Uninstall](#uninstall).
-`lodo update` installs the latest lodo through `go install
-github.com/sangdth/lodo/cmd/lodo@latest`, the Go toolchain it was installed with, and says when it is already
+`lodo update` installs the latest lodo on `master` through `go install
+github.com/sangdth/lodo/cmd/lodo@master`, the Go toolchain it was installed with, and says when it is already
 current. It refuses a binary built from a modified checkout, since a release would replace that work. After an
 install it shows the new binary's `lodo doctor`, whose fixes are what a changed root script or Caddyfile needs:
 run `lodo setup` or `lodo apply` as it says. It needs Go on `PATH` and, unlike every other command, a network

@@ -21,7 +21,7 @@ Never test on Linux but I think it's easy to get it works there.
 
 ```sh
 brew install dnsmasq caddy                          # caddy only for names with a port
-go install github.com/sangdth/lodo/cmd/lodo@latest  # ~/go/bin must be on your PATH
+go install github.com/sangdth/lodo/cmd/lodo@master  # ~/go/bin must be on your PATH
 lodo setup                                          # once per Mac; the first lodo dev runs it too
 ```
 
