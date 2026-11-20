@@ -133,26 +133,29 @@ func TestModel_Services(t *testing.T) {
 	if got := ansi.Strip(m.keys()); got != servicesHelp {
 		t.Errorf("keys = %q, want the services' keys", got)
 	}
-	m = send(m, "left") // already on the first
+	m = send(m, "left") // already on the first (caddy)
 	m = send(m, "space")
-	m = send(m, "right")
+	m = send(m, "right") // dnsmasq
+	m = send(m, "space")
+	m = send(m, "right") // menubar
 	m = send(m, "right") // already on the last
 	m = send(m, "space")
-	if want := []string{"caddy off", "dnsmasq off"}; !slices.Equal(b.setServices, want) {
+	if want := []string{"caddy off", "dnsmasq off", "menubar on"}; !slices.Equal(b.setServices, want) {
 		t.Errorf("SetService calls = %q, want %q", b.setServices, want)
 	}
 	bar := ansi.Strip(m.statusBar())
-	if !strings.HasSuffix(bar, "caddy ○   dnsmasq ○   loopback ●   resolvers ● ") {
-		t.Errorf("status bar = %q, want both services off", bar)
+	if !strings.HasSuffix(bar, "caddy ○   dnsmasq ○   menubar ●   loopback ●   resolvers ● ") {
+		t.Errorf("status bar = %q, want caddy and dnsmasq off and menubar on", bar)
 	}
 	if got := strings.TrimSpace(ansi.Strip(m.statusLine())); got != "" {
 		t.Errorf("status line = %q; a service turned off is not a problem", got)
 	}
 
-	m = send(m, "space") // dnsmasq back on
-	if got := b.setServices[len(b.setServices)-1]; got != "dnsmasq on" {
-		t.Errorf("last SetService = %q, want dnsmasq on", got)
+	m = send(m, "space") // menubar back off
+	if got := b.setServices[len(b.setServices)-1]; got != "menubar off" {
+		t.Errorf("last SetService = %q, want menubar off", got)
 	}
+	m = send(m, "h")
 	m = send(m, "h")
 	if m.service != 0 || m.mode != modeList {
 		t.Errorf("after h: service %d, mode %v; want the first service, still the list", m.service, m.mode)
@@ -160,6 +163,10 @@ func TestModel_Services(t *testing.T) {
 	m = send(m, "l")
 	if m.service != 1 || m.mode != modeList {
 		t.Errorf("after l: service %d, mode %v; want the second service and no log", m.service, m.mode)
+	}
+	m = send(m, "space") // dnsmasq back on
+	if got := b.setServices[len(b.setServices)-1]; got != "dnsmasq on" {
+		t.Errorf("last SetService = %q, want dnsmasq on", got)
 	}
 	m = send(m, "down") // moves nothing while the keys act on the services
 	m = send(m, "tab")
@@ -206,7 +213,7 @@ func TestModel_StatusBarMarks(t *testing.T) {
 
 	b := &fakeBackend{failingChecks: map[int]string{check.IDLoopback: "job not loaded"}, off: map[string]bool{"dnsmasq": true}}
 	m := ready(b, sample)
-	if bar, want := ansi.Strip(m.statusBar()), "caddy ●   dnsmasq ○   loopback ○   resolvers ● "; !strings.HasSuffix(bar, want) {
+	if bar, want := ansi.Strip(m.statusBar()), "caddy ●   dnsmasq ○   menubar ○   loopback ○   resolvers ● "; !strings.HasSuffix(bar, want) {
 		t.Errorf("status bar = %q, want %q", bar, want)
 	}
 	for _, tt := range []struct {
@@ -216,6 +223,7 @@ func TestModel_StatusBarMarks(t *testing.T) {
 	}{
 		{"caddy", 8, m.styles.ok.Render("●")},
 		{"dnsmasq", 1, m.styles.dim.Render("○")},
+		{"menubar", 0, m.styles.dim.Render("○")},
 		{"loopback", 3, m.styles.bad.Render("○")},
 	} {
 		if got := m.state(tt.label, tt.id); got != tt.want {

@@ -12,6 +12,7 @@ import (
 
 	"github.com/sangdth/lodo/internal/brew"
 	"github.com/sangdth/lodo/internal/fsutil"
+	"github.com/sangdth/lodo/internal/menubar"
 	"github.com/sangdth/lodo/internal/paths"
 	"github.com/sangdth/lodo/internal/run"
 	"github.com/sangdth/lodo/internal/store"
@@ -159,6 +160,7 @@ func removeLoopback(ctx context.Context, p paths.Paths, r run.Runner) error {
 }
 
 func removeRootFiles(ctx context.Context, p paths.Paths, r run.Runner) error {
+	_ = menubar.Stop(ctx, p, r)
 	if _, err := r.Run(ctx, p.Sudo, "-n", p.Rm, "-f", p.Sudoers, p.Script); err != nil {
 		return err
 	}

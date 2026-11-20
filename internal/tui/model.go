@@ -89,9 +89,10 @@ type Model struct {
 	startedOn  string         // the name under the cursor when the change started; empty on the add row
 	adding     []store.Domain // names being added, listed with the spinner until saved
 
-	domains []store.Domain          // in store.Sort order, as the table shows them
-	checks  []check.Check           // the last doctor run; nil until the first one finishes
-	results map[string]check.Result // the last probe of each enabled name, by name
+	domains   []store.Domain          // in store.Sort order, as the table shows them
+	checks    []check.Check           // the last doctor run; nil until the first one finishes
+	results   map[string]check.Result // the last probe of each enabled name, by name
+	menubarOn bool                    // whether the macOS menu bar icon helper is running
 
 	log        viewport.Model
 	logLines   []string
@@ -175,9 +176,10 @@ func (m Model) Init() tea.Cmd {
 
 // reportMsg is a finished startup doctor run.
 type reportMsg struct {
-	seq     int
-	checks  []check.Check
-	results []check.Result
+	seq       int
+	checks    []check.Check
+	results   []check.Result
+	menubarOn bool
 }
 
 // logTickMsg asks the open log to read what dnsmasq added.
@@ -194,21 +196,22 @@ type logMsg struct {
 // changedMsg is a finished change batch. When synced is true, domains holds
 // the authoritative list from disk; checks is nil when the batch ran no probe.
 type changedMsg struct {
-	seq     int
-	domains []store.Domain
-	stored  bool
-	synced  bool
-	err     error
-	note    string // what to say once it is done, such as what linking wrote
-	checks  []check.Check
-	results []check.Result
+	seq       int
+	domains   []store.Domain
+	stored    bool
+	synced    bool
+	err       error
+	note      string // what to say once it is done, such as what linking wrote
+	checks    []check.Check
+	results   []check.Result
+	menubarOn bool
 }
 
 func (m Model) report(domains []store.Domain, seq int) tea.Cmd {
 	ctx, b := m.ctx, m.backend
 	return func() tea.Msg {
 		checks, results := b.Report(ctx, domains)
-		return reportMsg{seq: seq, checks: checks, results: results}
+		return reportMsg{seq: seq, checks: checks, results: results, menubarOn: b.MenubarOn(ctx)}
 	}
 }
 
@@ -299,6 +302,7 @@ func (m Model) runBatch(seq int, ops []queuedOp) tea.Cmd {
 		}
 		if needReport {
 			msg.checks, msg.results = b.Report(ctx, msg.domains)
+			msg.menubarOn = b.MenubarOn(ctx)
 		}
 		return msg
 	}
@@ -447,8 +451,9 @@ func (m Model) isDeleting(name string) bool {
 }
 
 // setReport stores a doctor run.
-func (m *Model) setReport(checks []check.Check, results []check.Result) {
+func (m *Model) setReport(checks []check.Check, results []check.Result, menubarOn bool) {
 	m.checks = checks
+	m.menubarOn = menubarOn
 	m.results = make(map[string]check.Result, len(results))
 	for _, r := range results {
 		m.results[r.Name] = r

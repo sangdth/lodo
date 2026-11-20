@@ -88,6 +88,14 @@ func (f *fakeBackend) SetService(_ context.Context, service string, on bool) err
 	return nil
 }
 
+func (f *fakeBackend) MenubarOn(_ context.Context) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.off != nil && !f.off["menubar"] && slices.ContainsFunc(f.setServices, func(s string) bool {
+		return s == "menubar on" || s == "menubar off"
+	})
+}
+
 func (f *fakeBackend) Tail(offset int64) (string, int64, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

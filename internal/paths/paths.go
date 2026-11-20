@@ -31,6 +31,7 @@ type Paths struct {
 	TrustedCA   string // the copy of Caddy's root that setup trusted in the System keychain
 	BindHook    string // lodo dev's listen hook, which every project's hook file requires
 	DevDir      string // lodo dev's hook files, one <project>.cjs per project
+	MenubarBin  string // compiled macOS menu bar helper binary
 
 	// Homebrew's files, owned by the user.
 	SystemConf            string // the config Homebrew's dnsmasq service loads
@@ -42,6 +43,7 @@ type Paths struct {
 
 	// LaunchAgents holds the user's launchd jobs, Homebrew's services among them.
 	LaunchAgents string
+	MenubarPlist string // user LaunchAgent plist that runs MenubarBin
 
 	// Root-owned files and directories.
 	LaunchDaemons string // system launchd jobs
@@ -71,6 +73,7 @@ type Paths struct {
 	Dscacheutil string
 	Lsof        string
 	Security    string
+	Swiftc      string
 
 	// Leftovers are LocalDNS files that setup reports and leaves alone.
 	Leftovers []string
@@ -111,6 +114,7 @@ func build(root, home, user string, uid int) Paths {
 		TrustedCA:   filepath.Join(config, "caddy-root.crt"),
 		BindHook:    filepath.Join(config, "bind.cjs"),
 		DevDir:      filepath.Join(config, "dev"),
+		MenubarBin:  filepath.Join(config, "lodo-menubar"),
 
 		SystemConf:            filepath.Join(etc, "dnsmasq.conf"),
 		SystemConfBackup:      filepath.Join(etc, "dnsmasq.conf.before-lodo"),
@@ -120,6 +124,7 @@ func build(root, home, user string, uid int) Paths {
 		CaddyLog:              filepath.Join(brew, "var/log/caddy.log"),
 
 		LaunchAgents: filepath.Join(home, "Library", "LaunchAgents"),
+		MenubarPlist: filepath.Join(home, "Library", "LaunchAgents", "io.lodo.menubar.plist"),
 
 		LaunchDaemons: daemons,
 		LoopbackPlist: filepath.Join(daemons, "io.lodo.loopback.plist"),
@@ -145,6 +150,7 @@ func build(root, home, user string, uid int) Paths {
 		Dscacheutil: sys("/usr/bin/dscacheutil"),
 		Lsof:        sys("/usr/sbin/lsof"),
 		Security:    sys("/usr/bin/security"),
+		Swiftc:      sys("/usr/bin/swiftc"),
 
 		Leftovers: []string{
 			filepath.Join(home, ".config", "localdns"),

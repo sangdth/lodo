@@ -46,13 +46,14 @@ const (
 // and each field with a line for its error.
 const formHeight = 3 + 2*fieldCount
 
-// statusParts are the doctor checks the status bar shows, by ID.
+// statusParts are the doctor checks and optional services the status bar shows.
 var statusParts = []struct {
 	id    int
 	label string
 }{
 	{check.IDCaddy, "caddy"},
 	{check.IDDnsmasq, "dnsmasq"},
+	{0, "menubar"},
 	{check.IDLoopback, "loopback"},
 	{check.IDResolvers, "resolvers"},
 }
@@ -338,10 +339,20 @@ func (m Model) statusBar() string {
 // ○ when it is off, red when it fails, and the spinner while it is turned on
 // or off.
 func (m Model) state(label string, id int) string {
+	if m.busy && m.pending[label] > 0 {
+		return m.spinner.View()
+	}
+	if id == 0 {
+		if m.checks == nil {
+			return m.styles.dim.Render("…")
+		}
+		if m.menubarOn {
+			return m.styles.ok.Render("●")
+		}
+		return m.styles.dim.Render("○")
+	}
 	c, ok := m.check(id)
 	switch {
-	case m.busy && m.pending[label] > 0:
-		return m.spinner.View()
 	case !ok:
 		return m.styles.dim.Render("…")
 	case c.OK:

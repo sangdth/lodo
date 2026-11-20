@@ -12,6 +12,7 @@ import (
 	"github.com/sangdth/lodo/internal/check"
 	"github.com/sangdth/lodo/internal/dnsmasq"
 	"github.com/sangdth/lodo/internal/fsutil"
+	"github.com/sangdth/lodo/internal/menubar"
 	"github.com/sangdth/lodo/internal/paths"
 	"github.com/sangdth/lodo/internal/run"
 	"github.com/sangdth/lodo/internal/scan"
@@ -37,8 +38,10 @@ type Backend interface {
 	// Gone reports whether nothing is at path any more, such as a project's
 	// folder since it was renamed or moved.
 	Gone(path string) bool
-	// SetService turns dnsmasq or Caddy on or off.
+	// SetService turns dnsmasq, Caddy or menubar on or off.
 	SetService(ctx context.Context, service string, on bool) error
+	// MenubarOn reports whether the macOS menu bar icon helper is running.
+	MenubarOn(ctx context.Context) bool
 	// Scan reads the project dir is in and proposes what the list lacks for
 	// it, under name when the user chose one; ok is false outside a project.
 	Scan(ctx context.Context, dir, name string, domains []store.Domain) (p scan.Project, proposal scan.Proposal, ok bool)
@@ -71,6 +74,10 @@ func (b backend) Apply(ctx context.Context, domains []store.Domain) error {
 
 func (b backend) SetService(ctx context.Context, service string, on bool) error {
 	return system.SetService(ctx, b.paths, b.runner, service, on)
+}
+
+func (b backend) MenubarOn(ctx context.Context) bool {
+	return menubar.Info(ctx, b.runner, b.paths).Running
 }
 
 func (b backend) Report(ctx context.Context, domains []store.Domain) ([]check.Check, []check.Result) {
