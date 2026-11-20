@@ -99,27 +99,37 @@ func restoreCaddy(ctx context.Context, p paths.Paths, r run.Runner) (string, err
 	if err := brew.Stop(ctx, r, p, "caddy"); err != nil {
 		return "", err
 	}
+	src, fromBackup := p.SystemCaddyfile, false
 	if fsutil.Exists(p.SystemCaddyfileBackup) {
-		if err := os.Rename(p.SystemCaddyfileBackup, p.SystemCaddyfile); err != nil {
-			return "", fmt.Errorf("restore %s: %w", p.SystemCaddyfile, err)
-		}
-		return "stopped Caddy, restored " + filepath.Base(p.SystemCaddyfile), nil
+		src, fromBackup = p.SystemCaddyfileBackup, true
 	}
-	old, err := os.ReadFile(p.SystemCaddyfile)
+	old, err := os.ReadFile(src) //nolint:gosec // G304: src is a path from paths.Paths
 	if err != nil {
-		return "", fmt.Errorf("read %s: %w", p.SystemCaddyfile, err)
+		return "", fmt.Errorf("read %s: %w", src, err)
 	}
 	rest := StripSystemCaddyfile(string(old), p)
+	var msg string
 	if strings.TrimSpace(rest) == "" {
-		if err := os.Remove(p.SystemCaddyfile); err != nil {
+		if err := os.Remove(p.SystemCaddyfile); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return "", fmt.Errorf("remove %s: %w", p.SystemCaddyfile, err)
 		}
-		return "stopped Caddy, removed lodo's " + filepath.Base(p.SystemCaddyfile), nil
+		msg = "stopped Caddy, removed lodo's " + filepath.Base(p.SystemCaddyfile)
+	} else {
+		if _, err := fsutil.WriteFile(p.SystemCaddyfile, []byte(rest), 0o644); err != nil {
+			return "", err
+		}
+		if fromBackup {
+			msg = "stopped Caddy, restored " + filepath.Base(p.SystemCaddyfile)
+		} else {
+			msg = "stopped Caddy, removed lodo's import"
+		}
 	}
-	if _, err := fsutil.WriteFile(p.SystemCaddyfile, []byte(rest), 0o644); err != nil {
-		return "", err
+	if fromBackup {
+		if err := os.Remove(p.SystemCaddyfileBackup); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return "", fmt.Errorf("remove %s: %w", p.SystemCaddyfileBackup, err)
+		}
 	}
-	return "stopped Caddy, removed lodo's import", nil
+	return msg, nil
 }
 
 // removeLoopback unloads the job and takes the own block off lo0. Only the

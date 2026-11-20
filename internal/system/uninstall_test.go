@@ -106,3 +106,45 @@ func TestUninstall_NothingInstalled(t *testing.T) {
 		t.Errorf("uninstall created domains.json: %v", err)
 	}
 }
+
+func TestUninstall_CleansPollutedCaddyBackup(t *testing.T) {
+	t.Parallel()
+
+	site := "example.com {\n\trespond \"hi\"\n}\n"
+	tests := []struct {
+		name   string
+		backup func(p paths.Paths) string
+		want   string // empty means SystemCaddyfile must be removed
+	}{
+		{
+			name:   "lodo import only",
+			backup: func(p paths.Paths) string { return "import \"" + p.Caddyfile + "\"\n" },
+		},
+		{
+			name:   "user site with lodo import",
+			backup: func(p paths.Paths) string { return site + "\nimport \"" + p.Caddyfile + "\"\n" },
+			want:   site,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			p, r := newMac(t, true)
+			writeFile(t, p.SystemCaddyfile, system.CaddyGlobalBlock+"\n"+system.CaddyBlock(p))
+			writeFile(t, p.SystemCaddyfileBackup, tt.backup(p))
+			if err := system.Uninstall(context.Background(), p, r, &strings.Builder{}); err != nil {
+				t.Fatal(err)
+			}
+			if exists(p.SystemCaddyfileBackup) {
+				t.Error("Caddyfile backup was not removed")
+			}
+			if tt.want == "" {
+				if exists(p.SystemCaddyfile) {
+					t.Error("Caddyfile holding only lodo's import was not removed")
+				}
+				return
+			}
+			assertFile(t, p.SystemCaddyfile, tt.want)
+		})
+	}
+}
