@@ -142,6 +142,11 @@ srv.listen(%d, "localhost");
 	})
 
 	p := paths.ForTest(t.TempDir())
+	if addr == "127.0.0.1" {
+		if err := store.Save(p.DomainsJSON, []store.Domain{{Name: "shop.lodo", Address: "127.0.0.1", Enabled: true}}); err != nil {
+			t.Fatal(err)
+		}
+	}
 	fake := run.NewFake()
 	setUpFakeMac(t, p, fake)
 	for path, content := range map[string]string{
@@ -170,7 +175,11 @@ srv.listen(%d, "localhost");
 	}
 	a.form = a.setupForm
 
-	if err := a.startDev(t.Context(), root, nil, options{auto: true}); err != nil {
+	initial, err := store.Load(p.DomainsJSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.startDev(t.Context(), root, initial, options{auto: true}); err != nil {
 		t.Fatalf("startDev(-y): %v\n%s", err, out.String())
 	}
 	if strings.Contains(out.String(), "hunter2") {
@@ -345,6 +354,14 @@ http.createServer((_, res) => res.end("ok")).listen(%d, "localhost");
 	})
 
 	p := paths.ForTest(t.TempDir())
+	if addr == "127.0.0.1" {
+		// Before lodo setup adds 127.0.1.x to lo0 (such as on a clean CI runner),
+		// seed shop.lodo on 127.0.0.1 without Root so startDev(-y) claims it and
+		// adds the project's apps on 127.0.0.1.
+		if err := store.Save(p.DomainsJSON, []store.Domain{{Name: "shop.lodo", Address: "127.0.0.1", Enabled: true}}); err != nil {
+			t.Fatal(err)
+		}
+	}
 	fake := run.NewFake()
 	setUpFakeMac(t, p, fake)
 	for path, content := range map[string]string{
@@ -376,7 +393,11 @@ http.createServer((_, res) => res.end("ok")).listen(%d, "localhost");
 	}
 	a.form = a.setupForm
 
-	if err := a.startDev(t.Context(), root, nil, options{auto: true}); err != nil {
+	initial, err := store.Load(p.DomainsJSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.startDev(t.Context(), root, initial, options{auto: true}); err != nil {
 		t.Fatalf("startDev(-y): %v\nstdout: %s\nstderr: %s", err, stdout.String(), stderr.String())
 	}
 
