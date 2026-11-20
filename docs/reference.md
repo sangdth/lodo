@@ -31,34 +31,36 @@ a password, and neither does `lodo apply`.
 
 ## Using lodo
 
-Run `lodo setup` once per Mac. After that, `lodo dev` is the command you use every day, in each project's folder:
+`lodo dev` is the command you use every day, in each project's folder:
 
 ```sh
 cd ~/Projects/shop
 lodo dev
 ```
 
-The first time, lodo doesn't list the project yet, so `lodo dev` opens the setup form: you pick the project's
+If `lodo setup` has not run on this Mac yet, `lodo dev` runs it first and asks for your password once. When lodo
+doesn't list the project yet, `lodo dev` opens the setup form: you pick the project's
 name and its apps' names, and `enter` saves them. Every later run starts the apps on their names right away, and
 `lodo dev --edit` opens the form again. `lodo ps` opens the dashboard, the list of every name with its checks.
 `lodo` alone prints the help.
 
-`lodo dev` and `lodo ps` refuse to start while `lodo doctor` checks 1–5 fail, and print them; a dnsmasq you turned
-off doesn't count.
+Once set up, `lodo dev` and `lodo ps` refuse to start while `lodo doctor` checks 1–5 fail, and print them; a
+dnsmasq you turned off doesn't count.
 
 ### lodo dev
 
 In a project, `lodo dev`:
 
-1. opens the setup form when no name in the list belongs to the project, or with `--edit`. `esc` saves nothing
+1. runs `lodo setup` first when lodo has not been set up on this Mac yet;
+2. opens the setup form when no name in the list belongs to the project, or with `--edit`. `esc` saves nothing
    and exits. With `-y` or `--auto` the form saves what it proposes with no key pressed, and stays open only when
    that breaks a rule;
-2. warns about each app the scan found that has no name: `warn  apps/api has no name: lodo dev --edit adds
+3. warns about each app the scan found that has no name: `warn  apps/api has no name: lodo dev --edit adds
    api.shop.lodo`;
-3. picks the package manager: `packageManager` in the project's `package.json`, else the lock file
+4. picks the package manager: `packageManager` in the project's `package.json`, else the lock file
    (`pnpm-lock.yaml`, `yarn.lock`, `bun.lock` or `bun.lockb`, `package-lock.json`), else npm. It refuses a
    project whose `package.json` has no `dev` script;
-4. prints each name and the address its app listens on, the [variables it sets](#the-variables-lodo-dev-sets)
+5. prints each name and the address its app listens on, the [variables it sets](#the-variables-lodo-dev-sets)
    and the scan's notes, then hands the terminal to `<pm> run dev`, so `ctrl+c` goes straight to the package
    manager:
 
@@ -335,8 +337,8 @@ and `.lodo` never is. Only `localhost` is exempt. For Google sign-in, either:
 
 ## Commands
 
-`lodo dev` starts the project in the current folder on its names, and opens the setup form first when the
-project has no name yet; `--edit` opens it every time. See [lodo dev](#lodo-dev). `lodo exec <command>` runs a
+`lodo dev` starts the project in the current folder on its names, running `lodo setup` first when lodo is not set
+up yet, and opens the setup form when the project has no name yet; `--edit` opens it every time. See [lodo dev](#lodo-dev). `lodo exec <command>` runs a
 command with the variables `lodo dev` sets; see [The variables lodo dev sets](#the-variables-lodo-dev-sets).
 `lodo ps` opens the dashboard.
 `lodo` alone, or `lodo help`, prints the usage.
@@ -393,7 +395,14 @@ fi
 lodo prune --worktree
 ```
 
-`lodo uninstall` removes what setup installed; see [Uninstall](#uninstall). `lodo version` prints the version.
+`lodo uninstall` removes what setup installed; see [Uninstall](#uninstall).
+`lodo update` installs the latest lodo through `go install
+github.com/sangdth/lodo/cmd/lodo@latest`, the Go toolchain it was installed with, and says when it is already
+current. It refuses a binary built from a modified checkout, since a release would replace that work. After an
+install it shows the new binary's `lodo doctor`, whose fixes are what a changed root script or Caddyfile needs:
+run `lodo setup` or `lodo apply` as it says. It needs Go on `PATH` and, unlike every other command, a network
+connection.
+`lodo version` prints the version.
 
 ## How it works
 

@@ -104,19 +104,167 @@ func checkStarted(t *testing.T, r *run.Fake, root, hook string) {
 	}
 }
 
-func TestApp_DevRefusesBeforeSetup(t *testing.T) {
+// setupFake wraps Fake so sudo install writes staged files onto temp paths,
+// letting system.Setup satisfy check.Env.Prerequisites in tests.
+type setupFake struct {
+	*run.Fake
+	sudo    string
+	install string
+}
+
+func (f setupFake) Run(ctx context.Context, name string, args ...string) (string, error) {
+	if name == f.sudo && len(args) == 10 && args[0] == "-n" && args[1] == f.install {
+		if data, err := os.ReadFile(args[8]); err == nil {
+			if err := os.MkdirAll(filepath.Dir(args[9]), 0o755); err == nil {
+				_ = os.WriteFile(args[9], data, 0o755)
+			}
+		}
+	}
+	return f.Fake.Run(ctx, name, args...)
+}
+
+func TestApp_Dev(t *testing.T) {
 	t.Parallel()
 
-	a, _, r, out := newDevApp(t)
-	if code := a.command(t.Context(), "dev", options{}); code != 1 {
-		t.Errorf("exit code = %d on a Mac with nothing set up, want 1", code)
-	}
-	if !strings.Contains(out.String(), "✗ 1 dnsmasq") || !strings.Contains(out.String(), "lodo dev starts once these pass") {
-		t.Errorf("output does not list the failing checks:\n%s", out.String())
-	}
-	if dir, _ := r.Replaced(); dir != "" {
-		t.Errorf("Replace ran in %s before setup", dir)
-	}
+	t.Run("auto runs setup then starts dev", func(t *testing.T) {
+		t.Parallel()
+		root := writeTree(t, shopTree)
+		p, r, out := paths.ForTest(t.TempDir()), run.NewFake(), &strings.Builder{}
+		for path, content := range map[string]string{
+			p.Brew:       "",
+			p.Dnsmasq:    "",
+			p.SystemConf: "# dnsmasq\n",
+			filepath.Join(p.LaunchAgents, "sh.brew.dnsmasq.plist"): "",
+		} {
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		for _, label := range system.DnsmasqSystemLabels {
+			r.Fail(run.Line(p.Launchctl, "print", "system/"+label), "Could not find service")
+		}
+		r.Set(run.Line(p.Launchctl, "print", "gui/501/sh.brew.dnsmasq"), "\tstate = running\n\tpid = 42\n")
+		var lo0 strings.Builder
+		for i := store.OwnFirst; i <= store.OwnLast; i++ {
+			lo0.WriteString("\tinet " + store.OwnAddress(i) + " netmask 0xff000000\n")
+		}
+		r.Set(run.Line(p.Ifconfig, "lo0"), lo0.String())
+
+		a := newApp(p, setupFake{Fake: r, sudo: p.Sudo, install: p.Install}, out, out)
+		a.env.RootUID = uint32(os.Getuid())
+		a.lookPath = func(file string) (string, error) { return "/opt/bin/" + file, nil }
+		opened := 0
+		a.form = func(_ context.Context, _ []store.Domain, dir string, _ options) (bool, error) {
+			opened++
+			if dir != root {
+				t.Errorf("form dir = %q, want %q", dir, root)
+			}
+			saved := listedShop(root)
+			if err := os.MkdirAll(p.ResolverDir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			for _, d := range saved {
+				if d.Enabled {
+					if err := os.WriteFile(filepath.Join(p.ResolverDir, d.Name), []byte(system.ResolverFile()), 0o644); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			return true, store.Save(p.DomainsJSON, saved)
+		}
+
+		if code := a.dev(t.Context(), root, options{}); code != 0 {
+			t.Fatalf("exit code = %d, want 0:\n%s", code, out.String())
+		}
+		if !slices.Contains(r.Calls(), run.Line(p.Sudo, "-v")) {
+			t.Errorf("setup did not prompt with sudo -v; calls: %q", r.Calls())
+		}
+		if !strings.Contains(out.String(), "✓ resolver script installed\n") {
+			t.Errorf("output lacks setup progress:\n%s", out.String())
+		}
+		if opened != 1 {
+			t.Errorf("form opened %d times, want once", opened)
+		}
+		checkStarted(t, r, root, filepath.Join(p.DevDir, "shop.lodo.cjs"))
+
+		// Second run skips setup because SetupDone is now true.
+		sudoCalls := slices.Clone(r.Calls())
+		if code := a.dev(t.Context(), root, options{}); code != 0 {
+			t.Fatalf("second dev exit code = %d, want 0:\n%s", code, out.String())
+		}
+		sudoCount := 0
+		for _, c := range r.Calls() {
+			if c == run.Line(p.Sudo, "-v") {
+				sudoCount++
+			}
+		}
+		if sudoCount != 1 {
+			t.Errorf("sudo -v ran %d times across two dev runs, want once (initial calls: %q)", sudoCount, sudoCalls)
+		}
+	})
+
+	t.Run("outside a project before setup", func(t *testing.T) {
+		t.Parallel()
+		a, _, r, out := newDevApp(t)
+		if code := a.dev(t.Context(), t.TempDir(), options{}); code != 1 {
+			t.Errorf("exit code = %d, want 1", code)
+		}
+		if !strings.Contains(out.String(), scan.ErrNoProject.Error()) {
+			t.Errorf("output = %q, want ErrNoProject", out.String())
+		}
+		if len(r.Calls()) > 0 {
+			t.Errorf("ran commands outside a project: %q", r.Calls())
+		}
+	})
+
+	t.Run("setup fails when password canceled", func(t *testing.T) {
+		t.Parallel()
+		root := writeTree(t, shopTree)
+		a, p, r, out := newDevApp(t)
+		for _, path := range []string{p.Brew, p.Dnsmasq, p.SystemConf} {
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, nil, 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		r.Fail(run.Line(p.Sudo, "-v"), "Sorry, try again.")
+		if code := a.dev(t.Context(), root, options{}); code != 1 {
+			t.Errorf("exit code = %d, want 1", code)
+		}
+		if !strings.Contains(out.String(), "✗ admin password") {
+			t.Errorf("output lacks setup error:\n%s", out.String())
+		}
+		if _, err := os.Stat(p.DomainsJSON); !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("domains.json written after canceled password: %v", err)
+		}
+		if dir, _ := r.Replaced(); dir != "" {
+			t.Errorf("Replace ran in %s after failed setup", dir)
+		}
+	})
+
+	t.Run("refuses when prerequisite fails after setup", func(t *testing.T) {
+		t.Parallel()
+		root := writeTree(t, shopTree)
+		a, p, r, out := newDevApp(t)
+		setUpFakeMac(t, p, r)
+		if code := a.dev(t.Context(), root, options{}); code != 1 {
+			t.Errorf("exit code = %d, want 1", code)
+		}
+		if slices.Contains(r.Calls(), run.Line(p.Sudo, "-v")) {
+			t.Errorf("re-ran setup when SetupDone was already true: %q", r.Calls())
+		}
+		if !strings.Contains(out.String(), "✗ 1 dnsmasq") || !strings.Contains(out.String(), "lodo dev starts once these pass") {
+			t.Errorf("output does not list the failing checks:\n%s", out.String())
+		}
+		if dir, _ := r.Replaced(); dir != "" {
+			t.Errorf("Replace ran in %s with failing checks", dir)
+		}
+	})
 }
 
 func TestApp_StartDev(t *testing.T) {

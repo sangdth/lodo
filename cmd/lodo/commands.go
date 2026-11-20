@@ -30,14 +30,20 @@ type app struct {
 	// form runs the setup form for the project dir is in on the terminal,
 	// saving what the scan proposes with no key pressed when o.auto is set;
 	// saved reports whether domains.json holds the project's names. Tests
-	// replace it, and lookPath, which finds a command on PATH.
+	// replace it, and lookPath, which finds a command on PATH, with version
+	// and execPath, which lodo update reads.
 	form     func(ctx context.Context, domains []store.Domain, dir string, o options) (saved bool, err error)
 	lookPath func(file string) (string, error)
+	version  func() string
+	execPath func() (string, error)
 	teaOpts  []tea.ProgramOption
 }
 
 func newApp(p paths.Paths, r run.Runner, stdout, stderr io.Writer) app {
-	a := app{paths: p, runner: r, env: check.NewEnv(p, r), stdout: stdout, stderr: stderr, lookPath: exec.LookPath}
+	a := app{
+		paths: p, runner: r, env: check.NewEnv(p, r), stdout: stdout, stderr: stderr,
+		lookPath: exec.LookPath, version: version, execPath: os.Executable,
+	}
 	a.form = a.setupForm
 	return a
 }
@@ -55,6 +61,8 @@ func (a app) command(ctx context.Context, command string, o options) int {
 		return a.doctor(ctx)
 	case "uninstall":
 		return a.uninstall(ctx)
+	case "update":
+		return a.update(ctx)
 	}
 	dir, err := os.Getwd()
 	if err != nil {

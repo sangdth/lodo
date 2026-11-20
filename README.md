@@ -22,7 +22,7 @@ Never test on Linux but I think it's easy to get it works there.
 ```sh
 brew install dnsmasq caddy                          # caddy only for names with a port
 go install github.com/sangdth/lodo/cmd/lodo@latest  # ~/go/bin must be on your PATH
-lodo setup                                          # once per Mac; asks for your password once
+lodo setup                                          # once per Mac; the first lodo dev runs it too
 ```
 
 Setup backs up and edits Homebrew's `dnsmasq.conf` and `Caddyfile`, adds `127.0.1.1`–`127.0.1.50` to `lo0`,
@@ -34,7 +34,7 @@ safe. Run it again after you install Caddy, turn on the first HTTPS name, or whe
 
 ```sh
 cd ~/Projects/shop
-lodo dev          # first run opens the setup form; later runs start the apps on their names
+lodo dev          # runs setup if needed; first run opens the setup form, later runs start the apps
 lodo dev --edit   # open the setup form again
 lodo dev --name shop.custom  # set or change the project's custom domain
 lodo dev -y       # save what lodo proposes with no form: a new worktree gets hugger12.lodo on 127.0.1.12
@@ -81,6 +81,7 @@ For Docker, publish ports as `"${DOCKER_HOST_IP:-127.0.0.1}:5432:5432"`.
 | `lodo doctor`    | run eight checks; each failure prints its fix                |
 | `lodo scan`      | show what this project lacks; `--json`, `--name`             |
 | `lodo prune`     | remove names whose folder is gone; `--worktree`              |
+| `lodo update`    | install the latest lodo with `go install`                    |
 | `lodo uninstall` | undo setup; keeps `~/.config/lodo`                           |
 | `lodo version`   | print the version                                            |
 

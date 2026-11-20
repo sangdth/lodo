@@ -29,8 +29,9 @@ stops the commit.
 
 - `cmd/lodo`: subcommand dispatch and output. The only code that builds `paths.Default()` and `run.Exec`. Bare
   `lodo` prints the help, `lodo ps` opens the dashboard, `lodo dev` (`dev.go`) starts a project, `lodo exec`
-  runs a command with the project's variables, and `lodo prune` (`prune.go`) removes names whose folder is gone
-  (and the current git worktree's with `--worktree`).
+  runs a command with the project's variables, `lodo update` (`update.go`) installs the latest release through
+  `go install`, and `lodo prune` (`prune.go`) removes names whose folder is gone (and the current git worktree's
+  with `--worktree`).
 - `internal/paths`: every file, tool and system path. `paths.ForTest(root)` moves all of them under `root`.
 - `internal/run`: the only code that runs commands. `Replace` execs one in lodo's place, for `lodo dev`. `run.Fake`
   records them in tests.
@@ -80,9 +81,11 @@ stops the commit.
   only when the task asks for it. `lodo doctor`, `lodo scan`, `lodo version`, bare `lodo` and the tests are safe.
 - Every external command goes through `run.Runner`, with the absolute tool path from `paths.Paths` and each
   argument passed separately. Nothing builds a shell command line from data. The `PATH` lookups are the package
-  manager `lodo dev` runs and the command `lodo exec` runs, in `cmd/lodo`; each then execs through
-  `run.Runner.Replace`, `<pm> run dev` in the project root and `lodo exec`'s command in the current folder.
-- `lodo dev` writes only `~/.config/lodo/bind.cjs` and `~/.config/lodo/dev/<project>.cjs` (`paths.BindHook`,
+  manager `lodo dev` runs, the command `lodo exec` runs, and the `go` that `lodo update` installs through, in
+  `cmd/lodo`; each then execs through `run.Runner.Replace`, `<pm> run dev` in the project root and `lodo exec`'s
+  command in the current folder. `lodo update` is the only command that uses the network.
+- `lodo dev` runs `system.Setup` first when `!system.SetupDone` (after checking `compose.ProjectRoot`), and
+  otherwise writes only `~/.config/lodo/bind.cjs` and `~/.config/lodo/dev/<project>.cjs` (`paths.BindHook`,
   `paths.DevDir`), besides what its setup form saves, and gives apps their address through
   `NODE_OPTIONS=--require`, also set in `npm_config_node_options` or `pnpm_config_node_options`, which beat npm's and
   pnpm's `node-options` setting (`<pm> config get node-options` reads it first). The hook moves a listen only on the

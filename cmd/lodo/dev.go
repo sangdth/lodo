@@ -14,15 +14,27 @@ import (
 	"github.com/sangdth/lodo/internal/dev"
 	"github.com/sangdth/lodo/internal/scan"
 	"github.com/sangdth/lodo/internal/store"
+	"github.com/sangdth/lodo/internal/system"
 	"github.com/sangdth/lodo/internal/tui"
 )
 
 // dev starts the Node apps of the project dir is in on the project's
-// addresses, once ready.
+// addresses, running setup first when lodo is not set up yet.
 func (a app) dev(ctx context.Context, dir string, o options) int {
 	var ok bool
 	if o.name, ok = a.projectFlag(o.name); !ok {
 		return 2
+	}
+	if _, ok := compose.ProjectRoot(dir); !ok {
+		a.fail(scan.ErrNoProject)
+		return 1
+	}
+	if !system.SetupDone(a.paths) {
+		if err := system.Setup(ctx, a.paths, a.runner, a.stdout); err != nil {
+			a.fail(err)
+			return 1
+		}
+		fmt.Fprintln(a.stdout)
 	}
 	domains, ok := a.ready(ctx, "lodo dev starts")
 	if !ok {
