@@ -27,16 +27,32 @@ import (
 const (
 	e2eDnsmasqBin = "/opt/homebrew/opt/dnsmasq/sbin/dnsmasq"
 	e2eCaddyBin   = "/opt/homebrew/bin/caddy"
+	e2eSwiftcBin  = "/usr/bin/swiftc"
 )
 
 // e2eRunner wraps run.Fake so system.Apply runs the real apply-resolvers.sh
-// script in the temp dir and lodo dev's Replace spawns the real Node dev
-// server with the generated environment.
+// script in the temp dir, swiftc compiles the real menu bar binary when
+// swiftcBin is set, and lodo dev's Replace spawns the real Node dev server
+// with the generated environment.
 type e2eRunner struct {
 	*run.Fake
-	t       *testing.T
-	paths   paths.Paths
-	nodeBin string
+	t         *testing.T
+	paths     paths.Paths
+	nodeBin   string
+	swiftcBin string
+	stopNode  func()
+}
+
+func (r *e2eRunner) Run(ctx context.Context, name string, args ...string) (string, error) {
+	if r.swiftcBin != "" && name == r.paths.Swiftc {
+		cmd := exec.CommandContext(ctx, r.swiftcBin, args...)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			return "", fmt.Errorf("swiftc: %w: %s", err, out)
+		}
+		return string(out), nil
+	}
+	return r.Fake.Run(ctx, name, args...)
 }
 
 func (r *e2eRunner) RunInput(ctx context.Context, stdin, name string, args ...string) (string, error) {
@@ -64,10 +80,12 @@ func (r *e2eRunner) Replace(dir, name string, args, env []string) error {
 		cancel()
 		return err
 	}
-	r.t.Cleanup(func() {
+	stop := func() {
 		cancel()
 		_ = cmd.Wait()
-	})
+	}
+	r.stopNode = stop
+	r.t.Cleanup(stop)
 	return nil
 }
 
@@ -285,6 +303,144 @@ srv.listen(%d, "localhost");
 		if !res.OK() {
 			t.Errorf("probe %s failed: %+v", res.Name, res)
 		}
+	}
+}
+
+// TestE2E_Menubar exercises the menu bar end-to-end in a temp dir: setting up
+// a project with lodo dev -y, compiling the real Swift helper via lodo menubar,
+// validating its LaunchAgent plist, verifying --dump reports only the live
+// bind.cjs-bound Node service (and hides it once stopped), and stopping via
+// lodo menubar --stop.
+func TestE2E_Menubar(t *testing.T) {
+	t.Parallel()
+
+	if _, err := exec.LookPath(e2eSwiftcBin); err != nil {
+		t.Skipf("%s is not installed: %v", e2eSwiftcBin, err)
+	}
+	nodeBin, err := exec.LookPath("node")
+	if err != nil {
+		t.Skipf("node is not installed: %v", err)
+	}
+
+	addr := "127.0.0.1"
+	if e2eCanListen("127.0.1.1") {
+		addr = "127.0.1.1"
+	}
+	webPort := e2eFreeTCPPort(t, addr)
+	apiPort := e2eFreeTCPPort(t, addr) // listed in domains.json, never started
+
+	serverJS := fmt.Sprintf(`const http = require("node:http");
+http.createServer((_, res) => res.end("ok")).listen(%d, "localhost");
+`, webPort)
+
+	root := writeTree(t, map[string]string{
+		".git/HEAD":             "ref: refs/heads/master\n",
+		".env":                  "DOCKER_HOST_IP=" + addr + "\n",
+		"package.json":          `{"scripts": {"dev": "node server.js"}}`,
+		"pnpm-lock.yaml":        "",
+		"pnpm-workspace.yaml":   "packages: [apps/*]\n",
+		"apps/web/package.json": fmt.Sprintf(`{"scripts": {"dev": "next dev -p %d"}}`, webPort),
+		"apps/api/package.json": fmt.Sprintf(`{"scripts": {"dev": "vite --port %d"}}`, apiPort),
+		"server.js":             serverJS,
+	})
+
+	p := paths.ForTest(t.TempDir())
+	fake := run.NewFake()
+	setUpFakeMac(t, p, fake)
+	for path, content := range map[string]string{
+		p.Caddy:           "",
+		p.Swiftc:          "",
+		p.SystemCaddyfile: system.RewriteSystemCaddyfile("", p),
+		filepath.Join(p.LaunchAgents, "sh.brew.caddy.plist"): "",
+	} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	fake.Set(run.Line(p.Launchctl, "print", "gui/501/sh.brew.caddy"), "\tstate = running\n\tpid = 43\n")
+	menubarPrint := run.Line(p.Launchctl, "print", "gui/501/io.lodo.menubar")
+	fake.Fail(menubarPrint, "Could not find service")
+
+	runner := &e2eRunner{Fake: fake, t: t, paths: p, nodeBin: nodeBin, swiftcBin: e2eSwiftcBin}
+	var stdout, stderr strings.Builder
+	a := newApp(p, runner, &stdout, &stderr)
+	a.lookPath = func(file string) (string, error) { return "/opt/bin/" + file, nil }
+	a.teaOpts = []tea.ProgramOption{
+		tea.WithInput(&bytes.Buffer{}),
+		tea.WithOutput(&bytes.Buffer{}),
+		tea.WithoutSignals(),
+		tea.WithWindowSize(80, 24),
+	}
+	a.form = a.setupForm
+
+	if err := a.startDev(t.Context(), root, nil, options{auto: true}); err != nil {
+		t.Fatalf("startDev(-y): %v\nstdout: %s\nstderr: %s", err, stdout.String(), stderr.String())
+	}
+
+	// Start menubar: compiles real Swift helper, writes plist, bootstraps job.
+	stdout.Reset()
+	stderr.Reset()
+	if code := a.command(t.Context(), "menubar", options{}); code != 0 || stdout.String() != "menubar running\n" {
+		t.Fatalf("lodo menubar: code %d, stdout %q, stderr %q", code, stdout.String(), stderr.String())
+	}
+	if _, err := os.Stat(p.MenubarBin); err != nil {
+		t.Fatalf("compiled menubar binary missing: %v", err)
+	}
+	if _, err := os.Stat("/usr/bin/plutil"); err == nil {
+		if out, err := exec.CommandContext(t.Context(), "/usr/bin/plutil", "-lint", p.MenubarPlist).CombinedOutput(); err != nil {
+			t.Errorf("plutil -lint %s: %v\n%s", p.MenubarPlist, err, out)
+		}
+	}
+
+	dump := func() string {
+		t.Helper()
+		cmd := exec.CommandContext(t.Context(), p.MenubarBin, "--dump")
+		cmd.Env = append(os.Environ(), "LODO_DOMAINS_JSON="+p.DomainsJSON)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("lodo-menubar --dump: %v\n%s", err, out)
+		}
+		return string(out)
+	}
+
+	wantHeader := fmt.Sprintf("shop.lodo · %s", addr)
+	wantRow := fmt.Sprintf("● web.shop.lodo  (http :%d)", webPort)
+	var got string
+	for range 40 {
+		got = dump()
+		if strings.Contains(got, wantRow) {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if !strings.Contains(got, wantHeader) || !strings.Contains(got, wantRow) {
+		t.Fatalf("menubar --dump while running =\n%s\nwant header %q and row %q", got, wantHeader, wantRow)
+	}
+	if strings.Contains(got, "api.shop.lodo") {
+		t.Errorf("menubar --dump listed stopped service api.shop.lodo:\n%s", got)
+	}
+
+	// Stop the Node server and confirm the menu updates to empty.
+	runner.stopNode()
+	if got := dump(); got != "No running services\n" {
+		t.Errorf("menubar --dump after stop = %q, want No running services", got)
+	}
+
+	// Stop menubar: boots out job and removes plist.
+	fake.Set(menubarPrint, "\tstate = running\n\tpid = 777\n")
+	stdout.Reset()
+	stderr.Reset()
+	if code := a.command(t.Context(), "menubar", options{stop: true}); code != 0 || stdout.String() != "menubar stopped\n" {
+		t.Fatalf("lodo menubar --stop: code %d, stdout %q, stderr %q", code, stdout.String(), stderr.String())
+	}
+	if _, err := os.Stat(p.MenubarPlist); !os.IsNotExist(err) {
+		t.Errorf("MenubarPlist still exists after --stop: %v", err)
+	}
+	if !slices.Contains(fake.Calls(), run.Line(p.Launchctl, "bootout", "gui/501/io.lodo.menubar")) {
+		t.Errorf("lodo menubar --stop did not bootout LaunchAgent: %q", fake.Calls())
 	}
 }
 

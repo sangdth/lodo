@@ -11,10 +11,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/sangdth/lodo/internal/menubar"
 	"github.com/sangdth/lodo/internal/paths"
 )
 
@@ -63,7 +65,19 @@ func TestSystemE2E(t *testing.T) {
 		}
 	}
 
-	// 2. lodo dev -y in a real Node project, verifying macOS DNS + Caddy + bind.cjs + doctor + apply
+	// 1b. lodo menubar compiles the helper and starts its LaunchAgent.
+	menubarTarget := fmt.Sprintf("gui/%d/%s", p.UID, menubar.Label)
+	if out := runLodo(t, ctx, "", bin, "menubar"); strings.TrimSpace(out) != "menubar running" {
+		t.Errorf("lodo menubar output = %q, want menubar running", out)
+	}
+	if _, err := os.Stat(p.MenubarPlist); err != nil {
+		t.Errorf("MenubarPlist missing after lodo menubar: %v", err)
+	}
+	if out, err := exec.CommandContext(ctx, p.Launchctl, "print", menubarTarget).CombinedOutput(); err != nil {
+		t.Errorf("launchctl print %s after lodo menubar: %v\n%s", menubarTarget, err, out)
+	}
+
+	// 2. lodo dev -y in a real Node project, verifying macOS DNS + Caddy + bind.cjs + doctor + apply + menubar
 	appPort := e2eFreeTCPPort(t, "127.0.0.1")
 	resultFile := filepath.Join(t.TempDir(), "result.json")
 	serverJS := fmt.Sprintf(`const http = require("node:http");
@@ -73,6 +87,7 @@ const { promisify } = require("node:util");
 
 const execFileAsync = promisify(execFile);
 const bin = %q;
+const menubarBin = %q;
 const resultFile = %q;
 
 const srv = http.createServer((req, res) => {
@@ -96,12 +111,14 @@ srv.listen(%d, "127.0.0.1", async () => {
         const body = await resp.json();
         const { stdout: doctorOut } = await execFileAsync(bin, ["doctor"]);
         const { stdout: applyOut } = await execFileAsync(bin, ["apply"]);
+        const { stdout: menubarDump } = await execFileAsync(menubarBin, ["--dump"]);
         fs.writeFileSync(resultFile, JSON.stringify({
           status: resp.status,
           via: resp.headers.get("via") || "",
           ...body,
           doctorOut,
           applyOut,
+          menubarDump,
         }));
         srv.close(() => process.exit(0));
         return;
@@ -115,7 +132,7 @@ srv.listen(%d, "127.0.0.1", async () => {
   console.error("server.js failed:", lastErr);
   process.exit(1);
 });
-`, bin, resultFile, appPort)
+`, bin, p.MenubarBin, resultFile, appPort)
 
 	root := writeTree(t, map[string]string{
 		".git/HEAD":             "ref: refs/heads/master\n",
@@ -148,6 +165,7 @@ srv.listen(%d, "127.0.0.1", async () => {
 		ViteHosts    string `json:"viteHosts"`
 		DoctorOut    string `json:"doctorOut"`
 		ApplyOut     string `json:"applyOut"`
+		MenubarDump  string `json:"menubarDump"`
 	}
 	if err := json.Unmarshal(rawResult, &got); err != nil {
 		t.Fatalf("unmarshal result: %v\n%s", err, rawResult)
@@ -183,6 +201,26 @@ srv.listen(%d, "127.0.0.1", async () => {
 			t.Errorf("apply output lacks %q:\n%s", want, got.ApplyOut)
 		}
 	}
+	wantMenubarRow := "● web.shop.lodo  (http :" + strconv.Itoa(appPort) + ")"
+	if !strings.Contains(got.MenubarDump, "shop.lodo · 127.0.1.1") || !strings.Contains(got.MenubarDump, wantMenubarRow) {
+		t.Errorf("menubar --dump while running =\n%s\nwant shop.lodo header and %q", got.MenubarDump, wantMenubarRow)
+	}
+	if out, err := exec.CommandContext(ctx, p.MenubarBin, "--dump").CombinedOutput(); err != nil || string(out) != "No running services\n" {
+		t.Errorf("menubar --dump after stop = %q, %v; want No running services", out, err)
+	}
+
+	// 2b. lodo menubar --stop unloads the agent and removes its plist; start it
+	// again so step 5 verifies lodo uninstall stops it too.
+	if out := runLodo(t, ctx, "", bin, "menubar", "--stop"); strings.TrimSpace(out) != "menubar stopped" {
+		t.Errorf("lodo menubar --stop output = %q", out)
+	}
+	if _, err := os.Stat(p.MenubarPlist); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("MenubarPlist still exists after --stop: %v", err)
+	}
+	if out, err := exec.CommandContext(ctx, p.Launchctl, "print", menubarTarget).CombinedOutput(); err == nil {
+		t.Errorf("launchctl print %s still loaded after --stop:\n%s", menubarTarget, out)
+	}
+	runLodo(t, ctx, "", bin, "menubar")
 
 	// 3. lodo exec exports the project's variables without the listen hook.
 	execOut := runLodo(t, ctx, root, bin, "exec", "node", "-e",
@@ -216,13 +254,21 @@ srv.listen(%d, "127.0.0.1", async () => {
 
 	// 5. lodo uninstall removes all system parts, and doctor reports the Mac uninstalled.
 	uninstallOut := runLodo(t, ctx, "", bin, "uninstall")
-	if !strings.Contains(uninstallOut, "✓ sudoers rule and resolver script removed") {
-		t.Errorf("lodo uninstall output = %q", uninstallOut)
+	for _, want := range []string{
+		"✓ menu bar icon stopped",
+		"✓ sudoers rule and resolver script removed",
+	} {
+		if !strings.Contains(uninstallOut, want) {
+			t.Errorf("lodo uninstall output lacks %q:\n%s", want, uninstallOut)
+		}
 	}
-	for _, gone := range []string{p.Script, p.Sudoers, p.LoopbackPlist} {
+	for _, gone := range []string{p.Script, p.Sudoers, p.LoopbackPlist, p.MenubarPlist} {
 		if _, err := os.Stat(gone); !errors.Is(err, fs.ErrNotExist) {
 			t.Errorf("%s still exists after uninstall: %v", gone, err)
 		}
+	}
+	if out, err := exec.CommandContext(ctx, p.Launchctl, "print", menubarTarget).CombinedOutput(); err == nil {
+		t.Errorf("launchctl print %s still loaded after uninstall:\n%s", menubarTarget, out)
 	}
 	doctorAfter := exec.CommandContext(ctx, bin, "doctor")
 	if out, err := doctorAfter.CombinedOutput(); err == nil {
