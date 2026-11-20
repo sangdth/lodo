@@ -54,7 +54,10 @@ func Apply(ctx context.Context, p paths.Paths, r run.Runner, domains []store.Dom
 	if err := runScript(ctx, p, r, names); err != nil {
 		return err
 	}
-	return applyCaddy(ctx, p, r, domains, slices.Contains(changed, p.Caddyfile))
+	if err := applyCaddy(ctx, p, r, domains, slices.Contains(changed, p.Caddyfile)); err != nil {
+		return err
+	}
+	return menubar.Refresh(ctx, p, r)
 }
 
 // runScript runs the resolver script through sudo with names, as

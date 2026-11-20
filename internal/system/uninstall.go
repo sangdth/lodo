@@ -36,6 +36,7 @@ func Uninstall(ctx context.Context, p paths.Paths, r run.Runner, out io.Writer) 
 		{"Homebrew's dnsmasq.conf restored", "edit " + p.SystemConf + " by hand", func() (string, error) { return restoreSystemConf(p) }},
 		{"Caddy's local CA no longer trusted", "sudo security remove-trusted-cert -d " + p.TrustedCA, func() (string, error) { return "", untrustCaddy(ctx, p, r) }},
 		{"Caddy no longer serves lodo's sites", "edit " + p.SystemCaddyfile + " by hand", func() (string, error) { return restoreCaddy(ctx, p, r) }},
+		{"menu bar icon stopped", "lodo menubar --stop", func() (string, error) { return "", stopMenubar(ctx, p, r) }},
 		{"loopback addresses removed", "sudo launchctl bootout system/" + LoopbackLabel, func() (string, error) { return "", removeLoopback(ctx, p, r) }},
 		{"sudoers rule and resolver script removed", "sudo rm " + p.Sudoers + " '" + p.Script + "'", func() (string, error) { return "", removeRootFiles(ctx, p, r) }},
 	} {
@@ -159,8 +160,14 @@ func removeLoopback(ctx context.Context, p paths.Paths, r run.Runner) error {
 	return nil
 }
 
+func stopMenubar(ctx context.Context, p paths.Paths, r run.Runner) error {
+	if !fsutil.Exists(p.MenubarPlist) && !menubar.Running(ctx, r, p) {
+		return skipped("not enabled")
+	}
+	return menubar.Stop(ctx, p, r)
+}
+
 func removeRootFiles(ctx context.Context, p paths.Paths, r run.Runner) error {
-	_ = menubar.Stop(ctx, p, r)
 	if _, err := r.Run(ctx, p.Sudo, "-n", p.Rm, "-f", p.Sudoers, p.Script); err != nil {
 		return err
 	}

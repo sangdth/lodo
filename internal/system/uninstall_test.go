@@ -24,6 +24,7 @@ func uninstallCalls(p paths.Paths, withScript, withCaddy bool, activeAddrs ...st
 		calls = append(calls, run.Line(p.Brew, "services", "stop", "caddy"))
 	}
 	calls = append(calls,
+		run.Line(p.Launchctl, "print", "gui/501/io.lodo.menubar"),
 		run.Line(p.Sudo, "-n", p.Launchctl, "bootout", "system/io.lodo.loopback"),
 		run.Line(p.Sudo, "-n", p.Rm, "-f", p.LoopbackPlist),
 		run.Line(p.Ifconfig, "lo0"),
@@ -146,5 +147,35 @@ func TestUninstall_CleansPollutedCaddyBackup(t *testing.T) {
 			}
 			assertFile(t, p.SystemCaddyfile, tt.want)
 		})
+	}
+}
+
+func TestUninstall_StopsMenubar(t *testing.T) {
+	t.Parallel()
+
+	p, r := newMac(t, false)
+	writeFile(t, p.MenubarPlist, "<plist/>")
+	r.Set(run.Line(p.Launchctl, "print", "gui/501/io.lodo.menubar"), "\tstate = running\n\tpid = 999\n")
+	var out strings.Builder
+	if err := system.Uninstall(context.Background(), p, r, &out); err != nil {
+		t.Fatalf("Uninstall: %v\n%s", err, out.String())
+	}
+	if !slices.Contains(r.Calls(), run.Line(p.Launchctl, "bootout", "gui/501/io.lodo.menubar")) {
+		t.Errorf("Uninstall did not bootout menubar: %q", r.Calls())
+	}
+	if exists(p.MenubarPlist) {
+		t.Error("MenubarPlist still exists after Uninstall")
+	}
+	if !strings.Contains(out.String(), "✓ menu bar icon stopped") {
+		t.Errorf("output lacks menu bar step:\n%s", out.String())
+	}
+
+	// An error stopping the menu bar surfaces as a StepError instead of being ignored.
+	p2, r2 := newMac(t, false)
+	writeFile(t, p2.MenubarPlist, "<plist/>")
+	r2.Set(run.Line(p2.Launchctl, "print", "gui/501/io.lodo.menubar"), "\tstate = running\n\tpid = 999\n")
+	r2.Fail(run.Line(p2.Launchctl, "bootout", "gui/501/io.lodo.menubar"), "bootout failed")
+	if err := system.Uninstall(context.Background(), p2, r2, &strings.Builder{}); err == nil || !strings.Contains(err.Error(), "menu bar icon stopped") {
+		t.Errorf("err = %v, want menu bar icon stopped failure", err)
 	}
 }

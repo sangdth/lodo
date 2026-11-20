@@ -140,12 +140,18 @@ func TestSetService(t *testing.T) {
 		{name: "dnsmasq on writes resolver files after", service: "dnsmasq", on: true, want: []string{"restart dnsmasq", "script"}, wantInput: []string{"crm.test\n"}},
 		{name: "caddy off", service: "caddy", want: []string{"services stop caddy"}},
 		{name: "caddy on validates first", service: "caddy", on: true, want: []string{"validate", "restart caddy", "info caddy"}},
+		{name: "menubar on", service: "menubar", on: true, want: []string{"menubar on"}},
+		{name: "menubar off", service: "menubar", want: []string{"menubar off"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			p, r := setUpMac(t, true)
 			writeFile(t, p.SystemCaddyfile, system.CaddyBlock(p))
+			writeFile(t, p.Swiftc, "")
+			if tt.service == "menubar" && tt.on {
+				r.Fail(run.Line(p.Launchctl, "print", "gui/501/io.lodo.menubar"), "Could not find service")
+			}
 			if err := store.Save(p.DomainsJSON, domains); err != nil {
 				t.Fatal(err)
 			}
@@ -163,6 +169,17 @@ func TestSetService(t *testing.T) {
 					want = append(want, restartCalls(p, strings.Fields(w)[1])...)
 				case "info caddy":
 					want = append(want, printJob(p, "caddy"))
+				case "menubar on":
+					want = append(want,
+						run.Line(p.Swiftc, "-O", p.MenubarBin+".tmp.swift", "-o", p.MenubarBin+".tmp"),
+						run.Line(p.Launchctl, "print", "gui/501/io.lodo.menubar"),
+						run.Line(p.Launchctl, "bootstrap", "gui/501", p.MenubarPlist),
+					)
+				case "menubar off":
+					want = append(want,
+						run.Line(p.Launchctl, "print", "gui/501/io.lodo.menubar"),
+						run.Line(p.Launchctl, "bootout", "gui/501/io.lodo.menubar"),
+					)
 				default:
 					want = append(want, run.Line(p.Brew, strings.Fields(w)...))
 				}
@@ -272,6 +289,27 @@ func TestApply_TrimsLongLog(t *testing.T) {
 	}
 	if !slices.Contains(r.Calls(), restartCalls(p, "dnsmasq")[1]) {
 		t.Errorf("did not restart dnsmasq after trimming log: %q", r.Calls())
+	}
+}
+
+func TestApply_RefreshesStaleMenubar(t *testing.T) {
+	t.Parallel()
+
+	p, r := setUpMac(t, false)
+	writeFile(t, p.Swiftc, "")
+	writeFile(t, p.MenubarPlist, "<plist/>")
+	writeFile(t, p.MenubarBin, "old")
+	writeFile(t, p.MenubarBin+".swift", "// stale\n")
+	r.Set(run.Line(p.Launchctl, "print", "gui/501/io.lodo.menubar"), "\tstate = running\n\tpid = 999\n")
+
+	domains := []store.Domain{{Name: "crm.test", Address: "127.0.1.1", Enabled: true}}
+	if err := system.Apply(context.Background(), p, r, domains); err != nil {
+		t.Fatal(err)
+	}
+	wantCompile := run.Line(p.Swiftc, "-O", p.MenubarBin+".tmp.swift", "-o", p.MenubarBin+".tmp")
+	wantKickstart := run.Line(p.Launchctl, "kickstart", "-k", "gui/501/io.lodo.menubar")
+	if !slices.Contains(r.Calls(), wantCompile) || !slices.Contains(r.Calls(), wantKickstart) {
+		t.Errorf("Apply did not rebuild and restart stale menubar: %q", r.Calls())
 	}
 }
 

@@ -38,7 +38,8 @@ struct ProjectGroup: Equatable {
 
 func loadCandidates(from path: String) -> [Domain] {
 	guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
-	      let file = try? JSONDecoder().decode(DomainFile.self, from: data)
+	      let file = try? JSONDecoder().decode(DomainFile.self, from: data),
+	      file.version == 1
 	else { return [] }
 	return file.domains.filter { $0.enabled && $0.activePort > 0 }
 }
@@ -108,6 +109,30 @@ func filterRunning(_ candidates: [Domain]) -> [Domain] {
 	return zip(candidates, alive).compactMap { $1 ? $0 : nil }
 }
 
+func formatHeader(_ group: ProjectGroup) -> String {
+	"\(group.project) · \(group.address)"
+}
+
+func formatRow(_ d: Domain) -> String {
+	let scheme = d.isHTTPS ? "https" : "http"
+	return "● \(d.name)  (\(scheme) :\(d.activePort))"
+}
+
+func dumpMenu(domainsPath: String) -> String {
+	let groups = groupRunning(filterRunning(loadCandidates(from: domainsPath)))
+	if groups.isEmpty {
+		return "No running services\n"
+	}
+	var lines: [String] = []
+	for group in groups {
+		lines.append(formatHeader(group))
+		for d in group.domains {
+			lines.append(formatRow(d))
+		}
+	}
+	return lines.joined(separator: "\n") + "\n"
+}
+
 final class MenuController: NSObject, NSMenuDelegate {
 	private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 	private let menu = NSMenu()
@@ -142,14 +167,13 @@ final class MenuController: NSObject, NSMenuDelegate {
 		} else {
 			for (idx, group) in groups.enumerated() {
 				if idx > 0 { menu.addItem(.separator()) }
-				let header = NSMenuItem(title: "\(group.project) · \(group.address)", action: nil, keyEquivalent: "")
+				let header = NSMenuItem(title: formatHeader(group), action: nil, keyEquivalent: "")
 				header.isEnabled = false
 				menu.addItem(header)
 
 				for d in group.domains {
-					let scheme = d.isHTTPS ? "https" : "http"
 					let item = NSMenuItem(
-						title: "● \(d.name)  (\(scheme) :\(d.activePort))",
+						title: formatRow(d),
 						action: #selector(openDomain(_:)),
 						keyEquivalent: ""
 					)
@@ -169,7 +193,8 @@ final class MenuController: NSObject, NSMenuDelegate {
 
 	@objc private func openDomain(_ sender: NSMenuItem) {
 		guard let urlStr = sender.representedObject as? String else { return }
-		if NSEvent.modifierFlags.contains(.option) {
+		let flags = NSApp.currentEvent?.modifierFlags ?? NSEvent.modifierFlags
+		if flags.contains(.option) {
 			NSPasteboard.general.clearContents()
 			NSPasteboard.general.setString(urlStr, forType: .string)
 			return
@@ -180,13 +205,16 @@ final class MenuController: NSObject, NSMenuDelegate {
 	}
 
 	@objc private func hideMenubar() {
-		// Unload the LaunchAgent if loaded so KeepAlive does not respawn it, then exit.
+		// Remove the plist first so it stays hidden across logins even if
+		// launchctl bootout terminates this process while waiting.
 		let plist = (NSHomeDirectory() as NSString).appendingPathComponent("Library/LaunchAgents/io.lodo.menubar.plist")
 		try? FileManager.default.removeItem(atPath: plist)
 		let proc = Process()
 		proc.executableURL = URL(fileURLWithPath: "/bin/launchctl")
 		proc.arguments = ["bootout", "gui/\(getuid())/io.lodo.menubar"]
-		try? proc.run()
+		if (try? proc.run()) != nil {
+			proc.waitUntilExit()
+		}
 		NSApp.terminate(nil)
 	}
 }
@@ -216,6 +244,13 @@ func runSelfTests() -> Int32 {
 	check(candidates[0].name == "web.blog.lodo" && candidates[0].urlString == "https://web.blog.lodo", "https url")
 	check(candidates[0].project == "blog.lodo", "project extraction")
 	check(candidates[1].name == "shop.custom" && candidates[1].urlString == "http://shop.custom", "http url")
+
+	// 1b. Unsupported format version is ignored
+	let badVer = """
+	{"version":2,"domains":[{"name":"web.blog.lodo","address":"127.0.0.1","port":3000,"enabled":true}]}
+	"""
+	try! badVer.write(toFile: tmp, atomically: true, encoding: .utf8)
+	check(loadCandidates(from: tmp).isEmpty, "unsupported version should return no candidates")
 
 	// 2. Grouping
 	let groups = groupRunning(candidates)
@@ -262,6 +297,11 @@ if args.contains("--test") {
 
 let defaultDomains = (NSHomeDirectory() as NSString).appendingPathComponent(".config/lodo/domains.json")
 let domainsPath = ProcessInfo.processInfo.environment["LODO_DOMAINS_JSON"] ?? defaultDomains
+
+if args.contains("--dump") {
+	print(dumpMenu(domainsPath: domainsPath), terminator: "")
+	exit(0)
+}
 
 let app = NSApplication.shared
 app.setActivationPolicy(.accessory)

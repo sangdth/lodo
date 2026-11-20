@@ -100,14 +100,19 @@ func TestApp_Apply(t *testing.T) {
 	t.Run("menubar", func(t *testing.T) {
 		t.Parallel()
 		p, r := paths.ForTest(t.TempDir()), run.NewFake()
+		var stdout, stderr strings.Builder
+		a := newApp(p, r, &stdout, &stderr)
+		if code := a.command(t.Context(), "menubar", options{}); code != 1 || !strings.Contains(stderr.String(), system.ErrNotSetUp.Error()) {
+			t.Errorf("menubar before setup: code %d, stderr %q; want 1 and ErrNotSetUp", code, stderr.String())
+		}
+		stderr.Reset()
+		setUpFakeMac(t, p, r)
 		if err := os.MkdirAll(filepath.Dir(p.Swiftc), 0o755); err != nil {
 			t.Fatal(err)
 		}
 		if err := os.WriteFile(p.Swiftc, nil, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		var stdout, stderr strings.Builder
-		a := newApp(p, r, &stdout, &stderr)
 		if code := a.command(t.Context(), "menubar", options{}); code != 0 || stdout.String() != "menubar running\n" {
 			t.Errorf("menubar start: code %d, stdout %q, stderr %q", code, stdout.String(), stderr.String())
 		}
