@@ -250,16 +250,20 @@ func TestSetup_RepairsAMarkerlessCaddyBackup(t *testing.T) {
 	t.Parallel()
 
 	p, r := newMac(t, true)
+	writeFile(t, p.SystemConf, "# dnsmasq\nport=5353\n")
 	lodoOnly := "import \"" + p.Caddyfile + "\"\n"
 	writeFile(t, p.SystemCaddyfile, system.CaddyGlobalBlock+"\n"+lodoOnly+"\n"+system.CaddyBlock(p))
 	writeFile(t, p.SystemCaddyfileBackup, lodoOnly)
-	if err := system.Setup(context.Background(), p, r, &strings.Builder{}); err != nil {
-		t.Fatal(err)
+	for range 2 {
+		if err := system.Setup(context.Background(), p, r, &strings.Builder{}); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if _, err := os.Stat(p.SystemCaddyfileBackup); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("a backup with only lodo's import is kept: %v", err)
 	}
 	assertFile(t, p.SystemCaddyfile, system.CaddyGlobalBlock+"\n"+system.CaddyBlock(p))
+	assertFile(t, p.SystemConfBackup, "# dnsmasq\nport=5353\n")
 }
 
 // snapshot reads every regular file under root, by path.
