@@ -3,7 +3,7 @@
 `lodo` is a Go terminal app that manages `.lodo` and custom local domain names on macOS through dnsmasq,
 `/etc/resolver` files and Caddy. `docs/plan.md` holds the design, the settled decisions and the phases;
 `docs/setup-log.md` records the hand test on a real Mac. The README stays short; user-facing detail goes in
-`docs/reference.md`.
+`docs/reference.md`, and contributor/build notes go in `docs/development.md`.
 
 ## Commands
 
@@ -19,7 +19,7 @@ go build -o lodo ./cmd/lodo && ./lodo ps  # the dashboard; it opens only after l
 
 The installed `lodo` is `~/go/bin/lodo`. Every finished change ends with the steps that make it take effect,
 for a user new to Go: `go install ./cmd/lodo` from the repo root, then nothing, `lodo apply` or `lodo setup`, by
-the table in the README's "Change it and use it right away".
+the table in `docs/development.md` ("Change it and use it right away").
 
 `-update` works per package: only packages with golden files define the flag. A commit needs `gofmt -l .`
 empty, `go vet`, `golangci-lint run` and `go test -race ./...` clean; chain them with `set -e` so a failure

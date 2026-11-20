@@ -4,6 +4,8 @@ The full behavior behind the [README](../README.md): what each command changes, 
 
 ## Setup
 
+Needs macOS on Apple Silicon with Homebrew in `/opt/homebrew`, Go 1.27+, and an admin account (untested on Linux).
+
 Run `lodo setup` as yourself, not with `sudo`. It asks for your password once, before it changes anything. Then it:
 
 1. creates `~/.config/lodo`, an empty `domains.json` when there is none, and the files lodo generates from it;
@@ -336,6 +338,20 @@ and `.lodo` never is. Only `localhost` is exempt. For Google sign-in, either:
   project's Postgres gets port 5432 on its own address.
 
 ## Commands
+
+| Command          | What it does                                                 |
+| ---------------- | ------------------------------------------------------------ |
+| `lodo dev`       | start the project in this folder on its names                |
+| `lodo exec`      | run a command with the variables `lodo dev` sets             |
+| `lodo ps`        | open the dashboard                                           |
+| `lodo setup`     | install or repair lodo on this Mac                           |
+| `lodo apply`     | apply `domains.json` after a hand edit, then check each name |
+| `lodo doctor`    | run eight checks; each failure prints its fix                |
+| `lodo scan`      | show what this project lacks; `--json`, `--name`             |
+| `lodo prune`     | remove names whose folder is gone; `--worktree`              |
+| `lodo update`    | install the latest lodo with `go install`                    |
+| `lodo uninstall` | undo setup; keeps `~/.config/lodo`                           |
+| `lodo version`   | print the version                                            |
 
 `lodo dev` starts the project in the current folder on its names, running `lodo setup` first when lodo is not set
 up yet, and opens the setup form when the project has no name yet; `--edit` opens it every time. See [lodo dev](#lodo-dev). `lodo exec <command>` runs a
