@@ -22,10 +22,10 @@ var Version = "dev"
 const usage = `lodo manages .lodo names on macOS through dnsmasq.
 
 Usage:
-  lodo dev        start the project in this folder on its names; the first run sets
-                  them up, --edit changes them, --name sets the project's name or
-                  custom domain, -y or --auto saves what lodo proposes without the
-                  form: a new worktree gets <main><n>.lodo on 127.0.1.<n>
+  lodo dev        start the project in this folder on its names; runs lodo setup if
+                  not set up yet, and sets up the project's names on the first run
+                  (--edit changes them, --name sets the name or custom domain, -y or
+                  --auto saves without the form: <main><n>.lodo on 127.0.1.<n>)
   lodo exec CMD   run CMD here with the variables lodo dev sets, such as
                   lodo exec pnpm db:migrate
   lodo ps         open the dashboard: the list of names, their checks, and keys to
@@ -37,6 +37,8 @@ Usage:
                   --name hugger or --name hugger.custom to name the project
   lodo prune      remove listed names whose project folder is gone; --worktree
                   also removes the git worktree in this folder
+  lodo update     install the latest lodo through go install, and say when a
+                  check needs lodo setup or lodo apply
   lodo uninstall  remove what setup installed; keeps domains.json
   lodo version    print the version
   lodo help       print this help
@@ -60,7 +62,7 @@ func dispatch(args []string, stdout, stderr io.Writer) int {
 	case "", "help", "-h", "--help":
 		fmt.Fprint(stdout, usage)
 		return 0
-	case "ps", "setup", "apply", "doctor", "uninstall":
+	case "ps", "setup", "apply", "doctor", "uninstall", "update":
 		if len(args) > 1 {
 			fmt.Fprintf(stderr, "lodo: %s takes no arguments\n\n%s", command, usage)
 			return 2
