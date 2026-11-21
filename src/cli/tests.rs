@@ -604,6 +604,43 @@ fn doctor_apply_menubar_setup_and_uninstall() {
     assert!(p_brew.menubar_plist.exists());
     assert!(String::from_utf8_lossy(&out).contains("✓ menu bar icon started"));
 
+    // 6b. Setup warns without failing when menubar cannot start (e.g., headless SSH).
+    let tmp_headless = tempfile::tempdir().unwrap();
+    let p_headless = Paths::for_test(tmp_headless.path());
+    let sf_headless = SetupFake {
+        fake: FakeRunner::new(),
+        paths: p_headless.clone(),
+    };
+    set_up_ready_mac(&p_headless, &sf_headless.fake);
+    write_file(&p_headless.brew_menubar_bin, "mach-o");
+    sf_headless.fake.fail(
+        run::line(
+            &p_headless.launchctl.to_string_lossy(),
+            &[
+                "bootstrap",
+                "gui/501",
+                &p_headless.menubar_plist.to_string_lossy(),
+            ],
+        ),
+        "Bootstrap failed: 5: Input/output error",
+    );
+    let app_headless = new_test_app(p_headless, &sf_headless, tmp_headless.path().to_path_buf());
+    out.clear();
+    err.clear();
+    assert_eq!(
+        app_headless.dispatch(&to_args(&["setup"]), &mut out, &mut err),
+        0,
+        "stderr: {}\nstdout: {}",
+        String::from_utf8_lossy(&err),
+        String::from_utf8_lossy(&out)
+    );
+    assert!(
+        String::from_utf8_lossy(&err).contains("warn  menubar: start menubar:"),
+        "expected menubar warning on stderr, got: {}",
+        String::from_utf8_lossy(&err)
+    );
+    assert!(String::from_utf8_lossy(&out).contains("✓ 1 dnsmasq"));
+
     // 7. Apply fails when sudo script fails, and probe fails on unreachable DNS.
     let tmp_fail = tempfile::tempdir().unwrap();
     let p_fail = Paths::for_test(tmp_fail.path());

@@ -9,9 +9,9 @@ use std::time::Duration;
 
 use regex::Regex;
 
-use crate::fsutil;
 use crate::paths::Paths;
 use crate::run::Runner;
+use crate::{fsutil, store};
 
 /// `launchd` label of the user LaunchAgent that keeps the menu bar icon running.
 pub const LABEL: &str = "io.lodo.menubar";
@@ -102,38 +102,49 @@ pub fn running(r: &dyn Runner, p: &Paths) -> bool {
 /// Compiles the menu bar helper when needed, writes its LaunchAgent plist, and
 /// starts or restarts the job in the user's GUI domain.
 pub fn start(p: &Paths, r: &dyn Runner) -> Result<(), String> {
-    start_with_loaded(p, r, None)
+    with_menubar_lock(p, || start_locked(p, r, None))
 }
 
 /// Ensures the menu bar LaunchAgent is installed, up to date, and running.
 /// No-op when the plist and binary are up to date and the process is running.
 pub fn ensure_running(p: &Paths, r: &dyn Runner) -> Result<(), String> {
-    if fsutil::exists(&p.menubar_plist) && up_to_date(p) {
-        let launchctl = p.launchctl.to_string_lossy();
-        let tgt = target(p);
-        return match r.run(None, &launchctl, &["print", &tgt]) {
-            Ok(out) if PID_LINE.is_match(&out) => Ok(()),
-            Ok(_) => start_with_loaded(p, r, Some(true)),
-            Err(_) => start_with_loaded(p, r, Some(false)),
-        };
-    }
-    start_with_loaded(p, r, None)
+    with_menubar_lock(p, || {
+        if up_to_date(p) {
+            let launchctl = p.launchctl.to_string_lossy();
+            let tgt = target(p);
+            return match r.run(None, &launchctl, &["print", &tgt]) {
+                Ok(out) if PID_LINE.is_match(&out) => Ok(()),
+                Ok(_) => start_locked(p, r, Some(true)),
+                Err(_) => start_locked(p, r, Some(false)),
+            };
+        }
+        start_locked(p, r, None)
+    })
 }
 
-fn start_with_loaded(p: &Paths, r: &dyn Runner, loaded: Option<bool>) -> Result<(), String> {
+fn with_menubar_lock<T>(p: &Paths, f: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
+    store::with_lock(&p.menubar_bin, || Ok::<_, store::StoreError>(f()))
+        .map_err(|e| e.to_string())?
+}
+
+fn start_locked(p: &Paths, r: &dyn Runner, loaded: Option<bool>) -> Result<(), String> {
     ensure_binary(p, r)?;
     if let Some(dir) = p.menubar_plist.parent() {
         fs::create_dir_all(dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
     }
-    fsutil::write_file(&p.menubar_plist, plist(p).as_bytes(), 0o644).map_err(|e| e.to_string())?;
+    let plist_changed = fsutil::write_file(&p.menubar_plist, plist(p).as_bytes(), 0o644)
+        .map_err(|e| e.to_string())?;
 
     let launchctl = p.launchctl.to_string_lossy();
     let tgt = target(p);
     let is_loaded = loaded.unwrap_or_else(|| r.run(None, &launchctl, &["print", &tgt]).is_ok());
-    if is_loaded {
+    if is_loaded && !plist_changed {
         r.run(None, &launchctl, &["kickstart", "-k", &tgt])
             .map_err(|e| format!("restart menubar: {e}"))?;
         return Ok(());
+    }
+    if is_loaded {
+        let _ = r.run(None, &launchctl, &["bootout", &tgt]);
     }
     let dom = domain(p);
     let plist_path = p.menubar_plist.to_string_lossy();
@@ -551,6 +562,120 @@ mod tests {
             &launchctl,
             &["kickstart", "-k", "gui/501/io.lodo.menubar"],
         )));
+
+        // 5. Changed plist while already loaded: boots out and bootstraps so launchd reloads it.
+        write_file(&p.brew_menubar_bin, b"mach-o");
+        let r5 = FakeRunner::new();
+        r5.set(&print_line, "\tstate = running\n\tpid = 999\n");
+        ensure_running(&p, &r5).unwrap();
+        assert_eq!(
+            r5.calls(),
+            vec![
+                print_line,
+                line(&launchctl, &["bootout", "gui/501/io.lodo.menubar"]),
+                line(
+                    &launchctl,
+                    &["bootstrap", "gui/501", &p.menubar_plist.to_string_lossy()],
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn ensure_running_serializes_concurrent_startups() {
+        use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+        use std::thread;
+
+        use crate::run::RunError;
+
+        struct ConcurrentRunner {
+            paths: Paths,
+            running: AtomicBool,
+            compiles: AtomicUsize,
+            bootstraps: AtomicUsize,
+        }
+
+        impl Runner for ConcurrentRunner {
+            fn run(
+                &self,
+                _timeout: Option<Duration>,
+                name: &str,
+                args: &[&str],
+            ) -> Result<String, RunError> {
+                if Path::new(name) == self.paths.swiftc {
+                    self.compiles.fetch_add(1, Ordering::SeqCst);
+                    thread::sleep(Duration::from_millis(25));
+                    return Ok(String::new());
+                }
+                if Path::new(name) == self.paths.launchctl {
+                    match args.first().copied() {
+                        Some("print") => {
+                            if self.running.load(Ordering::SeqCst) {
+                                return Ok("\tstate = running\n\tpid = 999\n".to_string());
+                            }
+                            return Err(RunError {
+                                cmd: line(name, args),
+                                stderr: "Could not find service".into(),
+                                stdout: String::new(),
+                                timed_out: false,
+                                source: std::io::Error::other("not loaded"),
+                            });
+                        }
+                        Some("bootstrap") => {
+                            self.bootstraps.fetch_add(1, Ordering::SeqCst);
+                            self.running.store(true, Ordering::SeqCst);
+                            return Ok(String::new());
+                        }
+                        _ => {}
+                    }
+                }
+                Ok(String::new())
+            }
+
+            fn run_input(
+                &self,
+                _timeout: Option<Duration>,
+                _stdin: &str,
+                _name: &str,
+                _args: &[&str],
+            ) -> Result<String, RunError> {
+                Ok(String::new())
+            }
+
+            fn run_tty(&self, _name: &str, _args: &[&str]) -> Result<(), RunError> {
+                Ok(())
+            }
+
+            fn replace(
+                &self,
+                _dir: &Path,
+                _name: &str,
+                _args: &[String],
+                _env: &[(String, String)],
+            ) -> Result<(), RunError> {
+                Ok(())
+            }
+        }
+
+        let dir = tempfile::tempdir().unwrap();
+        let p = Paths::for_test(dir.path());
+        write_file(&p.swiftc, b"");
+        let runner = ConcurrentRunner {
+            paths: p.clone(),
+            running: AtomicBool::new(false),
+            compiles: AtomicUsize::new(0),
+            bootstraps: AtomicUsize::new(0),
+        };
+
+        thread::scope(|s| {
+            for _ in 0..3 {
+                s.spawn(|| ensure_running(&p, &runner).unwrap());
+            }
+        });
+
+        assert_eq!(runner.compiles.load(Ordering::SeqCst), 1);
+        assert_eq!(runner.bootstraps.load(Ordering::SeqCst), 1);
+        assert!(p.menubar_plist.exists());
     }
 
     #[test]

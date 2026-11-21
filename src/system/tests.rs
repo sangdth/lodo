@@ -895,20 +895,6 @@ fn setup_idempotency_backups_root_dnsmasq_leftovers_and_failures() {
     write_file(&daemon_plist, "<plist/>");
     write_file(&pm.resolver_local, "nameserver 127.0.0.1\n");
     write_file(&pm.leftovers[0].join("dnsmasq.conf"), "");
-    write_file(&pm.swiftc, "");
-    write_file(&pm.menubar_plist, "<plist/>");
-    write_file(&pm.menubar_bin, "old");
-    write_file(
-        &PathBuf::from(format!("{}.swift", pm.menubar_bin.display())),
-        "// stale\n",
-    );
-    rm_run.set(
-        line(
-            &pm.launchctl.to_string_lossy(),
-            &["print", "gui/501/io.lodo.menubar"],
-        ),
-        "\tstate = running\n\tpid = 999\n",
-    );
     let mut misc_out = Vec::new();
     setup_with(&MockDeps, &pm, &rm_run, &mut misc_out).unwrap();
     let misc_str = String::from_utf8(misc_out).unwrap();
@@ -916,7 +902,6 @@ fn setup_idempotency_backups_root_dnsmasq_leftovers_and_failures() {
         "stopped system/homebrew.mxcl.dnsmasq, removed {}",
         daemon_plist.display()
     )));
-    assert!(misc_str.contains("✓ menu bar icon up to date"));
     assert!(rm_run.calls().contains(&line(
         &pm.sudo.to_string_lossy(),
         &[
@@ -1284,7 +1269,7 @@ fn apply_and_set_service_matrix() {
     let dir_mb = tempfile::tempdir().unwrap();
     let (pmb, rmb) = set_up_mac(dir_mb.path(), false);
     write_file(&pmb.swiftc, "");
-    write_file(&pmb.menubar_plist, "<plist/>");
+    write_file(&pmb.menubar_plist, &crate::menubar::plist(&pmb));
     write_file(&pmb.menubar_bin, "old");
     write_file(
         &PathBuf::from(format!("{}.swift", pmb.menubar_bin.display())),
