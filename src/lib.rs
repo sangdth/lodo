@@ -3,6 +3,7 @@
 pub mod brew;
 pub mod caddy;
 pub mod check;
+pub mod clean;
 pub mod cli;
 pub mod compose;
 pub mod dev;

@@ -319,7 +319,7 @@ fn propose_impl(
             prop.claim = true;
             if p.is_worktree() && !p.compose.is_empty() {
                 prop.notes.push(format!(
-                    "{} takes over a gone folder's name, with its compose containers and data: lodo exec docker compose down -v gives it fresh ones",
+                    "{} takes over a gone folder's name: lodo dev removes its old compose containers and data",
                     p.name
                 ));
             }
@@ -390,6 +390,7 @@ fn propose_impl(
         );
         if e.name == p.name {
             d.root.clone_from(&p.root);
+            d.worktree = p.is_worktree();
         }
         if d.port > 0
             && let Some(other) = on_port(&list, &d.address, d.port)
