@@ -19,7 +19,7 @@ use rustls::RootCertStore;
 use crate::paths::Paths;
 use crate::run::{ExecRunner, Runner};
 use crate::store::{self, Domain};
-use crate::{check, dnsmasq, fsutil, ls, menubar, scan, system};
+use crate::{check, dnsmasq, ls, menubar, scan, system};
 
 pub use dev::project_env;
 pub use format::{
@@ -160,21 +160,13 @@ impl<'a> App<'a> {
             self.fail_step(&se, stderr);
             return 1;
         }
-        if !fsutil::exists(&self.paths.menubar_plist) && menubar::can_start(&self.paths) {
-            match menubar::start(&self.paths, self.runner) {
+        if menubar::can_start(&self.paths) {
+            match menubar::ensure_running(&self.paths, self.runner) {
                 Ok(()) => {
                     let _ = writeln!(stdout, "✓ menu bar icon started");
                 }
                 Err(err) => {
-                    self.fail_step(
-                        &system::StepError {
-                            step: "menu bar icon".to_string(),
-                            err,
-                            fix: "lodo menubar".to_string(),
-                        },
-                        stderr,
-                    );
-                    return 1;
+                    let _ = writeln!(stderr, "warn  menubar: {err}");
                 }
             }
         }

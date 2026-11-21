@@ -413,7 +413,7 @@ func resolveLodoExecutable(
 	home: String = NSHomeDirectory(),
 	isExecutable: (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) }
 ) -> LodoExecutable {
-	if let bin = env["LODO_BIN"], !bin.isEmpty {
+	if let bin = env["LODO_BIN"], !bin.isEmpty, isExecutable(bin) {
 		return LodoExecutable(executable: bin, prefixArgs: [])
 	}
 	let brewBin = "/opt/homebrew/bin/lodo"
@@ -1987,6 +1987,14 @@ func runSelfTests() -> Int32 {
 			isExecutable: { _ in true }
 		) == LodoExecutable(executable: "/custom/bin/lodo", prefixArgs: []),
 		"LODO_BIN takes top priority"
+	)
+	check(
+		resolveLodoExecutable(
+			env: ["LODO_BIN": "/deleted/worktree/lodo"],
+			home: "/Users/alice",
+			isExecutable: { $0 == "/Users/alice/.cargo/bin/lodo" }
+		) == LodoExecutable(executable: "/Users/alice/.cargo/bin/lodo", prefixArgs: []),
+		"missing LODO_BIN falls back to installed binary"
 	)
 	check(
 		resolveLodoExecutable(

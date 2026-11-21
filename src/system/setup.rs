@@ -13,7 +13,7 @@ use nix::unistd::Uid;
 
 use crate::paths::Paths;
 use crate::run::Runner;
-use crate::{fsutil, menubar, store};
+use crate::{fsutil, store};
 
 use super::apply::{restart_caddy, trim_log};
 use super::step::{StepError, StepOutcome, Steps};
@@ -155,12 +155,6 @@ pub(super) fn setup_with<D: Deps>(
         "lodo setup",
         || prove_script(deps, p, r).map(|()| StepOutcome::Done(String::new())),
     )?;
-
-    if fsutil::exists(&p.menubar_plist) {
-        s.do_step("menu bar icon up to date", "lodo menubar", || {
-            menubar::refresh(p, r).map(|()| StepOutcome::Done(String::new()))
-        })?;
-    }
 
     let left: Vec<&PathBuf> = p.leftovers.iter().filter(|l| fsutil::exists(l)).collect();
     if !left.is_empty() {
