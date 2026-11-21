@@ -1,4 +1,4 @@
-name: Go CI
+name: Rust CI
 
 on:
   push:
@@ -11,31 +11,31 @@ permissions:
 
 jobs:
   test:
-    name: Vet, test and lint
-    # lodo only runs on macOS. Tests that need dnsmasq or caddy skip when
-    # Homebrew doesn't have them, so the job installs nothing.
+    name: Format, clippy and test
+    # lodo targets macOS. Hermetic tests that use dnsmasq or caddy skip cleanly
+    # when Homebrew hasn't installed them.
     runs-on: macos-latest
 
     steps:
       - name: Check out code
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v7
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
         with:
-          go-version-file: go.mod
-          cache: true
+          components: clippy, rustfmt
 
-      - name: Vet
-        run: go vet ./...
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets --locked -- -D warnings
 
       - name: Test
-        run: go test -race ./...
-
-      - name: Lint
-        uses: golangci/golangci-lint-action@v9
-        with:
-          version: v2.14
+        run: cargo test --locked
 
   e2e:
     name: System E2E
@@ -43,13 +43,13 @@ jobs:
 
     steps:
       - name: Check out code
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v7
-        with:
-          go-version-file: go.mod
-          cache: true
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
 
       - name: Install dnsmasq and caddy
         env:
@@ -60,4 +60,4 @@ jobs:
       - name: Run full macOS E2E lifecycle
         env:
           LODO_E2E_DESTRUCTIVE: "1"
-        run: go test -v -race -tags=e2e ./cmd/lodo -run TestSystemE2E
+        run: cargo test --locked --test e2e_system -- --ignored --nocapture
