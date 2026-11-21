@@ -109,7 +109,11 @@ NAME                    ENABLED  ADDRESS      PORT   COMPOSE                    
 - **Own-block addresses (`127.0.1.1`–`127.0.1.50`) belong to one project each.** `127.0.0.1` and other `127.0.0.0/8`
   addresses may be shared across projects.
 - **Git worktrees** of a listed project automatically receive `<main><n>.<tld>` on `127.0.1.<n>` at the lowest free
-  slot, inheriting each subdomain's HTTPS setting from the main checkout.
+  slot, inheriting each subdomain's HTTPS setting from the main checkout. `lodo prune` (including `--worktree` and the
+  menu bar's `Prune Missing Projects`) and worktree slot reclaim in `lodo dev` stop dev servers listening on the freed
+  `127.0.1.<n>` IP and remove the worktree's Compose containers, networks, and volumes by
+  `com.docker.compose.project=<label>` (without touching non-worktree Docker resources or Compose setups with
+  `--compose none`).
 - **Ports 1–65535 except 80 and 443** are served through Caddy on port 80 (and 443 when HTTPS is enabled).
 
 ## Commands

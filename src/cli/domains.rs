@@ -1,18 +1,32 @@
 //! Domain and service management commands: `add`, `set`, `rm`, `service`, and `prune`.
 
+use std::collections::HashSet;
 use std::fs;
 use std::io::Write;
 use std::path::Path;
 
 use crate::paths::Paths;
 use crate::store::{self, Domain};
-use crate::{check, compose, fsutil, ls, scan, system};
+use crate::{check, clean, compose, fsutil, ls, scan, system};
 
 use super::flags::{AddArgs, SetArgs};
 use super::{App, CliError, with_domains_lock};
 
 pub(super) fn is_gone(path: &Path) -> bool {
     matches!(fs::metadata(path), Err(e) if e.kind() == std::io::ErrorKind::NotFound)
+}
+
+pub(super) fn write_clean_outcome(
+    outcome: &clean::Outcome,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) {
+    for line in outcome.summary_lines() {
+        let _ = writeln!(stdout, "{line}");
+    }
+    for note in &outcome.notes {
+        let _ = writeln!(stderr, "note  {note}");
+    }
 }
 
 pub(super) fn ports_ready(p: &Paths) -> Result<(), String> {
@@ -105,6 +119,7 @@ impl App<'_> {
                     compose: compose_path,
                     https: args.https,
                     root: String::new(),
+                    worktree: false,
                 };
                 let next = store::add(&domains, d.clone())?;
                 if d.port > 0 {
@@ -326,7 +341,7 @@ impl App<'_> {
 
         let res = with_domains_lock(
             &self.paths.domains_json,
-            || -> Result<Vec<Domain>, CliError> {
+            || -> Result<(Vec<Domain>, Vec<clean::Outcome>), CliError> {
                 let domains = store::load(&self.paths.domains_json)?;
                 let mut next = domains.clone();
                 for d in &domains {
@@ -343,7 +358,7 @@ impl App<'_> {
                     }
                 }
                 if next.len() == domains.len() {
-                    return Ok(Vec::new());
+                    return Ok((Vec::new(), Vec::new()));
                 }
                 if !system::setup_done(&self.paths) {
                     return Err(system::ERR_NOT_SET_UP.into());
@@ -360,12 +375,44 @@ impl App<'_> {
                         removed.push(d.clone());
                     }
                 }
+
+                let mut cleaned = Vec::new();
+                let mut seen_projects = HashSet::new();
+                for d in &removed {
+                    let proj = store::project(&d.name);
+                    if next.iter().any(|x| store::project(&x.name) == proj)
+                        || !seen_projects.insert(proj.to_string())
+                    {
+                        continue;
+                    }
+                    let owner = removed.iter().find(|x| x.name == proj).unwrap_or(d);
+                    let compose = if !owner.compose.is_empty() {
+                        owner.compose.clone()
+                    } else {
+                        removed
+                            .iter()
+                            .find(|x| store::project(&x.name) == proj && !x.compose.is_empty())
+                            .map(|x| x.compose.clone())
+                            .unwrap_or_default()
+                    };
+                    let is_wt = owner.worktree
+                        || (!owner.root.is_empty()
+                            && scan::worktree_root(Path::new(&owner.root)).is_some());
+                    let target = clean::Target {
+                        name: proj.to_string(),
+                        address: owner.address.clone(),
+                        compose,
+                        worktree: is_wt,
+                    };
+                    cleaned.push(clean::project(&self.paths, self.runner, &target, &next));
+                }
+
                 system::apply(&self.paths, self.runner, &next)?;
-                Ok(removed)
+                Ok((removed, cleaned))
             },
         );
 
-        let removed = match res {
+        let (removed, cleaned) = match res {
             Ok(r) => r,
             Err(msg) => {
                 self.fail(&msg, stderr);
@@ -388,6 +435,9 @@ impl App<'_> {
             } else {
                 let _ = writeln!(stdout, "removed {}", d.name);
             }
+        }
+        for outcome in &cleaned {
+            write_clean_outcome(outcome, stdout, stderr);
         }
         0
     }

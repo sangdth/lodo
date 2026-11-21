@@ -1,6 +1,8 @@
 //! File, directory, and tool paths `lodo` reads, writes, or executes.
 //! `Paths::for_test` relocates all of them under a single temporary directory.
 
+use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 use nix::unistd::{Uid, User};
@@ -68,8 +70,11 @@ pub struct Paths {
     pub rmdir: PathBuf,
     pub dscacheutil: PathBuf,
     pub lsof: PathBuf,
+    pub kill: PathBuf,
     pub security: PathBuf,
     pub swiftc: PathBuf,
+    /// Fixed candidate paths checked for the Docker CLI (works under launchd's minimal `PATH`).
+    pub docker_candidates: Vec<PathBuf>,
 
     // LocalDNS leftovers reported and left untouched by `lodo setup`.
     pub leftovers: Vec<PathBuf>,
@@ -98,6 +103,14 @@ impl Paths {
     pub fn for_test(root: &Path) -> Self {
         let home = root.join("Users").join("tester");
         Self::build(root, &home, "tester", 501)
+    }
+
+    /// Returns the first executable Docker CLI binary among [`Paths::docker_candidates`].
+    pub fn resolve_docker(&self) -> Option<&Path> {
+        self.docker_candidates
+            .iter()
+            .find(|p| is_executable(p))
+            .map(PathBuf::as_path)
     }
 
     fn build(root: &Path, home: &Path, user: &str, uid: u32) -> Self {
@@ -159,8 +172,16 @@ impl Paths {
             rmdir: sys("/bin/rmdir"),
             dscacheutil: sys("/usr/bin/dscacheutil"),
             lsof: sys("/usr/sbin/lsof"),
+            kill: sys("/bin/kill"),
             security: sys("/usr/bin/security"),
             swiftc: sys("/usr/bin/swiftc"),
+            docker_candidates: vec![
+                brew.join("bin/docker"),
+                sys("/usr/local/bin/docker"),
+                home.join(".orbstack/bin/docker"),
+                home.join(".docker/bin/docker"),
+                sys("/Applications/Docker.app/Contents/Resources/bin/docker"),
+            ],
 
             leftovers: vec![
                 home.join(".config").join("localdns"),
@@ -173,6 +194,10 @@ impl Paths {
             ],
         }
     }
+}
+
+fn is_executable(path: &Path) -> bool {
+    fs::metadata(path).is_ok_and(|m| m.is_file() && (m.permissions().mode() & 0o111) != 0)
 }
 
 #[cfg(test)]
@@ -221,6 +246,17 @@ mod tests {
             p.home.join("Library/LaunchAgents/io.lodo.menubar.plist")
         );
         assert_eq!(p.swiftc, Path::new("/usr/bin/swiftc"));
+        assert_eq!(p.kill, Path::new("/bin/kill"));
+        assert_eq!(
+            p.docker_candidates,
+            vec![
+                PathBuf::from("/opt/homebrew/bin/docker"),
+                PathBuf::from("/usr/local/bin/docker"),
+                p.home.join(".orbstack/bin/docker"),
+                p.home.join(".docker/bin/docker"),
+                PathBuf::from("/Applications/Docker.app/Contents/Resources/bin/docker"),
+            ]
+        );
     }
 
     #[test]
@@ -273,6 +309,7 @@ mod tests {
             &p.rmdir,
             &p.dscacheutil,
             &p.lsof,
+            &p.kill,
             &p.security,
             &p.swiftc,
         ] {
@@ -281,8 +318,48 @@ mod tests {
                 "{candidate:?} should start with {root:?}"
             );
         }
+        for docker in &p.docker_candidates {
+            assert!(
+                docker.starts_with(root),
+                "{docker:?} should start with {root:?}"
+            );
+        }
         for leftover in &p.leftovers {
             assert!(leftover.starts_with(root));
         }
+    }
+
+    #[test]
+    fn resolve_docker_picks_first_executable_candidate() {
+        let tmp = tempfile::tempdir().unwrap();
+        let p = Paths::for_test(tmp.path());
+        assert_eq!(p.resolve_docker(), None);
+
+        // Non-executable file and directory are skipped.
+        let first = &p.docker_candidates[0];
+        fs::create_dir_all(first.parent().unwrap()).unwrap();
+        fs::write(first, b"").unwrap();
+        fs::set_permissions(first, fs::Permissions::from_mode(0o644)).unwrap();
+
+        let second = &p.docker_candidates[1];
+        fs::create_dir_all(second).unwrap();
+        assert_eq!(p.resolve_docker(), None);
+
+        // First executable file in priority order wins.
+        let third = &p.docker_candidates[2];
+        fs::create_dir_all(third.parent().unwrap()).unwrap();
+        fs::write(third, b"").unwrap();
+        fs::set_permissions(third, fs::Permissions::from_mode(0o755)).unwrap();
+
+        let fourth = &p.docker_candidates[3];
+        fs::create_dir_all(fourth.parent().unwrap()).unwrap();
+        fs::write(fourth, b"").unwrap();
+        fs::set_permissions(fourth, fs::Permissions::from_mode(0o755)).unwrap();
+
+        assert_eq!(p.resolve_docker(), Some(third.as_path()));
+
+        // Making an earlier candidate executable puts it first.
+        fs::set_permissions(first, fs::Permissions::from_mode(0o755)).unwrap();
+        assert_eq!(p.resolve_docker(), Some(first.as_path()));
     }
 }

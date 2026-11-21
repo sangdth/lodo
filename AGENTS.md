@@ -50,6 +50,8 @@ A commit requires `cargo fmt --all -- --check`, `cargo clippy --all-targets --lo
   output, exposing unmasked `KEY=value` only through `Var::env_pair()`.
 - `src/dev.rs`, `src/bind.cjs`: package manager detection, port-to-address map (`BTreeMap`), embedded Node listen hook,
   and `NODE_OPTIONS` builder.
+- `src/clean.rs`: best-effort teardown of removed worktree Compose containers, networks, and volumes (by
+  `com.docker.compose.project` label) and TCP listeners on freed `127.0.1.x` addresses.
 - `src/check/`: the 8 `lodo doctor` checks (`ID_DNSMASQ` … `ID_CADDY`) and concurrent UDP DNS, `dscacheutil`, and
   `rustls` + `rustls-platform-verifier` HTTP/HTTPS probes.
 - `tests/`: hermetic E2E (`e2e_dataplane.rs`), destructive real-Mac E2E (`e2e_system.rs`, `#[ignore]`), and fixtures.

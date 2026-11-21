@@ -70,6 +70,8 @@ pub struct Domain {
     pub https: bool,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub root: String,
+    #[serde(default, skip_serializing_if = "<&bool>::not")]
+    pub worktree: bool,
 }
 
 impl Domain {
@@ -752,6 +754,30 @@ mod tests {
             fs::read_to_string(&path).unwrap(),
             "{\n  \"version\": 1,\n  \"domains\": []\n}\n"
         );
+
+        let wt_roundtrip = dir.path().join("worktree.json");
+        let entries = vec![
+            Domain {
+                name: "shop.lodo".into(),
+                address: "127.0.1.1".into(),
+                enabled: true,
+                root: "/p/shop".into(),
+                ..Domain::default()
+            },
+            Domain {
+                name: "shop2.lodo".into(),
+                address: "127.0.1.2".into(),
+                enabled: true,
+                root: "/p/shop-wt".into(),
+                worktree: true,
+                ..Domain::default()
+            },
+        ];
+        save(&wt_roundtrip, &entries).unwrap();
+        let raw = fs::read_to_string(&wt_roundtrip).unwrap();
+        assert_eq!(raw.matches("\"worktree\": true").count(), 1);
+        assert!(!raw.contains("\"worktree\": false"));
+        assert_eq!(load(&wt_roundtrip).unwrap(), entries);
 
         let bad = dir.path().join("unknown.json");
         fs::write(

@@ -1313,6 +1313,7 @@ mod tests {
                     enabled: true,
                     https: true,
                     root: wt_new.to_string_lossy().into_owned(),
+                    worktree: true,
                     ..Domain::default()
                 },
                 Domain {

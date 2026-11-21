@@ -1777,7 +1777,7 @@ func runSelfTests() -> Int32 {
 	defer { try? FileManager.default.removeItem(atPath: tmp) }
 	let json = """
 	{"version":1,"domains":[
-	  {"name":"blog.lodo","address":"127.0.0.1","enabled":true},
+	  {"name":"blog.lodo","address":"127.0.0.1","enabled":true,"worktree":true},
 	  {"name":"web.blog.lodo","address":"127.0.0.1","port":3000,"enabled":true,"https":true},
 	  {"name":"api.blog.lodo","address":"127.0.0.1","port":4000,"enabled":false},
 	  {"name":"shop.custom","address":"127.0.0.1","port":5173,"enabled":true}

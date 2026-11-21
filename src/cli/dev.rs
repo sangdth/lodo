@@ -6,9 +6,9 @@ use std::io::Write;
 use std::path::Path;
 
 use crate::store::{self, Domain};
-use crate::{compose, dev, ls, menubar, scan, system};
+use crate::{clean, compose, dev, ls, menubar, scan, system};
 
-use super::domains::{is_gone, ports_ready};
+use super::domains::{is_gone, ports_ready, write_clean_outcome};
 use super::format::{compose_vars, format_sites, format_vars};
 use super::{App, CliError, with_domains_lock};
 
@@ -97,7 +97,7 @@ impl App<'_> {
         });
 
         if !listed {
-            domains = self.auto_register_project(cwd, &resolved_name)?;
+            domains = self.auto_register_project(cwd, &resolved_name, stdout, stderr)?;
             if let Some(fresh_proj) = scan::find(cwd) {
                 proposal = scan::propose(&fresh_proj, &domains, "", is_gone);
             }
@@ -144,10 +144,16 @@ impl App<'_> {
             .map_err(|e| e.to_string())
     }
 
-    fn auto_register_project(&self, cwd: &Path, chosen_name: &str) -> Result<Vec<Domain>, String> {
-        with_domains_lock(
+    fn auto_register_project(
+        &self,
+        cwd: &Path,
+        chosen_name: &str,
+        stdout: &mut dyn Write,
+        stderr: &mut dyn Write,
+    ) -> Result<Vec<Domain>, String> {
+        let (domains, cleaned) = with_domains_lock(
             &self.paths.domains_json,
-            || -> Result<Vec<Domain>, CliError> {
+            || -> Result<(Vec<Domain>, Option<clean::Outcome>), CliError> {
                 let fresh = store::load(&self.paths.domains_json)?;
                 let fresh_proj = scan::find(cwd).ok_or(scan::ERR_NO_PROJECT)?;
 
@@ -187,6 +193,7 @@ impl App<'_> {
                             let mut migrated_owner = primary_old.clone();
                             migrated_owner.name = chosen_name.to_string();
                             migrated_owner.root.clone_from(&fresh_proj.root);
+                            migrated_owner.worktree = fresh_proj.is_worktree();
                             working = store::add(&working, migrated_owner)?;
 
                             let old_suffix = format!(".{}", primary_old.name);
@@ -242,13 +249,22 @@ impl App<'_> {
                     if let Some(note) = prop.notes.first() {
                         return Err(note.clone().into());
                     }
-                    return Ok(fresh);
+                    return Ok((fresh, None));
                 }
+
+                let reclaimed_owner = store::find(&working, &prop.name)
+                    .filter(|old| {
+                        !old.root.is_empty()
+                            && !scan::same_folder(&old.root, &prop.root)
+                            && is_gone(Path::new(&old.root))
+                    })
+                    .cloned();
 
                 let mut next = working;
                 for mut d in prop.add {
                     if d.name == prop.name {
                         d.root.clone_from(&prop.root);
+                        d.worktree = prop.worktree;
                         if !prop.compose.is_empty() {
                             d.compose.clone_from(&prop.compose);
                         }
@@ -259,6 +275,7 @@ impl App<'_> {
                 if let Some(existing_owner) = store::find(&next, &prop.name).cloned() {
                     let mut updated = existing_owner.clone();
                     updated.root.clone_from(&prop.root);
+                    updated.worktree = prop.worktree;
                     if !prop.compose.is_empty() {
                         updated.compose.clone_from(&prop.compose);
                     }
@@ -268,7 +285,7 @@ impl App<'_> {
                 }
 
                 if next == fresh {
-                    return Ok(fresh);
+                    return Ok((fresh, None));
                 }
 
                 let needs_caddy = next.iter().any(|d| {
@@ -284,10 +301,28 @@ impl App<'_> {
                         let _ = fs::remove_file(self.paths.dev_dir.join(format!("{old_proj}.cjs")));
                     }
                 }
+                let cleaned = if prop.worktree
+                    && let Some(old) = reclaimed_owner
+                {
+                    let target = clean::Target {
+                        name: old.name,
+                        address: old.address,
+                        compose: old.compose,
+                        worktree: old.worktree || chosen_name.is_empty(),
+                    };
+                    Some(clean::project(&self.paths, self.runner, &target, &next))
+                } else {
+                    None
+                };
                 system::apply(&self.paths, self.runner, &next)?;
-                Ok(next)
+                Ok((next, cleaned))
             },
-        )
+        )?;
+
+        if let Some(outcome) = cleaned {
+            write_clean_outcome(&outcome, stdout, stderr);
+        }
+        Ok(domains)
     }
 
     fn dev_env(

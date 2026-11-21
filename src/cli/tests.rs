@@ -1811,6 +1811,8 @@ fn dev_error_paths_parallel_worktrees_and_project_env() {
     let s3 = store::find(&after_wt, "shop3.lodo").unwrap();
     assert_eq!(s2.address, "127.0.1.2");
     assert_eq!(s3.address, "127.0.1.3");
+    assert!(s2.worktree);
+    assert!(s3.worktree);
     assert_ne!(s2.root, s3.root);
 
     // 6. `project_env` replaces matching keys and preserves input immutability.
@@ -1937,4 +1939,373 @@ fn dev_auto_starts_menubar_skips_running_and_warns_on_error() {
         "expected menubar warning, got: {err_s:?}"
     );
     assert_eq!(r_fail.replaced().0.as_deref(), Some(root.as_path()));
+}
+
+fn make_exec(path: &Path) {
+    write_file(path, "");
+    fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
+}
+
+#[test]
+fn prune_cleans_worktree_docker_and_listeners_without_touching_main_docker() {
+    let proj_tmp = tempfile::tempdir().unwrap();
+    let main_dir = write_tree(proj_tmp.path(), "shop", &shop_tree());
+    let live_wt = proj_tmp.path().join("wt-live");
+    for (rel, content) in shop_tree() {
+        if rel != ".git/HEAD" {
+            write_file(&live_wt.join(rel), content);
+        }
+    }
+    write_file(
+        &live_wt.join(".git"),
+        &format!(
+            "gitdir: {}\n",
+            main_dir.join(".git/worktrees/wt-live").display()
+        ),
+    );
+    let gone_wt = proj_tmp.path().join("wt-gone");
+    let gone_main = proj_tmp.path().join("old-standalone");
+
+    let sys_tmp = tempfile::tempdir().unwrap();
+    let p = Paths::for_test(sys_tmp.path());
+    let r = FakeRunner::new();
+    set_up_ready_mac(&p, &r);
+    let docker = p.docker_candidates[0].clone();
+    make_exec(&docker);
+    make_exec(&p.lsof);
+    make_exec(&p.kill);
+    let docker_s = docker.to_string_lossy().into_owned();
+    let lsof_s = p.lsof.to_string_lossy().into_owned();
+    let kill_s = p.kill.to_string_lossy().into_owned();
+
+    store::save(
+        &p.domains_json,
+        &[
+            Domain {
+                name: "shop.lodo".into(),
+                address: "127.0.1.1".into(),
+                enabled: true,
+                root: main_dir.to_string_lossy().into_owned(),
+                ..Domain::default()
+            },
+            Domain {
+                name: "shop2.lodo".into(),
+                address: "127.0.1.2".into(),
+                enabled: true,
+                root: gone_wt.to_string_lossy().into_owned(),
+                compose: gone_wt
+                    .join("compose.dev.yml")
+                    .to_string_lossy()
+                    .into_owned(),
+                worktree: true,
+                ..Domain::default()
+            },
+            Domain {
+                name: "web.shop2.lodo".into(),
+                address: "127.0.1.2".into(),
+                port: 3001,
+                enabled: true,
+                ..Domain::default()
+            },
+            // Legacy worktree entry (worktree: false) whose folder is still on disk.
+            Domain {
+                name: "shop3.lodo".into(),
+                address: "127.0.1.3".into(),
+                enabled: true,
+                root: live_wt.to_string_lossy().into_owned(),
+                compose: live_wt
+                    .join("compose.dev.yml")
+                    .to_string_lossy()
+                    .into_owned(),
+                ..Domain::default()
+            },
+            // Gone standalone non-worktree project: must NOT wipe Docker volumes.
+            Domain {
+                name: "old.lodo".into(),
+                address: "127.0.1.4".into(),
+                enabled: true,
+                root: gone_main.to_string_lossy().into_owned(),
+                compose: gone_main.join("compose.yml").to_string_lossy().into_owned(),
+                ..Domain::default()
+            },
+        ],
+    )
+    .unwrap();
+
+    r.set(
+        run::line(
+            &docker_s,
+            &[
+                "ps",
+                "-aq",
+                "--filter",
+                "label=com.docker.compose.project=shop2",
+            ],
+        ),
+        "c2\n",
+    );
+    r.set(
+        run::line(
+            &docker_s,
+            &[
+                "network",
+                "ls",
+                "-q",
+                "--filter",
+                "label=com.docker.compose.project=shop2",
+            ],
+        ),
+        "n2\n",
+    );
+    r.set(
+        run::line(
+            &docker_s,
+            &[
+                "volume",
+                "ls",
+                "-q",
+                "--filter",
+                "label=com.docker.compose.project=shop2",
+            ],
+        ),
+        "v2\n",
+    );
+    r.set(
+        run::line(
+            &docker_s,
+            &[
+                "ps",
+                "-aq",
+                "--filter",
+                "label=com.docker.compose.project=shop3",
+            ],
+        ),
+        "c3\n",
+    );
+    r.set(
+        run::line(
+            &docker_s,
+            &[
+                "volume",
+                "ls",
+                "-q",
+                "--filter",
+                "label=com.docker.compose.project=shop3",
+            ],
+        ),
+        "v3\n",
+    );
+    r.set(
+        run::line(
+            &lsof_s,
+            &["-nP", "-Fpcn", "-iTCP@127.0.1.2", "-sTCP:LISTEN"],
+        ),
+        "p2100\ncnode\nf7\nn127.0.1.2:3001\n",
+    );
+    r.set(
+        run::line(
+            &lsof_s,
+            &["-nP", "-Fpcn", "-iTCP@127.0.1.3", "-sTCP:LISTEN"],
+        ),
+        "p3100\ncnext-server\nf8\nn127.0.1.3:3001\n",
+    );
+    r.set(
+        run::line(
+            &lsof_s,
+            &["-nP", "-Fpcn", "-iTCP@127.0.1.4", "-sTCP:LISTEN"],
+        ),
+        "p4100\ncnode\nf9\nn127.0.1.4:3000\n",
+    );
+
+    let app = new_test_app(p, &r, live_wt);
+    let mut out = Vec::new();
+    let mut err = Vec::new();
+    assert_eq!(
+        app.dispatch(&to_args(&["prune", "--worktree"]), &mut out, &mut err),
+        0,
+        "stderr: {}",
+        String::from_utf8_lossy(&err)
+    );
+    assert!(err.is_empty());
+    let stdout_s = String::from_utf8_lossy(&out);
+    for want in [
+        "removed shop2.lodo",
+        "removed shop3.lodo",
+        "removed old.lodo",
+        "stopped shop2 compose (1 container, 1 network, 1 volume)",
+        "stopped 1 listener on 127.0.1.2",
+        "stopped shop3 compose (1 container, 1 volume)",
+        "stopped 1 listener on 127.0.1.3",
+        "stopped 1 listener on 127.0.1.4",
+    ] {
+        assert!(stdout_s.contains(want), "missing {want:?} in:\n{stdout_s}");
+    }
+
+    let calls = r.calls();
+    assert!(calls.contains(&run::line(&docker_s, &["rm", "-f", "c2"])));
+    assert!(calls.contains(&run::line(&docker_s, &["volume", "rm", "v2"])));
+    assert!(calls.contains(&run::line(&docker_s, &["rm", "-f", "c3"])));
+    assert!(calls.contains(&run::line(&docker_s, &["volume", "rm", "v3"])));
+    assert!(
+        !calls.iter().any(|c| c.contains("project=old")),
+        "non-worktree docker resources must not be touched: {calls:?}"
+    );
+    assert!(calls.contains(&run::line(&kill_s, &["-TERM", "2100"])));
+    assert!(calls.contains(&run::line(&kill_s, &["-TERM", "3100"])));
+    assert!(calls.contains(&run::line(&kill_s, &["-TERM", "4100"])));
+}
+
+#[test]
+fn dev_worktree_reclaiming_gone_slot_cleans_old_docker_and_listeners() {
+    let proj_tmp = tempfile::tempdir().unwrap();
+    let main_dir = write_tree(proj_tmp.path(), "shop", &shop_tree());
+    let gone_wt = proj_tmp.path().join("wt-gone");
+    let new_wt = proj_tmp.path().join("wt-new");
+    for (rel, content) in shop_tree() {
+        if rel != ".git/HEAD" {
+            write_file(&new_wt.join(rel), content);
+        }
+    }
+    write_file(
+        &new_wt.join(".git"),
+        &format!(
+            "gitdir: {}\n",
+            main_dir.join(".git/worktrees/wt-new").display()
+        ),
+    );
+    write_file(
+        &new_wt.join("compose.dev.yml"),
+        "services:\n  db:\n    image: postgres:17\n    ports: [\"${DOCKER_HOST_IP:-127.0.0.1}:5432:5432\"]\n",
+    );
+
+    let sys_tmp = tempfile::tempdir().unwrap();
+    let p = Paths::for_test(sys_tmp.path());
+    let sf = SetupFake {
+        fake: FakeRunner::new(),
+        paths: p.clone(),
+    };
+    set_up_ready_mac(&p, &sf.fake);
+    let docker = p.docker_candidates[0].clone();
+    make_exec(&docker);
+    make_exec(&p.lsof);
+    make_exec(&p.kill);
+    let docker_s = docker.to_string_lossy().into_owned();
+    let lsof_s = p.lsof.to_string_lossy().into_owned();
+    let kill_s = p.kill.to_string_lossy().into_owned();
+
+    let initial = vec![
+        Domain {
+            name: "shop.lodo".into(),
+            address: "127.0.1.1".into(),
+            enabled: true,
+            root: main_dir.to_string_lossy().into_owned(),
+            ..Domain::default()
+        },
+        Domain {
+            name: "web.shop.lodo".into(),
+            address: "127.0.1.1".into(),
+            port: 3001,
+            enabled: true,
+            ..Domain::default()
+        },
+        Domain {
+            name: "shop2.lodo".into(),
+            address: "127.0.1.2".into(),
+            enabled: true,
+            root: gone_wt.to_string_lossy().into_owned(),
+            compose: gone_wt
+                .join("compose.dev.yml")
+                .to_string_lossy()
+                .into_owned(),
+            worktree: true,
+            ..Domain::default()
+        },
+        Domain {
+            name: "web.shop2.lodo".into(),
+            address: "127.0.1.2".into(),
+            port: 3001,
+            enabled: true,
+            ..Domain::default()
+        },
+    ];
+    store::save(&p.domains_json, &initial).unwrap();
+    system::apply(&p, &sf, &initial).unwrap();
+
+    sf.fake.set(
+        run::line(
+            &docker_s,
+            &[
+                "ps",
+                "-aq",
+                "--filter",
+                "label=com.docker.compose.project=shop2",
+            ],
+        ),
+        "old-pg\n",
+    );
+    sf.fake.set(
+        run::line(
+            &docker_s,
+            &[
+                "volume",
+                "ls",
+                "-q",
+                "--filter",
+                "label=com.docker.compose.project=shop2",
+            ],
+        ),
+        "shop2_pgdata\n",
+    );
+    sf.fake.set(
+        run::line(
+            &lsof_s,
+            &["-nP", "-Fpcn", "-iTCP@127.0.1.2", "-sTCP:LISTEN"],
+        ),
+        "p5100\ncnode\nf10\nn127.0.1.2:3001\n",
+    );
+
+    let app = new_test_app(p.clone(), &sf, new_wt.clone());
+    let mut out = Vec::new();
+    let mut err = Vec::new();
+    assert_eq!(
+        app.dispatch(&to_args(&["dev"]), &mut out, &mut err),
+        0,
+        "stderr: {}",
+        String::from_utf8_lossy(&err)
+    );
+
+    let saved = store::load(&p.domains_json).unwrap();
+    let s2 = store::find(&saved, "shop2.lodo").unwrap();
+    assert_eq!(s2.root, new_wt.to_string_lossy());
+    assert!(s2.worktree);
+    assert_eq!(s2.compose, new_wt.join("compose.dev.yml").to_string_lossy());
+
+    let stdout_s = String::from_utf8_lossy(&out);
+    assert!(
+        stdout_s.contains("stopped shop2 compose (1 container, 1 volume)"),
+        "stdout:\n{stdout_s}"
+    );
+    assert!(
+        stdout_s.contains("stopped 1 listener on 127.0.1.2"),
+        "stdout:\n{stdout_s}"
+    );
+
+    let calls = sf.fake.calls();
+    let rm_pos = calls
+        .iter()
+        .position(|c| c == &run::line(&docker_s, &["rm", "-f", "old-pg"]))
+        .expect("docker rm -f called");
+    let vol_pos = calls
+        .iter()
+        .position(|c| c == &run::line(&docker_s, &["volume", "rm", "shop2_pgdata"]))
+        .expect("docker volume rm called");
+    let kill_pos = calls
+        .iter()
+        .position(|c| c == &run::line(&kill_s, &["-TERM", "5100"]))
+        .expect("kill -TERM called");
+    let dev_pos = calls
+        .iter()
+        .position(|c| c == "/opt/bin/pnpm run dev")
+        .expect("pnpm run dev called");
+    assert!(rm_pos < vol_pos && vol_pos < kill_pos && kill_pos < dev_pos);
 }
