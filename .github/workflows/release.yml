@@ -52,7 +52,6 @@ jobs:
             --generate-notes
 
       - name: Update sangdth/homebrew-tap Formula/lodo.rb
-        if: ${{ secrets.HOMEBREW_TAP_TOKEN != '' }}
         env:
           TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           VERSION: ${{ steps.pkg.outputs.version }}
@@ -61,6 +60,10 @@ jobs:
           SHA256: ${{ steps.pkg.outputs.sha256 }}
           REPO: ${{ github.repository }}
         run: |
+          if [ -z "${TAP_TOKEN}" ]; then
+            echo "HOMEBREW_TAP_TOKEN is unset: skipping the tap update"
+            exit 0
+          fi
           TAP_DIR="$(mktemp -d)"
           git clone "https://x-access-token:${TAP_TOKEN}@github.com/sangdth/homebrew-tap.git" "${TAP_DIR}"
           mkdir -p "${TAP_DIR}/Formula"
@@ -74,6 +77,7 @@ jobs:
             depends_on :macos
             depends_on arch: :arm64
             depends_on "dnsmasq"
+            depends_on "caddy"
 
             def install
               bin.install "lodo"
@@ -84,9 +88,6 @@ jobs:
               <<~EOS
                 Run one-time system setup (or repair after an upgrade if prompted):
                   lodo setup
-
-                Optional HTTP/HTTPS reverse proxy support:
-                  brew install caddy && lodo setup
               EOS
             end
 

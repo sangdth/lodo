@@ -952,4 +952,3 @@ scrolls); `i` in the dashboard opens it too, and it scrolls in the box.
 - Migrating or cleaning up localdns.
 - Intel Homebrew (`/usr/local`) and Linux.
 - Non-interactive `lodo add` / `lodo rm`. `lodo apply` on a hand-edited `domains.json` covers scripts for now.
-- A Homebrew tap and a release workflow. `go install` until there's a second user.

@@ -15,9 +15,8 @@ http://dashboard.blog.lodo -> Caddy on port 80 -> 127.0.1.1:3000
 Requires macOS on Apple Silicon with Homebrew in `/opt/homebrew` and an admin account.
 
 ```sh
-# 1. Install dependencies and lodo (caddy is only needed for names with a port)
-brew tap sangdth/tap
-brew install dnsmasq caddy lodo
+# 1. Install lodo; Homebrew also installs its dnsmasq and caddy
+brew install sangdth/tap/lodo
 
 # 2. Start a project (runs one-time Mac setup and registers the project's names on first use)
 cd ~/Projects/shop
