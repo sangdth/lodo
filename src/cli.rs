@@ -32,7 +32,7 @@ lodo manages .lodo and custom local domain names on macOS through dnsmasq and Ca
 
 Usage:
   lodo dev                          start the project in this folder on its names
-                                    (--name NAME, -y/--auto)
+                                    (--name NAME)
   lodo exec [--] CMD...             run CMD here with the variables lodo dev sets
   lodo ls                           list services and domains with their checks
                                     (--json, --no-color)
@@ -144,7 +144,7 @@ impl<'a> App<'a> {
             flags::Command::Ls { json, no_color } => self.cmd_ls(json, no_color, stdout, stderr),
             flags::Command::Scan { json, name } => self.cmd_scan(json, &name, stdout, stderr),
             flags::Command::Prune { worktree } => self.cmd_prune(worktree, stdout, stderr),
-            flags::Command::Dev { name, auto: _ } => self.cmd_dev(&name, stdout, stderr),
+            flags::Command::Dev { name } => self.cmd_dev(&name, stdout, stderr),
             flags::Command::Exec { args } => self.cmd_exec(&args, stderr),
             flags::Command::Add(a) => self.cmd_add(a, stdout, stderr),
             flags::Command::Set(s) => self.cmd_set(s, stdout, stderr),

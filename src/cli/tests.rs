@@ -1157,7 +1157,7 @@ fn dev_golden_auto_setup_auto_register_rename_worktree_and_node_options() {
     let mut out = Vec::new();
     let mut err = Vec::new();
     assert_eq!(
-        auto_app.dispatch(&to_args(&["dev", "-y"]), &mut out, &mut err),
+        auto_app.dispatch(&to_args(&["dev"]), &mut out, &mut err),
         0,
         "stderr: {}\nstdout: {}",
         String::from_utf8_lossy(&err),
