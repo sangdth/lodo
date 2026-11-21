@@ -85,6 +85,11 @@ pub fn plist(p: &Paths) -> String {
     )
 }
 
+/// Reports whether a menu bar binary is available or can be compiled on this Mac.
+pub fn can_start(p: &Paths) -> bool {
+    fsutil::exists(&p.brew_menubar_bin) || compiled_up_to_date(p) || fsutil::exists(&p.swiftc)
+}
+
 /// Reports whether the menu bar LaunchAgent has a running process in the user's
 /// `launchd` domain.
 pub fn running(r: &dyn Runner, p: &Paths) -> bool {
@@ -97,6 +102,25 @@ pub fn running(r: &dyn Runner, p: &Paths) -> bool {
 /// Compiles the menu bar helper when needed, writes its LaunchAgent plist, and
 /// starts or restarts the job in the user's GUI domain.
 pub fn start(p: &Paths, r: &dyn Runner) -> Result<(), String> {
+    start_with_loaded(p, r, None)
+}
+
+/// Ensures the menu bar LaunchAgent is installed, up to date, and running.
+/// No-op when the plist and binary are up to date and the process is running.
+pub fn ensure_running(p: &Paths, r: &dyn Runner) -> Result<(), String> {
+    if fsutil::exists(&p.menubar_plist) && up_to_date(p) {
+        let launchctl = p.launchctl.to_string_lossy();
+        let tgt = target(p);
+        return match r.run(None, &launchctl, &["print", &tgt]) {
+            Ok(out) if PID_LINE.is_match(&out) => Ok(()),
+            Ok(_) => start_with_loaded(p, r, Some(true)),
+            Err(_) => start_with_loaded(p, r, Some(false)),
+        };
+    }
+    start_with_loaded(p, r, None)
+}
+
+fn start_with_loaded(p: &Paths, r: &dyn Runner, loaded: Option<bool>) -> Result<(), String> {
     ensure_binary(p, r)?;
     if let Some(dir) = p.menubar_plist.parent() {
         fs::create_dir_all(dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
@@ -105,7 +129,8 @@ pub fn start(p: &Paths, r: &dyn Runner) -> Result<(), String> {
 
     let launchctl = p.launchctl.to_string_lossy();
     let tgt = target(p);
-    if r.run(None, &launchctl, &["print", &tgt]).is_ok() {
+    let is_loaded = loaded.unwrap_or_else(|| r.run(None, &launchctl, &["print", &tgt]).is_ok());
+    if is_loaded {
         r.run(None, &launchctl, &["kickstart", "-k", &tgt])
             .map_err(|e| format!("restart menubar: {e}"))?;
         return Ok(());
@@ -144,10 +169,10 @@ pub fn stop(p: &Paths, r: &dyn Runner) -> Result<(), String> {
 }
 
 fn up_to_date(p: &Paths) -> bool {
-    if fsutil::exists(&p.brew_menubar_bin) {
-        return fs::read_to_string(&p.menubar_plist).is_ok_and(|s| s == plist(p));
+    if !fs::read_to_string(&p.menubar_plist).is_ok_and(|s| s == plist(p)) {
+        return false;
     }
-    compiled_up_to_date(p)
+    fsutil::exists(&p.brew_menubar_bin) || compiled_up_to_date(p)
 }
 
 fn compiled_up_to_date(p: &Paths) -> bool {
@@ -457,6 +482,75 @@ mod tests {
             line(&launchctl, &["kickstart", "-k", "gui/501/io.lodo.menubar"]),
         ];
         assert_eq!(r.calls(), want);
+    }
+
+    #[test]
+    fn can_start_checks_prebuilt_compiled_and_swiftc() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = Paths::for_test(dir.path());
+        assert!(!can_start(&p));
+
+        write_file(&p.swiftc, b"");
+        assert!(can_start(&p));
+        fs::remove_file(&p.swiftc).unwrap();
+        assert!(!can_start(&p));
+
+        write_file(&p.menubar_bin, b"bin");
+        write_file(&path_with_suffix(&p.menubar_bin, ".swift"), source());
+        assert!(can_start(&p));
+        fs::remove_file(&p.menubar_bin).unwrap();
+        assert!(!can_start(&p));
+
+        write_file(&p.brew_menubar_bin, b"mach-o");
+        assert!(can_start(&p));
+    }
+
+    #[test]
+    fn ensure_running_starts_stopped_skips_running_and_rebuilds_stale() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = Paths::for_test(dir.path());
+        write_file(&p.swiftc, b"");
+        let launchctl = p.launchctl.to_string_lossy().into_owned();
+        let print_line = line(&launchctl, &["print", "gui/501/io.lodo.menubar"]);
+
+        // 1. Not installed yet: compiles and bootstraps.
+        let r1 = FakeRunner::new();
+        r1.fail(&print_line, "Could not find service");
+        ensure_running(&p, &r1).unwrap();
+        assert!(p.menubar_plist.exists());
+        assert!(r1.calls().contains(&line(
+            &launchctl,
+            &["bootstrap", "gui/501", &p.menubar_plist.to_string_lossy()],
+        )));
+
+        // 2. Installed, up to date, and running: only checks launchctl print (no kickstart).
+        let r2 = FakeRunner::new();
+        r2.set(&print_line, "\tstate = running\n\tpid = 999\n");
+        ensure_running(&p, &r2).unwrap();
+        assert_eq!(r2.calls(), vec![print_line.clone()]);
+
+        // 3. Installed and up to date, but not running: kickstarts without recompiling.
+        let r3 = FakeRunner::new();
+        r3.set(&print_line, "\tstate = not running\n");
+        ensure_running(&p, &r3).unwrap();
+        assert_eq!(
+            r3.calls(),
+            vec![
+                print_line.clone(),
+                line(&launchctl, &["kickstart", "-k", "gui/501/io.lodo.menubar"]),
+            ]
+        );
+
+        // 4. Stale source while running: recompiles and kickstarts.
+        write_file(&path_with_suffix(&p.menubar_bin, ".swift"), b"// stale\n");
+        let r4 = FakeRunner::new();
+        r4.set(&print_line, "\tstate = running\n\tpid = 999\n");
+        ensure_running(&p, &r4).unwrap();
+        assert!(r4.calls().iter().any(|c| c.contains("swiftc")));
+        assert!(r4.calls().contains(&line(
+            &launchctl,
+            &["kickstart", "-k", "gui/501/io.lodo.menubar"],
+        )));
     }
 
     #[test]

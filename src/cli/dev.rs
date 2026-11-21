@@ -6,7 +6,7 @@ use std::io::Write;
 use std::path::Path;
 
 use crate::store::{self, Domain};
-use crate::{compose, dev, ls, scan, system};
+use crate::{compose, dev, ls, menubar, scan, system};
 
 use super::domains::{is_gone, ports_ready};
 use super::format::{compose_vars, format_sites, format_vars};
@@ -121,6 +121,12 @@ impl App<'_> {
         let pm_path = (self.look_path)(&pm).map_err(|e| format!("find {pm}: {e}"))?;
         let hook = dev::write_hooks(&self.paths, &proposal.name, &ports)?;
         let env = self.dev_env(&pm, &pm_path, &proposal.root, &hook)?;
+
+        if menubar::can_start(&self.paths)
+            && let Err(err) = menubar::ensure_running(&self.paths, self.runner)
+        {
+            let _ = writeln!(stderr, "warn  menubar: {err}");
+        }
 
         let _ = write!(stdout, "{}", format_sites(&domains, &proposal.name));
         let _ = write!(stdout, "{}", format_vars(&proposal));

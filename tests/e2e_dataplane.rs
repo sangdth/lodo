@@ -644,6 +644,23 @@ http.createServer((_, res) => res.end("ok")).listen({web_port}, "localhost");
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
     assert_eq!(app.dispatch(&["dev".into()], &mut stdout, &mut stderr), 0);
+    assert!(
+        p.menubar_bin.is_file(),
+        "lodo dev should compile menubar binary"
+    );
+    assert!(
+        p.menubar_plist.is_file(),
+        "lodo dev should install menubar LaunchAgent plist"
+    );
+    let bootstrap_call = line(
+        &p.launchctl.to_string_lossy(),
+        &["bootstrap", "gui/501", &p.menubar_plist.to_string_lossy()],
+    );
+    assert!(
+        runner.fake.calls().contains(&bootstrap_call),
+        "lodo dev should bootstrap menubar LaunchAgent: {:?}",
+        runner.fake.calls()
+    );
 
     stdout.clear();
     stderr.clear();
@@ -654,7 +671,6 @@ http.createServer((_, res) => res.end("ok")).listen({web_port}, "localhost");
         String::from_utf8_lossy(&stderr)
     );
     assert_eq!(String::from_utf8_lossy(&stdout), "menubar running\n");
-    assert!(p.menubar_bin.is_file());
 
     if Path::new("/usr/bin/plutil").is_file() {
         let lint = Command::new("/usr/bin/plutil")

@@ -1812,3 +1812,92 @@ fn dev_error_paths_parallel_worktrees_and_project_env() {
     );
     assert_eq!(input_env[1].1, "127.0.0.9");
 }
+
+#[test]
+fn dev_auto_starts_menubar_skips_running_and_warns_on_error() {
+    let proj_tmp = tempfile::tempdir().unwrap();
+    let root = write_tree(proj_tmp.path(), "shop", &shop_tree());
+
+    // 1. Starts the menu bar LaunchAgent when stopped and swiftc is available.
+    let sys_tmp = tempfile::tempdir().unwrap();
+    let p = Paths::for_test(sys_tmp.path());
+    let r = FakeRunner::new();
+    set_up_ready_mac(&p, &r);
+    write_file(&p.swiftc, "");
+    let app = new_test_app(p.clone(), &r, root.clone());
+    let mut out = Vec::new();
+    let mut err = Vec::new();
+    app.start_dev(&root, listed_shop(&root), "", &mut out, &mut err)
+        .unwrap();
+    let launchctl = p.launchctl.to_string_lossy().into_owned();
+    let bootstrap_line = run::line(
+        &launchctl,
+        &["bootstrap", "gui/501", &p.menubar_plist.to_string_lossy()],
+    );
+    assert!(p.menubar_plist.exists(), "menubar plist should be written");
+    assert!(
+        r.calls().contains(&bootstrap_line),
+        "expected menubar bootstrap in {:?}",
+        r.calls()
+    );
+    assert!(
+        !String::from_utf8_lossy(&err).contains("warn  menubar:"),
+        "unexpected menubar warning: {}",
+        String::from_utf8_lossy(&err)
+    );
+    assert_eq!(r.replaced().0.as_deref(), Some(root.as_path()));
+
+    // 2. Does not kickstart when the menu bar is already up to date and running.
+    let r2 = FakeRunner::new();
+    r2.set(
+        run::line(&launchctl, &["print", "gui/501/io.lodo.menubar"]),
+        "\tstate = running\n\tpid = 999\n",
+    );
+    let app2 = new_test_app(p, &r2, root.clone());
+    out.clear();
+    err.clear();
+    app2.start_dev(&root, listed_shop(&root), "", &mut out, &mut err)
+        .unwrap();
+    assert!(
+        !r2.calls().iter().any(|c| c.contains("kickstart")),
+        "running menubar should not be restarted: {:?}",
+        r2.calls()
+    );
+    assert!(
+        !r2.calls().iter().any(|c| c.contains("bootstrap")),
+        "running menubar should not be bootstrapped again: {:?}",
+        r2.calls()
+    );
+    assert_eq!(r2.replaced().0.as_deref(), Some(root.as_path()));
+
+    // 3. Warns on stderr and still launches `<pm> run dev` when menubar startup fails.
+    let fail_tmp = tempfile::tempdir().unwrap();
+    let p_fail = Paths::for_test(fail_tmp.path());
+    let r_fail = FakeRunner::new();
+    set_up_ready_mac(&p_fail, &r_fail);
+    write_file(&p_fail.brew_menubar_bin, "mach-o");
+    let fail_launchctl = p_fail.launchctl.to_string_lossy().into_owned();
+    r_fail.fail(
+        run::line(
+            &fail_launchctl,
+            &[
+                "bootstrap",
+                "gui/501",
+                &p_fail.menubar_plist.to_string_lossy(),
+            ],
+        ),
+        "Bootstrap failed: 5: Input/output error",
+    );
+    let app_fail = new_test_app(p_fail, &r_fail, root.clone());
+    out.clear();
+    err.clear();
+    app_fail
+        .start_dev(&root, listed_shop(&root), "", &mut out, &mut err)
+        .unwrap();
+    let err_s = String::from_utf8_lossy(&err);
+    assert!(
+        err_s.contains("warn  menubar: start menubar:"),
+        "expected menubar warning, got: {err_s:?}"
+    );
+    assert_eq!(r_fail.replaced().0.as_deref(), Some(root.as_path()));
+}

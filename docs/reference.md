@@ -23,8 +23,7 @@ Run `lodo setup` as yourself, not with `sudo`. It asks for your password once, b
    `admin`, imports `~/.config/lodo/Caddyfile`, and starts Caddy as your user;
 9. when an enabled name has HTTPS on, copies Caddy's local root CA to `~/.config/lodo/caddy-root.crt` and trusts it in
    `System.keychain`;
-10. proves the resolver script runs passwordlessly via `sudo -n -k`, starts the menu bar icon when installed via
-    Homebrew, and prints `lodo doctor`.
+10. proves the resolver script runs passwordlessly via `sudo -n -k`, starts the menu bar icon, and prints `lodo doctor`.
 
 Running `lodo setup` again is safe and idempotent. After setup, adding, editing, and removing names never asks for a
 password.
@@ -47,8 +46,9 @@ lodo dev
    the configuration.
 4. Detects the package manager (`packageManager` in `package.json`, else `pnpm-lock.yaml`, `yarn.lock`,
    `bun.lock`/`bun.lockb`, `package-lock.json`, else `npm`), writes `~/.config/lodo/bind.cjs` and
-   `~/.config/lodo/dev/<project>.cjs`, exports `NODE_OPTIONS` and the project's environment variables, and replaces
-   itself (`execvp`) with `<pm> run dev`:
+   `~/.config/lodo/dev/<project>.cjs`, exports `NODE_OPTIONS` and the project's environment variables, ensures the macOS
+   menu bar icon is running (without restarting it when already up to date), and replaces itself (`execvp`) with
+   `<pm> run dev`:
 
 ```text
 web.shop.lodo  https://web.shop.lodo  -> 127.0.1.1:3001
@@ -116,7 +116,7 @@ NAME                    ENABLED  ADDRESS      PORT   COMPOSE                    
 
 | Command               | What it does                                                        |
 | --------------------- | ------------------------------------------------------------------- |
-| `lodo dev`            | Register scanned project (`--name`) and start `<pm> run dev`        |
+| `lodo dev`            | Register project (`--name`), open menu bar icon, run `<pm> run dev` |
 | `lodo exec CMD...`    | Run `CMD` with the project's exported variables                     |
 | `lodo ls`             | Print service status and domain table (`--json`, `--no-color`)      |
 | `lodo add NAME`       | Add a domain (`--address`, `--port`, `--https`, `--compose`)        |
