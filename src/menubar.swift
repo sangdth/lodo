@@ -264,39 +264,64 @@ func formatLsHeader(_ group: LsProjectGroup) -> String {
 	"\(group.project) · \(group.address)"
 }
 
-func formatLsDomainRow(_ d: LsDomain) -> String {
-	let badge: String
-	switch d.status {
-	case "ok":
-		badge = "●"
-	case "error":
-		badge = "!"
-	default:
-		badge = "○"
-	}
+let statusDotScale: CGFloat = 0.5
+let statusLimeColor = NSColor(srgbRed: 0.20, green: 0.86, blue: 0.20, alpha: 1.0)
 
-	if d.port > 0 {
-		let scheme = d.https ? "https" : "http"
-		if !d.enabled || d.status == "off" {
-			return "\(badge) \(d.name)  (\(scheme) :\(d.port), off)"
-		}
-		if d.status == "down" {
-			return "\(badge) \(d.name)  (\(scheme) :\(d.port), down)"
-		}
-		return "\(badge) \(d.name)  (\(scheme) :\(d.port))"
-	} else {
-		if !d.enabled || d.status == "off" {
-			return "\(badge) \(d.name)  (dns, off)"
-		}
-		if d.status == "down" {
-			return "\(badge) \(d.name)  (dns, down)"
-		}
-		return "\(badge) \(d.name)  (dns)"
+func statusDotColor(for state: String) -> NSColor {
+	switch state {
+	case "ok", "on":
+		return statusLimeColor
+	case "error":
+		return .systemRed
+	default:
+		return .secondaryLabelColor
 	}
 }
 
+func makeStatusMenuTitle(_ title: String, state: String) -> NSAttributedString {
+	let menuFont = NSFont.menuFont(ofSize: 0)
+	let dotFont = NSFont.menuFont(ofSize: menuFont.pointSize * statusDotScale)
+	// Center the shrunk dot vertically against menu text instead of resting on the baseline.
+	let baselineOffset = (menuFont.capHeight - dotFont.capHeight) / 2.0
+
+	let result = NSMutableAttributedString(string: title, attributes: [.font: menuFont])
+	if !title.isEmpty {
+		let dotLength = (String(title.prefix(1)) as NSString).length
+		result.addAttributes(
+			[
+				.font: dotFont,
+				.foregroundColor: statusDotColor(for: state),
+				.baselineOffset: baselineOffset,
+			],
+			range: NSRange(location: 0, length: dotLength)
+		)
+	}
+	return result
+}
+
+func formatLsDomainRow(_ d: LsDomain) -> String {
+	let effectiveStatus = d.enabled ? d.status : "off"
+	let badge = (effectiveStatus == "ok" || effectiveStatus == "error") ? "●" : "○"
+	let base = d.port > 0
+		? "\(d.https ? "https" : "http") :\(d.port)"
+		: "dns"
+	let suffix: String
+	switch effectiveStatus {
+	case "off":
+		suffix = ", off"
+	case "down":
+		suffix = ", down"
+	case "error":
+		suffix = ", error"
+	default:
+		suffix = ""
+	}
+	return "\(badge) \(d.name)  (\(base)\(suffix))"
+}
+
 func formatServiceTitle(label: String, service: LsService?) -> String {
-	let badge = (service?.state == "on") ? "●" : "○"
+	let state = service?.state ?? "off"
+	let badge = (state == "on" || state == "error") ? "●" : "○"
 	return "\(badge) \(label)"
 }
 
@@ -1442,10 +1467,12 @@ final class MenuController: NSObject, NSMenuDelegate {
 
 		let dnsSvc = report.services.first(where: { $0.name == "dnsmasq" })
 		let dnsOn = dnsSvc?.state == "on"
+		let dnsTitle = formatServiceTitle(label: "DNS (dnsmasq)", service: dnsSvc)
 		let dnsItem = makeActionItem(
-			title: formatServiceTitle(label: "DNS (dnsmasq)", service: dnsSvc),
+			title: dnsTitle,
 			payload: .toggleService(name: "dnsmasq", targetOn: !dnsOn)
 		)
+		dnsItem.attributedTitle = makeStatusMenuTitle(dnsTitle, state: dnsSvc?.state ?? "off")
 		dnsItem.toolTip = (dnsSvc?.detail.isEmpty == false)
 			? dnsSvc?.detail
 			: "Click to turn dnsmasq \(dnsOn ? "off" : "on")"
@@ -1453,10 +1480,12 @@ final class MenuController: NSObject, NSMenuDelegate {
 
 		let caddySvc = report.services.first(where: { $0.name == "caddy" })
 		let caddyOn = caddySvc?.state == "on"
+		let caddyTitle = formatServiceTitle(label: "Reverse Proxy (Caddy)", service: caddySvc)
 		let caddyItem = makeActionItem(
-			title: formatServiceTitle(label: "Reverse Proxy (Caddy)", service: caddySvc),
+			title: caddyTitle,
 			payload: .toggleService(name: "caddy", targetOn: !caddyOn)
 		)
+		caddyItem.attributedTitle = makeStatusMenuTitle(caddyTitle, state: caddySvc?.state ?? "off")
 		caddyItem.toolTip = (caddySvc?.detail.isEmpty == false)
 			? caddySvc?.detail
 			: "Click to turn Caddy \(caddyOn ? "off" : "on")"
@@ -1480,7 +1509,9 @@ final class MenuController: NSObject, NSMenuDelegate {
 				menu.addItem(header)
 
 				for d in group.domains {
-					let item = NSMenuItem(title: formatLsDomainRow(d), action: nil, keyEquivalent: "")
+					let title = formatLsDomainRow(d)
+					let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+					item.attributedTitle = makeStatusMenuTitle(title, state: d.enabled ? d.status : "off")
 					item.isEnabled = true
 					if d.enabled && d.port > 0 {
 						item.target = self
@@ -1963,7 +1994,39 @@ func runSelfTests() -> Int32 {
 	check(formatLsDomainRow(report.domains[1]) == "● web.blog.lodo  (https :3000)", "https ok row")
 	check(formatLsDomainRow(report.domains[2]) == "○ api.blog.lodo  (http :4000, down)", "http down row")
 	check(formatLsDomainRow(report.domains[3]) == "○ admin.blog.lodo  (http :4001, off)", "http off row")
-	check(formatLsDomainRow(report.domains[4]) == "! shop.custom  (https :5173)", "https error row")
+	check(formatLsDomainRow(report.domains[4]) == "● shop.custom  (https :5173, error)", "https error row")
+	check(
+		formatServiceTitle(label: "DNS (dnsmasq)", service: report.services[0]) == "● DNS (dnsmasq)",
+		"service on title"
+	)
+	check(
+		formatServiceTitle(label: "Reverse Proxy (Caddy)", service: report.services[1]) == "○ Reverse Proxy (Caddy)",
+		"service off title"
+	)
+	check(
+		formatServiceTitle(label: "Menu Bar", service: report.services[2]) == "● Menu Bar",
+		"service error title"
+	)
+
+	let menuFont = NSFont.menuFont(ofSize: 0)
+	let expectedDotSize = menuFont.pointSize * statusDotScale
+	let okAttr = makeStatusMenuTitle(formatLsDomainRow(report.domains[1]), state: "ok")
+	let okDotFont = okAttr.attribute(.font, at: 0, effectiveRange: nil) as? NSFont
+	let okDotColor = okAttr.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor
+	let okLabelColor = okAttr.attribute(.foregroundColor, at: 2, effectiveRange: nil) as? NSColor
+	let okOffset = okAttr.attribute(.baselineOffset, at: 0, effectiveRange: nil) as? CGFloat
+	check(okDotFont?.pointSize == expectedDotSize, "ok dot font should be 50% of menu font")
+	check(okDotColor == statusLimeColor, "ok dot should be lime")
+	check(okLabelColor == nil, "label text should inherit native menu color")
+	check((okOffset ?? 0) > 0, "ok dot should have positive baseline offset")
+
+	let errAttr = makeStatusMenuTitle(formatLsDomainRow(report.domains[4]), state: "error")
+	let errDotColor = errAttr.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor
+	check(errDotColor == .systemRed, "error dot should be red")
+
+	let downAttr = makeStatusMenuTitle(formatLsDomainRow(report.domains[2]), state: "down")
+	let downDotColor = downAttr.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor
+	check(downDotColor == .secondaryLabelColor, "down dot should use secondary label color")
 
 	let subs = subdomainsUnder("blog.lodo", in: report.domains)
 	check(subs.map(\.name) == ["web.blog.lodo", "api.blog.lodo", "admin.blog.lodo"], "subdomainsUnder")
