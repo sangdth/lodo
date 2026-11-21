@@ -354,6 +354,29 @@ func reportWithToggledService(_ report: LsReport, name: String, targetOn: Bool) 
 	)
 }
 
+func reportWithRestoredService(_ report: LsReport, name: String, previous: LsService?) -> LsReport {
+	let services: [LsService]
+	if let previous = previous {
+		var found = false
+		let replaced = report.services.map { svc -> LsService in
+			guard svc.name == name else { return svc }
+			found = true
+			return previous
+		}
+		services = found ? replaced : replaced + [previous]
+	} else {
+		services = report.services.filter { $0.name != name }
+	}
+	return LsReport(
+		setupDone: report.setupDone,
+		caddyReady: report.caddyReady,
+		nextFree: report.nextFree,
+		logPath: report.logPath,
+		services: services,
+		domains: report.domains
+	)
+}
+
 func subdomainsUnder(_ name: String, in domains: [LsDomain]) -> [LsDomain] {
 	let suffix = "." + name
 	return domains.filter { $0.name.hasSuffix(suffix) }
@@ -1326,8 +1349,6 @@ final class ServiceMenuItemView: NSView {
 		addSubview(label)
 
 		update(title: title, state: state, toolTip: toolTip)
-		let minWidth = ceil(label.intrinsicContentSize.width) + Self.labelInsetX * 2
-		frame.size.width = max(frame.size.width, minWidth)
 	}
 
 	@available(*, unavailable)
@@ -1342,8 +1363,29 @@ final class ServiceMenuItemView: NSView {
 	func update(title: String, state: String, toolTip: String?) {
 		label.attributedStringValue = makeStatusMenuTitle(title, state: state)
 		self.toolTip = toolTip
+		let minWidth = ceil(label.intrinsicContentSize.width) + Self.labelInsetX * 2
+		if minWidth > frame.size.width {
+			frame.size.width = minWidth
+		}
 		applyHighlight()
 		needsLayout = true
+	}
+
+	override func isAccessibilityElement() -> Bool {
+		true
+	}
+
+	override func accessibilityRole() -> NSAccessibility.Role? {
+		.menuItem
+	}
+
+	override func accessibilityLabel() -> String? {
+		label.stringValue
+	}
+
+	override func accessibilityPerformPress() -> Bool {
+		onClick()
+		return true
 	}
 
 	override func hitTest(_ point: NSPoint) -> NSView? {
@@ -1373,7 +1415,7 @@ final class ServiceMenuItemView: NSView {
 		}
 		let area = NSTrackingArea(
 			rect: .zero,
-			options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+			options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect, .enabledDuringMouseDrag],
 			owner: self,
 			userInfo: nil
 		)
@@ -1456,12 +1498,20 @@ final class MenuController: NSObject, NSMenuDelegate {
 		}
 	)
 
+	private static let managedServices: [(name: String, label: String, displayName: String)] = [
+		("dnsmasq", "DNS (dnsmasq)", "dnsmasq"),
+		("caddy", "Reverse Proxy (Caddy)", "Caddy"),
+	]
+
 	private var cachedReport: LsReport?
 	private var serviceViews: [String: ServiceMenuItemView] = [:]
+	private var setupBannerItem: NSMenuItem?
+	private var servicesSeparator: NSMenuItem?
+	private var showingSetupBanner = false
 	private var isMenuOpen = false
 	private var isRefreshing = false
 	private var pendingRefreshAfterCurrent = false
-	private var pendingServiceMutations = 0
+	private var pendingServiceMutations: [String: Int] = [:]
 	private var pendingHTTPSCertCheckDomains: Set<String> = []
 
 	private var watchSource: DispatchSourceFileSystemObject?
@@ -1549,7 +1599,7 @@ final class MenuController: NSObject, NSMenuDelegate {
 		runner.run(LodoCommand.lsJSON()) { [weak self] output in
 			guard let self = self else { return }
 			self.isRefreshing = false
-			if self.pendingServiceMutations > 0 {
+			if !self.pendingServiceMutations.isEmpty {
 				// Discard pre-toggle snapshot; the last service mutation triggers a fresh refresh.
 				self.pendingRefreshAfterCurrent = false
 				return
@@ -1561,7 +1611,7 @@ final class MenuController: NSObject, NSMenuDelegate {
 				self.cachedReport = decoded
 				self.editorController.updateContext(domains: decoded.domains, nextFree: decoded.nextFree)
 				if self.isMenuOpen && changed {
-					self.populateMenu(with: decoded)
+					self.populateMenu(with: decoded, preserveServices: true)
 				}
 				self.checkUntrustedCertIfNeeded(in: decoded)
 			} else if self.cachedReport == nil {
@@ -1569,7 +1619,7 @@ final class MenuController: NSObject, NSMenuDelegate {
 				self.cachedReport = fallback
 				self.editorController.updateContext(domains: fallback.domains, nextFree: fallback.nextFree)
 				if self.isMenuOpen {
-					self.populateMenu(with: fallback)
+					self.populateMenu(with: fallback, preserveServices: true)
 				}
 			}
 
@@ -1611,58 +1661,99 @@ final class MenuController: NSObject, NSMenuDelegate {
 
 	// MARK: Menu Construction
 
-	private func populateMenu(with report: LsReport) {
-		menu.removeAllItems()
-		serviceViews.removeAll()
+	private func serviceRowContent(
+		for svc: LsService?,
+		label: String,
+		displayName: String
+	) -> (title: String, state: String, toolTip: String) {
+		let state = svc?.state ?? "off"
+		let isOn = state == "on"
+		let title = formatServiceTitle(label: label, service: svc)
+		let tip: String
+		if let detail = svc?.detail, !detail.isEmpty {
+			tip = detail
+		} else {
+			tip = "Click to turn \(displayName) \(isOn ? "off" : "on")"
+		}
+		return (title, state, tip)
+	}
 
-		// 1. System Setup Warning Banner
-		if needsSystemSetup(report) {
-			let warn = makeActionItem(
-				title: "⚠️ System setup needed — Run lodo setup in Terminal…",
-				payload: .runSetup
-			)
-			let problems = report.services
-				.filter { systemServiceNames.contains($0.name) && $0.state == "error" && !$0.detail.isEmpty }
-				.map { "\($0.name): \($0.detail)" }
-			if !problems.isEmpty {
-				warn.toolTip = problems.joined(separator: "\n")
+	private func setupBannerToolTip(for report: LsReport) -> String? {
+		let problems = report.services
+			.filter { systemServiceNames.contains($0.name) && $0.state == "error" && !$0.detail.isEmpty }
+			.map { "\($0.name): \($0.detail)" }
+		return problems.isEmpty ? nil : problems.joined(separator: "\n")
+	}
+
+	private func populateMenu(with report: LsReport, preserveServices: Bool = false) {
+		let wantBanner = needsSystemSetup(report)
+		let canPreserve = preserveServices
+			&& wantBanner == showingSetupBanner
+			&& serviceViews.count == Self.managedServices.count
+			&& servicesSeparator.map({ menu.index(of: $0) >= 0 }) == true
+
+		if canPreserve, let sep = servicesSeparator {
+			if wantBanner {
+				setupBannerItem?.toolTip = setupBannerToolTip(for: report)
 			}
-			menu.addItem(warn)
-			menu.addItem(.separator())
+			for (svcName, label, displayName) in Self.managedServices {
+				guard let rowView = serviceViews[svcName] else { continue }
+				let svc = report.services.first(where: { $0.name == svcName })
+				let row = serviceRowContent(for: svc, label: label, displayName: displayName)
+				rowView.update(title: row.title, state: row.state, toolTip: row.toolTip)
+				rowView.enclosingMenuItem?.title = row.title
+				rowView.enclosingMenuItem?.toolTip = row.toolTip
+			}
+			let start = menu.index(of: sep) + 1
+			while menu.items.count > start {
+				menu.removeItem(at: menu.items.count - 1)
+			}
+		} else {
+			menu.removeAllItems()
+			serviceViews.removeAll()
+			setupBannerItem = nil
+			servicesSeparator = nil
+			showingSetupBanner = wantBanner
+
+			// 1. System Setup Warning Banner
+			if wantBanner {
+				let warn = makeActionItem(
+					title: "⚠️ System setup needed — Run lodo setup in Terminal…",
+					payload: .runSetup
+				)
+				warn.toolTip = setupBannerToolTip(for: report)
+				setupBannerItem = warn
+				menu.addItem(warn)
+				menu.addItem(.separator())
+			}
+
+			// 2. Services Section
+			let servicesHeader = NSMenuItem(title: "Services", action: nil, keyEquivalent: "")
+			servicesHeader.isEnabled = false
+			menu.addItem(servicesHeader)
+
+			for (svcName, label, displayName) in Self.managedServices {
+				let svc = report.services.first(where: { $0.name == svcName })
+				let row = serviceRowContent(for: svc, label: label, displayName: displayName)
+				let item = NSMenuItem(title: row.title, action: nil, keyEquivalent: "")
+				let rowView = ServiceMenuItemView(
+					title: row.title,
+					state: row.state,
+					toolTip: row.toolTip,
+					onClick: { [weak self] in
+						self?.toggleServiceInPlace(name: svcName, label: label, displayName: displayName)
+					}
+				)
+				item.view = rowView
+				item.toolTip = row.toolTip
+				serviceViews[svcName] = rowView
+				menu.addItem(item)
+			}
+
+			let sep = NSMenuItem.separator()
+			servicesSeparator = sep
+			menu.addItem(sep)
 		}
-
-		// 2. Services Section
-		let servicesHeader = NSMenuItem(title: "Services", action: nil, keyEquivalent: "")
-		servicesHeader.isEnabled = false
-		menu.addItem(servicesHeader)
-
-		for (svcName, label, displayName) in [
-			("dnsmasq", "DNS (dnsmasq)", "dnsmasq"),
-			("caddy", "Reverse Proxy (Caddy)", "Caddy"),
-		] {
-			let svc = report.services.first(where: { $0.name == svcName })
-			let state = svc?.state ?? "off"
-			let isOn = state == "on"
-			let title = formatServiceTitle(label: label, service: svc)
-			let tip = (svc?.detail.isEmpty == false)
-				? svc?.detail
-				: "Click to turn \(displayName) \(isOn ? "off" : "on")"
-			let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-			let rowView = ServiceMenuItemView(
-				title: title,
-				state: state,
-				toolTip: tip,
-				onClick: { [weak self] in
-					self?.toggleServiceInPlace(name: svcName, label: label, displayName: displayName)
-				}
-			)
-			item.view = rowView
-			item.toolTip = tip
-			serviceViews[svcName] = rowView
-			menu.addItem(item)
-		}
-
-		menu.addItem(.separator())
 
 		// 3. Domains Grouped by Project
 		let groups = groupLsDomains(report.domains)
@@ -1855,31 +1946,45 @@ final class MenuController: NSObject, NSMenuDelegate {
 
 	private func toggleServiceInPlace(name: String, label: String, displayName: String) {
 		let currentReport = cachedReport ?? buildFallbackReport(domainsPath: domainsPath)
-		let targetOn = currentReport.services.first(where: { $0.name == name })?.state != "on"
+		let previousSvc = currentReport.services.first(where: { $0.name == name })
+		let targetOn = previousSvc?.state != "on"
 		let updated = reportWithToggledService(currentReport, name: name, targetOn: targetOn)
 		cachedReport = updated
 
 		if let rowView = serviceViews[name] {
 			let updatedSvc = updated.services.first(where: { $0.name == name })
-			let state = updatedSvc?.state ?? "off"
-			let title = formatServiceTitle(label: label, service: updatedSvc)
-			let tip = "Click to turn \(displayName) \(targetOn ? "off" : "on")"
-			rowView.update(title: title, state: state, toolTip: tip)
-			rowView.enclosingMenuItem?.title = title
-			rowView.enclosingMenuItem?.toolTip = tip
+			let row = serviceRowContent(for: updatedSvc, label: label, displayName: displayName)
+			rowView.update(title: row.title, state: row.state, toolTip: row.toolTip)
+			rowView.enclosingMenuItem?.title = row.title
+			rowView.enclosingMenuItem?.toolTip = row.toolTip
 		}
 
-		pendingServiceMutations += 1
+		pendingServiceMutations[name, default: 0] += 1
 		runner.run(LodoCommand.service(name: name, on: targetOn)) { [weak self] output in
 			guard let self = self else { return }
-			self.pendingServiceMutations = max(0, self.pendingServiceMutations - 1)
+			let remaining = (self.pendingServiceMutations[name] ?? 1) - 1
+			if remaining <= 0 {
+				self.pendingServiceMutations.removeValue(forKey: name)
+			} else {
+				self.pendingServiceMutations[name] = remaining
+			}
 			if output.exitCode != 0 {
+				if self.pendingServiceMutations[name] == nil {
+					let base = self.cachedReport ?? currentReport
+					self.cachedReport = reportWithRestoredService(base, name: name, previous: previousSvc)
+					if let rowView = self.serviceViews[name] {
+						let row = self.serviceRowContent(for: previousSvc, label: label, displayName: displayName)
+						rowView.update(title: row.title, state: row.state, toolTip: row.toolTip)
+						rowView.enclosingMenuItem?.title = row.title
+						rowView.enclosingMenuItem?.toolTip = row.toolTip
+					}
+				}
 				let msg = output.stderr.isEmpty
 					? "Command failed (exit \(output.exitCode))"
 					: output.stderr
 				self.presentErrorAlert(title: "lodo Command Failed", message: msg)
 			}
-			if self.pendingServiceMutations == 0 {
+			if self.pendingServiceMutations.isEmpty {
 				self.requestRefresh()
 			}
 		}
@@ -2269,20 +2374,46 @@ func runSelfTests() -> Int32 {
 		toggledNew.services.first(where: { $0.name == "caddy" })?.state == "on",
 		"optimistic toggle should add missing service entry"
 	)
+	let restoredDns = reportWithRestoredService(toggledOff, name: "dnsmasq", previous: report.services[0])
+	check(
+		restoredDns.services.first(where: { $0.name == "dnsmasq" }) == report.services[0],
+		"restore should roll back failed service toggle"
+	)
+	let restoredMissing = reportWithRestoredService(toggledNew, name: "caddy", previous: nil)
+	check(
+		restoredMissing.services.isEmpty,
+		"restore with nil should remove synthetic service entry"
+	)
 
+	var serviceViewClicks = 0
 	let serviceView = ServiceMenuItemView(
 		title: "● DNS (dnsmasq)",
 		state: "on",
 		toolTip: "Click to turn dnsmasq off",
-		onClick: {}
+		onClick: { serviceViewClicks += 1 }
 	)
 	check(serviceView.displayedAttributedTitle.string == "● DNS (dnsmasq)", "service view initial title")
 	check(serviceView.toolTip == "Click to turn dnsmasq off", "service view initial tooltip")
-	serviceView.update(title: "○ DNS (dnsmasq)", state: "off", toolTip: "Click to turn dnsmasq on")
-	check(serviceView.displayedAttributedTitle.string == "○ DNS (dnsmasq)", "service view updated title")
+	check(serviceView.isAccessibilityElement(), "service view should be an accessibility element")
+	check(serviceView.accessibilityRole() == .menuItem, "service view should have menuItem accessibility role")
+	check(serviceView.accessibilityLabel() == "● DNS (dnsmasq)", "service view accessibility label")
+	check(serviceView.accessibilityPerformPress() && serviceViewClicks == 1, "accessibility press should trigger toggle")
+	serviceView.updateTrackingAreas()
+	check(
+		serviceView.trackingAreas.contains { $0.options.contains(.enabledDuringMouseDrag) },
+		"service view tracking area should work during menu drag"
+	)
+	let initialWidth = serviceView.frame.size.width
+	serviceView.update(
+		title: "● Reverse Proxy (Caddy) (error)",
+		state: "error",
+		toolTip: "caddy crashed"
+	)
+	check(serviceView.displayedAttributedTitle.string == "● Reverse Proxy (Caddy) (error)", "service view updated title")
 	let updatedDotColor = serviceView.displayedAttributedTitle.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor
-	check(updatedDotColor == .secondaryLabelColor, "service view updated dot color")
-	check(serviceView.toolTip == "Click to turn dnsmasq on", "service view updated tooltip")
+	check(updatedDotColor == .systemRed, "service view updated dot color")
+	check(serviceView.toolTip == "caddy crashed", "service view updated tooltip")
+	check(serviceView.frame.size.width > initialWidth, "service view should widen in place for longer error titles")
 
 	let subs = subdomainsUnder("blog.lodo", in: report.domains)
 	check(subs.map(\.name) == ["web.blog.lodo", "api.blog.lodo", "admin.blog.lodo"], "subdomainsUnder")
