@@ -79,4 +79,5 @@ A commit requires `cargo fmt --all -- --check`, `cargo clippy --all-targets --lo
 
 ## Rust development
 
-Before any Rust coding, review, refactoring, or testing task, load the `rust-best-practices` and `rust-testing` skills.
+Before any Rust coding, review, refactoring, or testing task, load the `rust-best-practices` and `rust-testing` skills;
+load `rust-refactor-helper` as well when refactoring.
