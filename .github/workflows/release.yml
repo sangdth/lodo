@@ -1,6 +1,10 @@
 name: Release
 
 on:
+  workflow_run:
+    workflows: ["Rust CI"]
+    types: [completed]
+    branches: [master]
   push:
     tags:
       - "v*"
@@ -8,24 +12,155 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
   release:
     name: Build macOS arm64 release & update Homebrew tap
+    if: >-
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.conclusion == 'success')
     runs-on: macos-latest
 
     steps:
       - name: Check out code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.ref }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Resolve release version
+        id: version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          /usr/bin/python3 - <<'PY'
+          import os
+          import re
+          import subprocess
+          import sys
+
+          def git(*args, check=True):
+              return subprocess.run(
+                  ["git", *args],
+                  text=True,
+                  capture_output=True,
+                  check=check,
+              )
+
+          def read_cargo_version(path="Cargo.toml"):
+              in_package = False
+              with open(path, encoding="utf-8") as f:
+                  for raw in f:
+                      line = raw.split("#", 1)[0].strip()
+                      if line.startswith("["):
+                          in_package = line == "[package]"
+                      elif in_package:
+                          m = re.match(r'^version\s*=\s*"(\d+)\.(\d+)\.(\d+)"$', line)
+                          if m:
+                              return tuple(int(p) for p in m.groups())
+              sys.exit('Could not find [package] version = "X.Y.Z" in Cargo.toml')
+
+          def stable_tags(args):
+              out = git(*args).stdout.splitlines()
+              tags = []
+              for t in out:
+                  m = re.match(r"^v(\d+)\.(\d+)\.(\d+)$", t.strip())
+                  if m:
+                      tags.append((tuple(int(p) for p in m.groups()), t.strip()))
+              return sorted(tags)
+
+          def write_output(values):
+              with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
+                  for k, v in values.items():
+                      f.write(f"{k}={v}\n")
+
+          cargo_ver = read_cargo_version()
+          event_name = os.environ["EVENT_NAME"]
+
+          if event_name == "push":
+              tag = os.environ["REF_NAME"]
+              m = re.match(r"^v(\d+)\.(\d+)\.(\d+)(?:[-+].+)?$", tag)
+              if not m:
+                  sys.exit(f"Tag {tag!r} must match vX.Y.Z")
+              tag_core = tuple(int(p) for p in m.groups())
+              if tag_core < cargo_ver:
+                  cargo_s = ".".join(map(str, cargo_ver))
+                  sys.exit(f"Tag {tag} is older than Cargo.toml version {cargo_s}")
+              write_output({
+                  "skip": "false",
+                  "should_tag": "false",
+                  "tag": tag,
+                  "version": tag[1:],
+              })
+              sys.exit(0)
+
+          head_tags = stable_tags(["tag", "--points-at", "HEAD", "--list", "v*"])
+          if head_tags:
+              ver, tag = head_tags[-1]
+              print(f"HEAD already tagged {tag}; reusing for idempotent release")
+              write_output({
+                  "skip": "false",
+                  "should_tag": "false",
+                  "tag": tag,
+                  "version": ".".join(map(str, ver)),
+              })
+              sys.exit(0)
+
+          all_tags = stable_tags(["tag", "--list", "v*"])
+          if all_tags:
+              latest_ver, latest_tag = all_tags[-1]
+              anc = git("merge-base", "--is-ancestor", "HEAD", latest_tag, check=False)
+              if anc.returncode == 0:
+                  print(f"Skipping: HEAD is already included in newer release {latest_tag}")
+                  write_output({"skip": "true"})
+                  sys.exit(0)
+              next_ver = (
+                  cargo_ver
+                  if cargo_ver > latest_ver
+                  else (latest_ver[0], latest_ver[1], latest_ver[2] + 1)
+              )
+          else:
+              next_ver = cargo_ver
+
+          version = ".".join(map(str, next_ver))
+          tag = f"v{version}"
+          print(f"Resolved next release {tag}")
+          write_output({
+              "skip": "false",
+              "should_tag": "true",
+              "tag": tag,
+              "version": version,
+          })
+          PY
 
       - name: Set up Rust
+        if: steps.version.outputs.skip != 'true'
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
 
       - name: Cache Cargo
+        if: steps.version.outputs.skip != 'true'
         uses: Swatinem/rust-cache@v2
 
+      - name: Run checks (manual tag push)
+        if: steps.version.outputs.skip != 'true' && github.event_name == 'push'
+        run: |
+          cargo fmt --all -- --check
+          cargo clippy --all-targets --locked -- -D warnings
+          cargo test --locked
+
       - name: Build release binaries (lodo + lodo-menubar)
+        if: steps.version.outputs.skip != 'true'
         env:
-          LODO_VERSION: ${{ github.ref_name }}
+          LODO_VERSION: ${{ steps.version.outputs.tag }}
         run: |
           cargo build --release --locked
           /usr/bin/swiftc -O src/menubar.swift -o target/release/lodo-menubar
@@ -33,33 +168,46 @@ jobs:
           ./target/release/lodo-menubar --test
 
       - name: Package tarball and SHA256
+        if: steps.version.outputs.skip != 'true'
         id: pkg
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
         run: |
-          VERSION="${GITHUB_REF_NAME}"
-          ARCHIVE="lodo-${VERSION}-aarch64-apple-darwin.tar.gz"
+          ARCHIVE="lodo-${TAG}-aarch64-apple-darwin.tar.gz"
           tar -C target/release -czf "${ARCHIVE}" lodo lodo-menubar
           SHA256="$(shasum -a 256 "${ARCHIVE}" | awk '{print $1}')"
           echo "archive=${ARCHIVE}" >> "${GITHUB_OUTPUT}"
           echo "sha256=${SHA256}" >> "${GITHUB_OUTPUT}"
-          echo "version=${VERSION#v}" >> "${GITHUB_OUTPUT}"
+
+      - name: Push release tag
+        if: steps.version.outputs.skip != 'true' && steps.version.outputs.should_tag == 'true'
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          git tag "${TAG}" HEAD
+          git push origin "${TAG}"
 
       - name: Publish GitHub Release
+        if: steps.version.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          ARCHIVE: ${{ steps.pkg.outputs.archive }}
         run: |
-          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
-            gh release upload "${GITHUB_REF_NAME}" "${{ steps.pkg.outputs.archive }}" --clobber
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            gh release upload "${TAG}" "${ARCHIVE}" --clobber
           else
-            gh release create "${GITHUB_REF_NAME}" "${{ steps.pkg.outputs.archive }}" \
-              --title "${GITHUB_REF_NAME}" \
+            gh release create "${TAG}" "${ARCHIVE}" \
+              --title "${TAG}" \
               --generate-notes
           fi
 
       - name: Update sangdth/homebrew-tap Formula/lodo.rb
+        if: steps.version.outputs.skip != 'true'
         env:
           TAP_DEPLOY_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
-          VERSION: ${{ steps.pkg.outputs.version }}
-          TAG: ${{ github.ref_name }}
+          VERSION: ${{ steps.version.outputs.version }}
+          TAG: ${{ steps.version.outputs.tag }}
           ARCHIVE: ${{ steps.pkg.outputs.archive }}
           SHA256: ${{ steps.pkg.outputs.sha256 }}
           REPO: ${{ github.repository }}
