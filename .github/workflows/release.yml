@@ -1,0 +1,104 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build macOS arm64 release & update Homebrew tap
+    runs-on: macos-latest
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build release binaries (lodo + lodo-menubar)
+        env:
+          LODO_VERSION: ${{ github.ref_name }}
+        run: |
+          cargo build --release --locked
+          /usr/bin/swiftc -O src/menubar.swift -o target/release/lodo-menubar
+          ./target/release/lodo version
+          ./target/release/lodo-menubar --test
+
+      - name: Package tarball and SHA256
+        id: pkg
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          ARCHIVE="lodo-${VERSION}-aarch64-apple-darwin.tar.gz"
+          tar -C target/release -czf "${ARCHIVE}" lodo lodo-menubar
+          SHA256="$(shasum -a 256 "${ARCHIVE}" | awk '{print $1}')"
+          echo "archive=${ARCHIVE}" >> "${GITHUB_OUTPUT}"
+          echo "sha256=${SHA256}" >> "${GITHUB_OUTPUT}"
+          echo "version=${VERSION#v}" >> "${GITHUB_OUTPUT}"
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" "${{ steps.pkg.outputs.archive }}" \
+            --title "${GITHUB_REF_NAME}" \
+            --generate-notes
+
+      - name: Update sangdth/homebrew-tap Formula/lodo.rb
+        if: ${{ secrets.HOMEBREW_TAP_TOKEN != '' }}
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          VERSION: ${{ steps.pkg.outputs.version }}
+          TAG: ${{ github.ref_name }}
+          ARCHIVE: ${{ steps.pkg.outputs.archive }}
+          SHA256: ${{ steps.pkg.outputs.sha256 }}
+          REPO: ${{ github.repository }}
+        run: |
+          TAP_DIR="$(mktemp -d)"
+          git clone "https://x-access-token:${TAP_TOKEN}@github.com/sangdth/homebrew-tap.git" "${TAP_DIR}"
+          mkdir -p "${TAP_DIR}/Formula"
+          cat > "${TAP_DIR}/Formula/lodo.rb" <<EOF
+          class Lodo < Formula
+            desc "Manage .lodo and custom local domains on macOS via dnsmasq and Caddy"
+            homepage "https://github.com/${REPO}"
+            url "https://github.com/${REPO}/releases/download/${TAG}/${ARCHIVE}"
+            version "${VERSION}"
+            sha256 "${SHA256}"
+            depends_on :macos
+            depends_on arch: :arm64
+            depends_on "dnsmasq"
+
+            def install
+              bin.install "lodo"
+              libexec.install "lodo-menubar"
+            end
+
+            def caveats
+              <<~EOS
+                Run one-time system setup (or repair after an upgrade if prompted):
+                  lodo setup
+
+                Optional HTTP/HTTPS reverse proxy support:
+                  brew install caddy && lodo setup
+              EOS
+            end
+
+            test do
+              assert_match version.to_s, shell_output("#{bin}/lodo version")
+            end
+          end
+          EOF
+          git -C "${TAP_DIR}" config user.name "github-actions[bot]"
+          git -C "${TAP_DIR}" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C "${TAP_DIR}" add Formula/lodo.rb
+          if ! git -C "${TAP_DIR}" diff --cached --quiet; then
+            git -C "${TAP_DIR}" commit -m "chore: bump lodo to ${TAG}"
+            git -C "${TAP_DIR}" push origin HEAD
+          fi

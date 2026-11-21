@@ -1,0 +1,32 @@
+[package]
+name = "lodo"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+description = "Manage .lodo and custom local domain names on macOS through dnsmasq, /etc/resolver, and Caddy"
+repository = "https://github.com/sangdth/lodo"
+publish = false
+
+[dependencies]
+nix = { version = "0.30", default-features = false, features = ["fs", "process", "signal", "user"] }
+regex = "1.11"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+rustls-platform-verifier = "0.6"
+saphyr = "0.3"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2.0"
+unicode-width = "0.2"
+
+[dev-dependencies]
+insta = { version = "1.42", features = ["yaml", "json"] }
+rcgen = "0.13"
+tempfile = "3.19"
+
+[lints.rust]
+future_incompatible = "warn"
+nonstandard_style = "deny"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+redundant_clone = "deny"

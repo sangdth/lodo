@@ -1,5 +1,0 @@
-warn  apps/api has no name: lodo dev --edit adds api.shop.lodo
-web.shop.lodo  https://web.shop.lodo  -> 127.0.1.1:3001
-env   DOCKER_HOST_IP=127.0.1.1
-note  api.shop.lodo: lodo can't tell its port; set it in lodo dev --edit
-starting: pnpm run dev

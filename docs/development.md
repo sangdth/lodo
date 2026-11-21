@@ -6,45 +6,53 @@ start and [docs/reference.md](reference.md) for user-facing behavior.
 ## Run tests and checks
 
 ```sh
-go test -race ./...                       # all unit + hermetic E2E tests (safe, temp dir only)
-go vet ./... && golangci-lint run ./...   # lint, config in .golangci.yml
-go test ./internal/tui -update            # rewrite that package's golden files after an intended change
-go run ./cmd/lodo doctor                  # run lodo from source
+cargo test --locked                                   # all unit + hermetic E2E tests (temp dir only)
+cargo fmt --all -- --check                            # verify formatting
+cargo clippy --all-targets --locked -- -D warnings    # strict lint gate
+cargo run -- doctor                                   # run lodo from source (read-only)
+cargo run -- scan                                     # inspect the current project (read-only)
 ```
 
-`TestE2E_DataPlane` in `cmd/lodo/e2e_test.go` runs automatically as part of `go test -race ./...` when `dnsmasq`, `caddy`, and `node` are installed, starting real daemons on free ports inside `t.TempDir()` without `sudo`.
+`tests/e2e_dataplane.rs` runs automatically as part of `cargo test --locked` when `dnsmasq`, `caddy`, `node`, and
+`swiftc` are installed, starting real daemons on free ports inside temporary directories without `sudo`.
 
-`TestSystemE2E` in `cmd/lodo/e2e_system_test.go` (`//go:build e2e`) exercises the full `lodo setup` -> `lodo dev -y` -> `lodo doctor` -> `lodo exec` -> `lodo prune` -> `lodo uninstall` lifecycle against the real macOS host. Because it overwrites `~/.config/lodo`, `/etc/resolver`, and `lo0` before uninstalling, run it only on a disposable macOS VM or in CI:
+`tests/e2e_system.rs` (`#[ignore]`) exercises the full `lodo setup` -> `lodo menubar` -> `lodo dev` -> `lodo ls` ->
+`lodo doctor` -> `lodo apply` -> `lodo exec` -> `lodo prune` -> `lodo uninstall` lifecycle against the real macOS host.
+Because it overwrites `~/.config/lodo`, `/etc/resolver`, and `lo0` before uninstalling, run it only on a disposable
+macOS VM or in CI:
 
 ```sh
-LODO_E2E_DESTRUCTIVE=1 go test -v -race -tags=e2e ./cmd/lodo -run TestSystemE2E
+LODO_E2E_DESTRUCTIVE=1 cargo test --locked --test e2e_system -- --ignored --nocapture
 ```
 
-Set the version printed by `lodo version`:
+Override the version printed by `lodo version` at build time:
 
 ```sh
-go build -ldflags "-X main.Version=v0.1.0" -o lodo ./cmd/lodo
+LODO_VERSION=v0.1.0 cargo build --release --locked
 ```
 
 Further project docs:
 
-- [docs/plan.md](plan.md) — architecture, settled decisions, and phases
+- [docs/reference.md](reference.md) — full command and GUI behavior
+- [docs/plan.md](plan.md) — original design history and protocol notes
 - [docs/setup-log.md](setup-log.md) — hand test log on a real Mac
 - [AGENTS.md](../AGENTS.md) — code layout and development rules
 
 ## Change it and use it right away
 
 ```sh
-go install ./cmd/lodo   # replaces ~/go/bin/lodo
+cargo install --path . --locked   # installs ~/.cargo/bin/lodo
 ```
 
-| What you changed                                      | After `go install`                         |
-| ----------------------------------------------------- | ------------------------------------------ |
-| TUI, messages, checks, the CLI                        | nothing, just run `lodo ps` or `lodo dev`  |
-| The listen hook, `internal/dev/bind.cjs`              | nothing: the next `lodo dev` writes it     |
-| The menu bar helper, `internal/menubar/menubar.swift` | `lodo apply` (or `lodo menubar`)           |
-| What goes into the generated dnsmasq or Caddy files   | `lodo apply`                               |
-| The root script, the sudoers rule or the loopback job | `lodo setup`, which asks for your password |
+Ensure `~/.cargo/bin` comes before any older `lodo` binary on your `PATH` (`whence -a lodo`).
+
+| What you changed                                    | After `cargo install --path . --locked`     |
+| --------------------------------------------------- | ------------------------------------------- |
+| CLI commands, `lodo ls`, checks, messages           | nothing, just run `lodo ls` or `lodo dev`   |
+| The listen hook (`src/bind.cjs`)                    | nothing: the next `lodo dev` writes it      |
+| The menu bar app (`src/menubar.swift`)              | `lodo menubar` (or `lodo apply`)            |
+| What goes into the generated dnsmasq or Caddy files | `lodo apply`                                |
+| The root script, sudoers rule, or loopback job      | `lodo setup`, which asks for your password  |
 
 `lodo doctor` tells you which applies: "script out of date" means `lodo setup`, and "generated files out of date"
 means `lodo apply`.
