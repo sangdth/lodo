@@ -160,9 +160,7 @@ impl<'a> App<'a> {
             self.fail_step(&se, stderr);
             return 1;
         }
-        if !fsutil::exists(&self.paths.menubar_plist)
-            && fsutil::exists(&self.paths.brew_menubar_bin)
-        {
+        if !fsutil::exists(&self.paths.menubar_plist) && menubar::can_start(&self.paths) {
             match menubar::start(&self.paths, self.runner) {
                 Ok(()) => {
                     let _ = writeln!(stdout, "✓ menu bar icon started");

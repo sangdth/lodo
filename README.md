@@ -18,11 +18,11 @@ Requires macOS on Apple Silicon with Homebrew in `/opt/homebrew` and an admin ac
 # 1. Install lodo; Homebrew also installs its dnsmasq and caddy
 brew install sangdth/tap/lodo
 
-# 2. Start a project (runs one-time Mac setup and registers the project's names on first use)
+# 2. Start a project (runs one-time Mac setup, registers names, and opens the menu bar icon)
 cd ~/Projects/shop
 lodo dev
 
-# 3. Inspect domains in the terminal or manage them from the macOS menu bar icon
+# 3. Inspect domains in the terminal or toggle the macOS menu bar icon anytime
 lodo ls
 lodo menubar
 ```
