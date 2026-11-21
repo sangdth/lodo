@@ -14,7 +14,7 @@ pub(super) enum Command {
     Ls { json: bool, no_color: bool },
     Scan { json: bool, name: String },
     Prune { worktree: bool },
-    Dev { name: String, auto: bool },
+    Dev { name: String },
     Exec { args: Vec<String> },
     Add(AddArgs),
     Set(SetArgs),
@@ -271,7 +271,6 @@ fn parse_prune(args: &[String]) -> Result<Command, ParseError> {
 
 fn parse_dev(args: &[String]) -> Result<Command, ParseError> {
     let mut name = String::new();
-    let mut auto = false;
     let mut positionals = Vec::new();
     let mut iter = args.iter();
     while let Some(arg) = iter.next() {
@@ -282,12 +281,11 @@ fn parse_dev(args: &[String]) -> Result<Command, ParseError> {
             }
             Token::Positional(p) => positionals.push(p.to_string()),
             Token::Flag("name", inline) => name = str_val("dev", "name", inline, &mut iter)?,
-            Token::Flag("y" | "auto", inline) => auto = bool_val("dev", "auto", inline)?,
             Token::Flag(k, _) => return Err(unknown_flag("dev", k)),
         }
     }
     no_positionals("dev", &positionals)?;
-    Ok(Command::Dev { name, auto })
+    Ok(Command::Dev { name })
 }
 
 fn parse_exec(args: &[String]) -> Result<Command, ParseError> {

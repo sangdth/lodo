@@ -34,8 +34,6 @@ LODO_VERSION=v0.1.0 cargo build --release --locked
 Further project docs:
 
 - [docs/reference.md](reference.md) — full command and GUI behavior
-- [docs/plan.md](plan.md) — original design history and protocol notes
-- [docs/setup-log.md](setup-log.md) — hand test log on a real Mac
 - [AGENTS.md](../AGENTS.md) — code layout and development rules
 
 ## Change it and use it right away
