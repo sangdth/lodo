@@ -333,6 +333,27 @@ func formatServiceTitle(label: String, service: LsService?) -> String {
 	return state == "error" ? "\(badge) \(label) (error)" : "\(badge) \(label)"
 }
 
+func reportWithToggledService(_ report: LsReport, name: String, targetOn: Bool) -> LsReport {
+	let targetState = targetOn ? "on" : "off"
+	var found = false
+	let updatedServices = report.services.map { svc -> LsService in
+		guard svc.name == name else { return svc }
+		found = true
+		return LsService(name: svc.name, state: targetState, detail: "", fix: "")
+	}
+	let services = found
+		? updatedServices
+		: updatedServices + [LsService(name: name, state: targetState, detail: "", fix: "")]
+	return LsReport(
+		setupDone: report.setupDone,
+		caddyReady: report.caddyReady,
+		nextFree: report.nextFree,
+		logPath: report.logPath,
+		services: services,
+		domains: report.domains
+	)
+}
+
 func subdomainsUnder(_ name: String, in domains: [LsDomain]) -> [LsDomain] {
 	let suffix = "." + name
 	return domains.filter { $0.name.hasSuffix(suffix) }
@@ -1272,9 +1293,143 @@ func installMainMenu() {
 
 // MARK: - Menu Bar Controller
 
+// Custom menu row for service toggles so clicking flips the service without dismissing NSMenu.
+final class ServiceMenuItemView: NSView {
+	private let highlightView = NSVisualEffectView()
+	private let label = NSTextField(labelWithString: "")
+	private let onClick: () -> Void
+	private var trackingArea: NSTrackingArea?
+	private(set) var isHighlighted = false
+
+	private static let rowHeight: CGFloat = 24
+	private static let labelInsetX: CGFloat = 12
+	private static let highlightInsetX: CGFloat = 5
+
+	init(title: String, state: String, toolTip: String?, onClick: @escaping () -> Void) {
+		self.onClick = onClick
+		super.init(frame: NSRect(x: 0, y: 0, width: 200, height: Self.rowHeight))
+		autoresizingMask = [.width]
+
+		highlightView.material = .selection
+		highlightView.blendingMode = .withinWindow
+		highlightView.isEmphasized = true
+		highlightView.state = .active
+		highlightView.wantsLayer = true
+		highlightView.layer?.cornerRadius = 5
+		highlightView.layer?.masksToBounds = true
+		highlightView.isHidden = true
+		addSubview(highlightView)
+
+		label.lineBreakMode = .byTruncatingTail
+		label.maximumNumberOfLines = 1
+		label.isSelectable = false
+		addSubview(label)
+
+		update(title: title, state: state, toolTip: toolTip)
+		let minWidth = ceil(label.intrinsicContentSize.width) + Self.labelInsetX * 2
+		frame.size.width = max(frame.size.width, minWidth)
+	}
+
+	@available(*, unavailable)
+	required init?(coder: NSCoder) {
+		fatalError("init(coder:) is not supported")
+	}
+
+	var displayedAttributedTitle: NSAttributedString {
+		label.attributedStringValue
+	}
+
+	func update(title: String, state: String, toolTip: String?) {
+		label.attributedStringValue = makeStatusMenuTitle(title, state: state)
+		self.toolTip = toolTip
+		applyHighlight()
+		needsLayout = true
+	}
+
+	override func hitTest(_ point: NSPoint) -> NSView? {
+		super.hitTest(point) != nil ? self : nil
+	}
+
+	override func layout() {
+		super.layout()
+		highlightView.frame = bounds.insetBy(dx: Self.highlightInsetX, dy: 0)
+		let textHeight = ceil(label.intrinsicContentSize.height)
+		let textY = floor((bounds.height - textHeight) / 2.0)
+		label.frame = NSRect(
+			x: Self.labelInsetX,
+			y: textY,
+			width: max(0, bounds.width - Self.labelInsetX * 2),
+			height: textHeight
+		)
+		if window != nil {
+			syncHoverFromPointer()
+		}
+	}
+
+	override func updateTrackingAreas() {
+		super.updateTrackingAreas()
+		if let existing = trackingArea {
+			removeTrackingArea(existing)
+		}
+		let area = NSTrackingArea(
+			rect: .zero,
+			options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+			owner: self,
+			userInfo: nil
+		)
+		addTrackingArea(area)
+		trackingArea = area
+	}
+
+	override func viewDidMoveToWindow() {
+		super.viewDidMoveToWindow()
+		syncHoverFromPointer()
+	}
+
+	override func mouseEntered(with event: NSEvent) {
+		setHighlighted(true)
+	}
+
+	override func mouseExited(with event: NSEvent) {
+		setHighlighted(false)
+	}
+
+	override func mouseDown(with event: NSEvent) {
+		// Keep the menu open; toggle fires on mouseUp inside bounds.
+	}
+
+	override func mouseUp(with event: NSEvent) {
+		let point = convert(event.locationInWindow, from: nil)
+		guard bounds.contains(point) else {
+			setHighlighted(false)
+			return
+		}
+		onClick()
+	}
+
+	private func syncHoverFromPointer() {
+		guard let window = window else {
+			setHighlighted(false)
+			return
+		}
+		let point = convert(window.mouseLocationOutsideOfEventStream, from: nil)
+		setHighlighted(bounds.contains(point))
+	}
+
+	private func setHighlighted(_ highlighted: Bool) {
+		guard highlighted != isHighlighted else { return }
+		isHighlighted = highlighted
+		applyHighlight()
+	}
+
+	private func applyHighlight() {
+		highlightView.isHidden = !isHighlighted
+		label.textColor = isHighlighted ? .selectedMenuItemTextColor : .labelColor
+	}
+}
+
 enum MenuActionPayload {
 	case runSetup
-	case toggleService(name: String, targetOn: Bool)
 	case openURL(String)
 	case copyText(String)
 	case setDomainEnabled(name: String, enabled: Bool)
@@ -1302,9 +1457,11 @@ final class MenuController: NSObject, NSMenuDelegate {
 	)
 
 	private var cachedReport: LsReport?
+	private var serviceViews: [String: ServiceMenuItemView] = [:]
 	private var isMenuOpen = false
 	private var isRefreshing = false
 	private var pendingRefreshAfterCurrent = false
+	private var pendingServiceMutations = 0
 	private var pendingHTTPSCertCheckDomains: Set<String> = []
 
 	private var watchSource: DispatchSourceFileSystemObject?
@@ -1392,6 +1549,11 @@ final class MenuController: NSObject, NSMenuDelegate {
 		runner.run(LodoCommand.lsJSON()) { [weak self] output in
 			guard let self = self else { return }
 			self.isRefreshing = false
+			if self.pendingServiceMutations > 0 {
+				// Discard pre-toggle snapshot; the last service mutation triggers a fresh refresh.
+				self.pendingRefreshAfterCurrent = false
+				return
+			}
 
 			if output.exitCode == 0,
 			   let decoded = try? JSONDecoder().decode(LsReport.self, from: output.stdout) {
@@ -1451,6 +1613,7 @@ final class MenuController: NSObject, NSMenuDelegate {
 
 	private func populateMenu(with report: LsReport) {
 		menu.removeAllItems()
+		serviceViews.removeAll()
 
 		// 1. System Setup Warning Banner
 		if needsSystemSetup(report) {
@@ -1481,14 +1644,21 @@ final class MenuController: NSObject, NSMenuDelegate {
 			let state = svc?.state ?? "off"
 			let isOn = state == "on"
 			let title = formatServiceTitle(label: label, service: svc)
-			let item = makeActionItem(
-				title: title,
-				payload: .toggleService(name: svcName, targetOn: !isOn)
-			)
-			item.attributedTitle = makeStatusMenuTitle(title, state: state)
-			item.toolTip = (svc?.detail.isEmpty == false)
+			let tip = (svc?.detail.isEmpty == false)
 				? svc?.detail
 				: "Click to turn \(displayName) \(isOn ? "off" : "on")"
+			let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+			let rowView = ServiceMenuItemView(
+				title: title,
+				state: state,
+				toolTip: tip,
+				onClick: { [weak self] in
+					self?.toggleServiceInPlace(name: svcName, label: label, displayName: displayName)
+				}
+			)
+			item.view = rowView
+			item.toolTip = tip
+			serviceViews[svcName] = rowView
 			menu.addItem(item)
 		}
 
@@ -1630,9 +1800,6 @@ final class MenuController: NSObject, NSMenuDelegate {
 		case .runSetup:
 			launchSetupInTerminal()
 
-		case .toggleService(let name, let targetOn):
-			runMutation(LodoCommand.service(name: name, on: targetOn))
-
 		case .openURL(let urlStr):
 			openInBrowser(urlStr)
 
@@ -1683,6 +1850,38 @@ final class MenuController: NSObject, NSMenuDelegate {
 
 		case .refresh:
 			requestRefresh()
+		}
+	}
+
+	private func toggleServiceInPlace(name: String, label: String, displayName: String) {
+		let currentReport = cachedReport ?? buildFallbackReport(domainsPath: domainsPath)
+		let targetOn = currentReport.services.first(where: { $0.name == name })?.state != "on"
+		let updated = reportWithToggledService(currentReport, name: name, targetOn: targetOn)
+		cachedReport = updated
+
+		if let rowView = serviceViews[name] {
+			let updatedSvc = updated.services.first(where: { $0.name == name })
+			let state = updatedSvc?.state ?? "off"
+			let title = formatServiceTitle(label: label, service: updatedSvc)
+			let tip = "Click to turn \(displayName) \(targetOn ? "off" : "on")"
+			rowView.update(title: title, state: state, toolTip: tip)
+			rowView.enclosingMenuItem?.title = title
+			rowView.enclosingMenuItem?.toolTip = tip
+		}
+
+		pendingServiceMutations += 1
+		runner.run(LodoCommand.service(name: name, on: targetOn)) { [weak self] output in
+			guard let self = self else { return }
+			self.pendingServiceMutations = max(0, self.pendingServiceMutations - 1)
+			if output.exitCode != 0 {
+				let msg = output.stderr.isEmpty
+					? "Command failed (exit \(output.exitCode))"
+					: output.stderr
+				self.presentErrorAlert(title: "lodo Command Failed", message: msg)
+			}
+			if self.pendingServiceMutations == 0 {
+				self.requestRefresh()
+			}
 		}
 	}
 
@@ -1751,6 +1950,9 @@ final class MenuController: NSObject, NSMenuDelegate {
 	}
 
 	private func presentUntrustedCertificateAlert(domainName: String, detail: String) {
+		if isMenuOpen {
+			menu.cancelTracking()
+		}
 		activateApp()
 		let alert = NSAlert()
 		alert.alertStyle = .informational
@@ -1769,6 +1971,9 @@ final class MenuController: NSObject, NSMenuDelegate {
 	}
 
 	private func presentErrorAlert(title: String, message: String) {
+		if isMenuOpen {
+			menu.cancelTracking()
+		}
 		activateApp()
 		let alert = NSAlert()
 		alert.alertStyle = .warning
@@ -2049,6 +2254,35 @@ func runSelfTests() -> Int32 {
 		enabled: false, https: false, compose: "", root: "", status: "ok", httpsOk: false, detail: ""
 	)
 	check(disabledOk.effectiveStatus == "off", "disabled domain effectiveStatus should be off")
+
+	let toggledOff = reportWithToggledService(report, name: "dnsmasq", targetOn: false)
+	check(
+		toggledOff.services.first(where: { $0.name == "dnsmasq" })?.state == "off",
+		"optimistic toggle should flip dnsmasq off"
+	)
+	check(
+		toggledOff.services.first(where: { $0.name == "caddy" })?.state == "off",
+		"optimistic toggle should leave other services unchanged"
+	)
+	let toggledNew = reportWithToggledService(unsetupReport, name: "caddy", targetOn: true)
+	check(
+		toggledNew.services.first(where: { $0.name == "caddy" })?.state == "on",
+		"optimistic toggle should add missing service entry"
+	)
+
+	let serviceView = ServiceMenuItemView(
+		title: "● DNS (dnsmasq)",
+		state: "on",
+		toolTip: "Click to turn dnsmasq off",
+		onClick: {}
+	)
+	check(serviceView.displayedAttributedTitle.string == "● DNS (dnsmasq)", "service view initial title")
+	check(serviceView.toolTip == "Click to turn dnsmasq off", "service view initial tooltip")
+	serviceView.update(title: "○ DNS (dnsmasq)", state: "off", toolTip: "Click to turn dnsmasq on")
+	check(serviceView.displayedAttributedTitle.string == "○ DNS (dnsmasq)", "service view updated title")
+	let updatedDotColor = serviceView.displayedAttributedTitle.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor
+	check(updatedDotColor == .secondaryLabelColor, "service view updated dot color")
+	check(serviceView.toolTip == "Click to turn dnsmasq on", "service view updated tooltip")
 
 	let subs = subdomainsUnder("blog.lodo", in: report.domains)
 	check(subs.map(\.name) == ["web.blog.lodo", "api.blog.lodo", "admin.blog.lodo"], "subdomainsUnder")
